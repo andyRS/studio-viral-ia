@@ -1,0 +1,71 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: dark; --bg:#0b0f19; --card:#111827; --line:rgba(255,255,255,.08); --accent:#f59e0b; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  background: radial-gradient(1200px 600px at 85% -10%, rgba(245,158,11,.07), transparent 60%), var(--bg);
+  color:#e5e7eb;
+  font-family: Inter, "Segoe UI", Roboto, system-ui, -apple-system, sans-serif;
+  font-feature-settings: "cv11", "ss01";
+}
+button { cursor:pointer; -webkit-tap-highlight-color: transparent; }
+button:disabled { opacity:.5; cursor:not-allowed; }
+
+/* Campos de formulario */
+input, select, textarea {
+  background:#0f1626; border:1px solid #243049; border-radius:.75rem;
+  padding:.6rem .8rem; width:100%; color:#f1f5f9; font-size:16px; /* evita zoom en iOS */
+  transition:border-color .15s, box-shadow .15s, background .15s;
+}
+@media (min-width:768px){ input, select, textarea { font-size:14px; } }
+input::placeholder, textarea::placeholder { color:#64748b; }
+input:focus, select:focus, textarea:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px rgba(245,158,11,.18); background:#111a2e; }
+input[type="checkbox"], input[type="radio"] { width:1rem; height:1rem; padding:0; accent-color:var(--accent); }
+textarea { min-height:5.5rem; line-height:1.5; }
+label { color:#cbd5e1; }
+
+/* Tarjetas: unifica los estilos que usan los módulos */
+.bg-\[\#121826\] { background:linear-gradient(180deg, rgba(255,255,255,.035), rgba(255,255,255,.015)), var(--card) !important; border:1px solid var(--line); border-radius:1rem !important; box-shadow:0 1px 0 rgba(255,255,255,.03) inset, 0 10px 30px -18px rgba(0,0,0,.8); }
+main h2, main .text-xl.font-bold { font-size:1.35rem; letter-spacing:-.01em; }
+
+/* Botón principal */
+.bg-amber-500 { background-image:linear-gradient(135deg,#fbbf24,#f97316) !important; color:#111 !important; border-radius:.75rem !important; box-shadow:0 8px 20px -10px rgba(249,115,22,.7); transition:transform .12s, filter .15s; }
+.bg-amber-500:hover { filter:brightness(1.07); }
+.bg-amber-500:active { transform:translateY(1px) scale(.99); }
+/* Botones secundarios */
+.bg-slate-800, .bg-slate-700 { border:1px solid var(--line); border-radius:.65rem !important; transition:background .15s; }
+.bg-slate-800:hover, .bg-slate-700:hover { background:#273449 !important; }
+
+/* Navegación */
+.nav-item { display:flex; width:100%; align-items:center; gap:.65rem; border-radius:.7rem; padding:.55rem .75rem; font-size:.875rem; color:#94a3b8; transition:background .15s, color .15s; }
+.nav-item:hover { background:rgba(255,255,255,.04); color:#e2e8f0; }
+.nav-item-active { background:linear-gradient(90deg, rgba(245,158,11,.16), rgba(245,158,11,.04)); color:#fcd34d; box-shadow:inset 2px 0 0 #f59e0b; font-weight:600; }
+.tab-item { display:flex; flex-direction:column; align-items:center; gap:.2rem; padding:.55rem 0 .5rem; font-size:10.5px; font-weight:500; }
+
+/* Estado de sesión */
+.session-pill { display:flex; align-items:center; gap:.5rem; border:1px solid var(--line); background:rgba(255,255,255,.03); border-radius:999px; padding:.4rem .75rem; font-size:12px; color:#cbd5e1; min-width:0; }
+.session-pill .dot { width:.5rem; height:.5rem; border-radius:999px; flex-shrink:0; }
+
+/* Animación de entrada de módulo */
+@media (prefers-reduced-motion:no-preference){ .module-enter { animation:enter .22s ease-out; } }
+@keyframes enter { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+
+/* Barras de desplazamiento */
+* { scrollbar-width:thin; scrollbar-color:#334155 transparent; }
+::-webkit-scrollbar { width:8px; height:8px; } ::-webkit-scrollbar-thumb { background:#334155; border-radius:8px; }
+
+/* Tablas y bloques de código */
+pre, code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+pre { white-space:pre-wrap; word-break:break-word; }
+table { width:100%; border-collapse:collapse; } th { text-align:left; color:#94a3b8; font-weight:500; font-size:12px; } td, th { padding:.5rem; border-bottom:1px solid var(--line); }
+
+/* Prompts largos plegables */
+.prompt-box { margin-top:.6rem; border:1px solid var(--line); border-radius:.8rem; background:rgba(0,0,0,.25); }
+.prompt-box > summary { list-style:none; display:flex; align-items:center; justify-content:space-between; gap:.5rem; padding:.55rem .75rem; font-size:.8rem; font-weight:600; color:#e2e8f0; cursor:pointer; }
+.prompt-box > summary::-webkit-details-marker { display:none; }
+.prompt-box > summary::before { content:"›"; margin-right:.35rem; color:#f59e0b; transition:transform .15s; display:inline-block; }
+.prompt-box[open] > summary::before { transform:rotate(90deg); }
+.prompt-box > summary > span { flex:1; }
+.prompt-text { padding:0 .75rem .75rem; font-size:12px; line-height:1.55; color:#cbd5e1; white-space:pre-wrap; max-height:18rem; overflow-y:auto; }

@@ -1,0 +1,164 @@
+// MÓDULO 4B — ADAPTACIÓN POR PLATAFORMA
+// REGLA OBLIGATORIA: toda historia se construye primero con la FÓRMULA BASE
+// (Instagram) y después se generan 4 versiones, una por plataforma.
+// Nunca el mismo archivo ni el mismo texto en las 4 plataformas.
+
+export interface PlatformAdaptation {
+  platform: "Instagram" | "Facebook" | "TikTok" | "YouTube Shorts";
+  recommendedDuration: string;
+  editingChanges: string[];
+  coverText: string;
+  title: string;
+  description: string;
+  hashtags: string[];
+  bestTime: string;
+  frequency: string;
+  cta: string;
+  metricsToWatch: string[];
+  checklist: string[];
+  fileName: string; // archivo distinto por plataforma, nunca reutilizado
+}
+
+export const BASE_FORMULA_NAME = "FÓRMULA BASE (Instagram) — origen de las 4 adaptaciones";
+export const BASE_FORMULA = {
+  name: BASE_FORMULA_NAME,
+  platformOrigin: "Instagram",
+  structure: [
+    "Conflicto / estatus visible en el segundo 0-1, sin presentaciones",
+    "Gancho en texto: 2 líneas en los primeros 3 segundos",
+    "Revelación mediante un objeto: una entrada, una carta, un celular o una prueba de embarazo",
+    "Escalada rápida + giro / cliffhanger",
+    "Estética cinematográfica, primeros planos de reacciones",
+    'Cierre "Continuará..." + "¿Parte 2?" en comentarios',
+  ],
+  hookLines: 2,
+  closing: "Continuará...",
+  commentPrompt: "¿Parte 2?",
+};
+
+export function formatAdaptationForCopy(a: PlatformAdaptation): string {
+  return [
+    `PLATAFORMA: ${a.platform}`,
+    `Duración recomendada: ${a.recommendedDuration}`,
+    `Archivo (único para esta plataforma): ${a.fileName}`,
+    `Cambios de montaje: ${a.editingChanges.join(" | ")}`,
+    `Texto de portada: ${a.coverText}`,
+    `Título: ${a.title}`,
+    `Descripción: ${a.description}`,
+    `Hashtags: ${a.hashtags.join(" ")}`,
+    `Mejor horario: ${a.bestTime}`,
+    `Frecuencia: ${a.frequency}`,
+    `CTA: ${a.cta}`,
+    `Métricas a vigilar: ${a.metricsToWatch.join(", ")}`,
+    `Checklist: ${a.checklist.join(" | ")}`,
+  ].join("\n");
+}
+
+export function buildPlatformAdaptations(input: any): PlatformAdaptation[] {
+  const theme: string = input?.theme || "Manguito descubre la verdad que Doña Aguacate le ocultaba";
+  const seriesTitle: string = input?.seriesTitle || input?.series?.title || "Manguito y Doña Aguacate";
+  const part: number = Number(input?.partNumber || input?.episodeNumber || 1);
+  const hook1: string = input?.hook?.[0] || "¡Ella le escondió la carta!";
+  const isContinuation = Boolean(input?.previousSummary);
+  const slug = seriesTitle.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
+  const instagram: PlatformAdaptation = {
+    platform: "Instagram",
+    recommendedDuration: "30-60s",
+    editingChanges: [
+      "Versión origen de la FÓRMULA BASE: conflicto/estatus visible en segundo 0-1, sin presentaciones",
+      "Cortes rápidos cada 2-4 segundos",
+      "Revelación mediante un objeto en primer plano (entrada, carta, celular o prueba de embarazo)",
+      "Estética cinematográfica, primeros planos de reacciones",
+      'Cerrar con "Continuará..." y fijar el comentario "¿Parte 2?"',
+    ],
+    coverText: `${hook1} — cara en primer plano + 1 frase de intriga`,
+    title: `${seriesTitle} — Parte ${part} | ${theme}`,
+    description: `¿De verdad hizo eso? 👀 ${theme}. Comenta PARTE 2 si quieres la continuación.`,
+    hashtags: ["#Frutinovelas", "#DramaDominicano", "#ReelsRD", "#Microdrama", "#TelenovelaDeFrutas"],
+    bestTime: "12:00-13:00 y 19:00-21:00 (hora RD) — validar con Métricas",
+    frequency: "1 Reel por episodio (versión base)",
+    cta: "Comenta PARTE 2",
+    metricsToWatch: ["compartidos", "guardados", "seguidores ganados"],
+    checklist: ['Activar la etiqueta "Información de IA" / contenido generado con IA al publicar', "Portada con cara en primer plano + 1 frase de intriga", "3-5 hashtags de nicho (no más)", "Archivo propio de Instagram, no reutilizar el de TikTok/Facebook/Shorts"],
+    fileName: `${slug}-parte-${part}-instagram-reels.mp4`,
+  };
+
+  const facebook: PlatformAdaptation = {
+    platform: "Facebook",
+    recommendedDuration: "60-90s",
+    editingChanges: [
+      "Montaje más largo que Instagram: diálogo sin pausas, sin recortar la escalada",
+      "Gancho visible sostenido durante los primeros 5-8 segundos",
+      "Subida NATIVA a Facebook, nunca compartir/exportar desde Instagram (penaliza alcance y deja marcas)",
+      "Dejar aire emotivo en la revelación con el objeto para que la audiencia comente",
+      'Cerrar con "Continuará..." + pregunta de debate',
+    ],
+    coverText: `¿Quién tiene la culpa? — ${hook1}`,
+    title: `${seriesTitle} — Parte ${part}: ${theme}`,
+    description: `Esto partió la familia en dos… 💔 ${theme}. ¿Quién tiene la culpa: él por no escuchar o ella por ocultarlo? Comenta tu opinión, te leo. Continuará...`,
+    hashtags: ["#Frutinovelas", "#Dominicanos", "#Novelas"],
+    bestTime: "19:00-22:00 (7-10 pm, hora RD)",
+    frequency: "1 publicación al día",
+    cta: "¿Quién tiene la culpa? Comenta y comparte en tu grupo",
+    metricsToWatch: ["tiempo promedio de reproducción", "vistas de 1 minuto", "ingresos estimados"],
+    checklist: [
+      "Video subido nativo a Facebook (nunca desde Instagram)",
+      "Gancho visible 5-8 segundos",
+      "Descripción emotiva / de debate lista",
+      "Compartir en 3 grupos (ver notas de grupos)",
+      "Archivo propio de Facebook, distinto al de Instagram/TikTok/Shorts",
+      // Frases sugeridas para grupos — el usuario las adapta / verifica el grupo antes de publicar
+      "Grupo sugerido 1 (buscar: dominicanos en USA / diáspora): «Paisanos, esta frutinovela dominicana me dejó pensando… ¿quién tiene la culpa?»",
+      "Grupo sugerido 2 (buscar: novelas y dramas en español): «Para los que aman las novelas cortas: una historia de frutas con un secreto familiar. ¿La sigo subiendo aquí?»",
+      "Grupo sugerido 3 (buscar: dominicanos unidos / comunidad RD): «Talento dominicano con IA 🇩🇴 ¿apoyamos la Parte " + part + "? Comenten quién tiene la culpa.»",
+    ],
+    fileName: `${slug}-parte-${part}-facebook-nativo.mp4`,
+  };
+
+  const tiktok: PlatformAdaptation = {
+    platform: "TikTok",
+    recommendedDuration: "1-3 min (más de 1 min: elegible para monetización)",
+    editingChanges: [
+      isContinuation ? '"Anteriormente..." de 5-8 segundos al inicio (es continuación)' : "Sin 'Anteriormente...' (es Parte 1): entrar directo al conflicto del segundo 0-1",
+      "Tarjetas de tiempo en pantalla: «Días después...», «Mientras tanto...»",
+      "Diálogo sin pausas, pocas escenas largas en vez de cortes de 2-4s de Instagram",
+      "Narrador SOLO en la última frase",
+      "Dejar 2-3 comentarios semilla para responder en video",
+    ],
+    coverText: `PARTE ${part} — ${seriesTitle}`,
+    title: `${seriesTitle} — Parte ${part}`,
+    description: `frutinovela | telenovela de frutas | drama dominicano — ${theme}. Parte ${part} de ${seriesTitle}. Sígueme y entra a la playlist de la serie para verla en orden. Continuará...`,
+    hashtags: ["#frutinovela", "#telenoveladefrutas", "#dramadominicano", "#parati", "#novelas"],
+    bestTime: "12:00-13:00 y 19:00-22:00 (hora RD)",
+    frequency: "1-2 publicaciones al día",
+    cta: "Sigue la serie en la playlist y comenta: te respondo en video",
+    metricsToWatch: ["% de video visto completo", "nuevos seguidores", "búsquedas que trajeron el video"],
+    checklist: ["Agregar el episodio a la playlist de la serie en TikTok", "Responder comentarios con video (respuestas en video)", "Descripción con keywords buscables: frutinovela, telenovela de frutas, drama dominicano", "3-5 hashtags", "Archivo propio de TikTok, distinto al de Instagram/Facebook/Shorts"],
+    fileName: `${slug}-parte-${part}-tiktok.mp4`,
+  };
+
+  const shortsTitle = `${theme} 😱 #shorts`.slice(0, 60);
+  const youtube: PlatformAdaptation = {
+    platform: "YouTube Shorts",
+    recommendedDuration: "Hasta 3 min — ideal 45-90s",
+    editingChanges: [
+      "Final que empalma con el inicio: la última frase/frame conecta con la primera para crear bucle (loop)",
+      "Recorte limpio, SIN marcas de agua de TikTok/Instagram/Facebook",
+      "Exportar archivo limpio desde el máster, nunca descargar el video ya publicado en otra plataforma",
+      'Vincular la siguiente parte con "video relacionado" de YouTube Shorts',
+    ],
+    coverText: `${hook1} (texto corto, legible en miniatura)`,
+    title: shortsTitle,
+    description: `${theme} — ${seriesTitle}, Parte ${part}. Mira la siguiente parte en el video relacionado. #shorts`,
+    hashtags: ["#shorts", "#frutinovelas", "#dramadominicano"],
+    bestTime: "18:00-21:00 (hora RD) — validar con Métricas",
+    frequency: "1 Short por episodio (versión en bucle)",
+    cta: "Mira la Parte " + (part + 1) + " en el video relacionado",
+    metricsToWatch: ["visto vs deslizado (viewed vs swiped away)", "retención / duración media de la visualización"],
+    checklist: ["Título con keywords + #shorts, máximo 60 caracteres", "Sin marcas de agua, archivo limpio", "Bucle inicio-fin comprobado antes de subir", '"Video relacionado" vinculado a la siguiente parte'],
+    fileName: `${slug}-parte-${part}-youtube-shorts-limpio.mp4`,
+  };
+
+  return [instagram, facebook, tiktok, youtube];
+}
