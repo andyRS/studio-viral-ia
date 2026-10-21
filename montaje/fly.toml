@@ -1,7 +1,7 @@
 # Servidor de montaje en Fly.io. Desplegar desde esta carpeta con: fly deploy
 # Cambia "app" si Fly dice que el nombre ya está ocupado.
 app = "montaje-estudio-viral"
-primary_region = "mia"   # Miami, la más cercana a RD
+primary_region = "iad"   # Virginia (Miami ya no admite máquinas nuevas)
 
 [build]
   dockerfile = "Dockerfile"
