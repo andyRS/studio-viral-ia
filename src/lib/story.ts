@@ -3,6 +3,7 @@
 import { callLLM, EPISODE_RULES, templateEpisode } from "./llm";
 import { MANUAL_VIRAL, STYLES, type StyleKey } from "./knowledge";
 import { buildPlatformAdaptations } from "./platforms";
+import { templateHookVariants, type HookVariant } from "./hooks";
 
 const PALETTE = ["FF9A1F", "C08BFF", "5BC94A", "FF4D6D", "FFD23F", "4DD0E1", "B6F08A", "D9A066", "FF6B81", "F2C14E"];
 
@@ -14,7 +15,23 @@ function parseJson(raw: string): any {
   return JSON.parse(a >= 0 && b > a ? clean.slice(a, b + 1) : clean);
 }
 
+// Aprendizajes de métricas + gancho elegido del banco: contexto extra para el modelo.
+function extraContext(input: any) {
+  const parts: string[] = [];
+  if (input.learnings) parts.push(String(input.learnings));
+  const hook = Array.isArray(input.chosenHook) ? input.chosenHook.filter(Boolean) : [];
+  if (hook.length) parts.push(`GANCHO ELEGIDO POR EL USUARIO (obligatorio): usa exactamente estas líneas como hook y como guionJson.gancho, y construye los primeros 3 segundos alrededor de ellas: ${hook.map((l: string) => `"${l}"`).join(" / ")}`);
+  return parts.length ? "\n\n" + parts.join("\n\n") : "";
+}
+
+function applyChosenHook(ep: any, input: any) {
+  const chosen = Array.isArray(input.chosenHook) ? input.chosenHook.filter(Boolean) : [];
+  if (chosen.length) { ep.hook = chosen; ep.coverText = chosen[0]; ep.guionJson = { ...(ep.guionJson || {}), gancho: chosen }; }
+  return ep;
+}
+
 function normalizeEpisode(ep: any, input: any) {
+  applyChosenHook(ep, input);
   if (!ep.platformAdaptations || ep.platformAdaptations.length !== 4) ep.platformAdaptations = buildPlatformAdaptations({ ...input, hook: ep.hook });
   ep.platform_adaptations = ep.platformAdaptations;
   if (ep.guionJson?.colores) for (const k of Object.keys(ep.guionJson.colores)) ep.guionJson.colores[k] = String(ep.guionJson.colores[k]).replace("#", "").toUpperCase();
@@ -40,7 +57,7 @@ const EPISODE_KEYS = "title (título corto del episodio), summary (resumen de 3-
 export async function generateSeries(input: any) {
   const st = styleOf(input.style);
   if (!process.env.LLM_API_KEY) return templateSeries(input);
-  const system = `${EPISODE_RULES}\n\n${MANUAL_VIRAL}${input.learnings ? "\n\n" + input.learnings : ""}\n\nTAREA: crea una SERIE NUEVA a partir de la idea del usuario y escribe su EPISODIO 1.
+  const system = `${EPISODE_RULES}\n\n${MANUAL_VIRAL}${extraContext(input)}\n\nTAREA: crea una SERIE NUEVA a partir de la idea del usuario y escribe su EPISODIO 1.
 ESTILO VISUAL: ${st.visual}
 ESTILO DE VOZ: ${st.voice}
 Inventa de 3 a 6 personajes memorables con descripción visual fija y muy concreta (cabeza, pelo, ropa, accesorios) que se pueda repetir idéntica en cada prompt, un color de subtítulo distinto por personaje (hex sin #) y sus pronunciaciones difíciles.
@@ -61,14 +78,14 @@ export function templateSeries(input: any) {
     { name: "Antagonista", visualES: "Personaje rival (edita su descripción en Personajes)", clothing: "Ropa elegante", speechStyle: "Frío y calculador", pronunciations: [] },
   ]);
   const episode = templateEpisode({ ...input, theme: idea, characters });
-  return { mode: "plantilla-local", series: { title: idea.slice(0, 60), logline: idea, world: "", tone: "" }, characters, episode: { ...episode, title: "Episodio 1", summary: idea } };
+  return { mode: "plantilla-local", series: { title: idea.slice(0, 60), logline: idea, world: "", tone: "" }, characters, episode: applyChosenHook({ ...episode, title: "Episodio 1", summary: idea }, input) };
 }
 
 // ---------- CONTINUAR UNA SERIE ----------
 export async function generateNextEpisode(input: any) {
   const st = styleOf(input.style);
   if (!process.env.LLM_API_KEY) return templateNext(input);
-  const system = `${EPISODE_RULES}\n\n${MANUAL_VIRAL}${input.learnings ? "\n\n" + input.learnings : ""}\n\nTAREA: escribe el EPISODIO ${input.partNumber} de la serie "${input.series?.title}", continuando exactamente donde terminó el anterior.
+  const system = `${EPISODE_RULES}\n\n${MANUAL_VIRAL}${extraContext(input)}\n\nTAREA: escribe el EPISODIO ${input.partNumber} de la serie "${input.series?.title}", continuando exactamente donde terminó el anterior.
 ESTILO VISUAL: ${st.visual}
 ESTILO DE VOZ: ${st.voice}
 CONTINUIDAD OBLIGATORIA: usa los personajes existentes con su descripción, ropa y forma de hablar SIN cambiarlas; abre retomando el cliffhanger del episodio anterior; si es TikTok/Facebook empieza con "Anteriormente..." de 5-8 s; termina con un cliffhanger nuevo más fuerte. Si la historia necesita un personaje nuevo, créalo en newCharacters con descripción fija (máximo 2).
@@ -87,5 +104,21 @@ Responde SOLO JSON válido con esta forma: {"episode":{${EPISODE_KEYS}},"newChar
 export function templateNext(input: any) {
   const last = (input.history || []).slice(-1)[0];
   const episode = templateEpisode({ ...input, theme: input.wish || `Continuación de ${input.series?.title || "la serie"}`, previousSummary: last?.summary });
-  return { mode: "plantilla-local", episode: { ...episode, title: `Episodio ${input.partNumber}`, summary: input.wish || "Continuación (plantilla local: conecta la IA para continuidad real)." }, newCharacters: [] };
+  return { mode: "plantilla-local", episode: applyChosenHook({ ...episode, title: `Episodio ${input.partNumber}`, summary: input.wish || "Continuación (plantilla local: conecta la IA para continuidad real)." }, input), newCharacters: [] };
+}
+
+// ---------- BANCO DE GANCHOS: 5 VARIANTES ----------
+export async function generateHookVariants(input: any): Promise<{ mode: string; variants: HookVariant[] }> {
+  if (!process.env.LLM_API_KEY) return { mode: "plantilla-local", variants: templateHookVariants(input) };
+  const st = styleOf(input.style);
+  const system = `${MANUAL_VIRAL}${input.learnings ? "\n\n" + input.learnings : ""}
+
+TAREA: propón 5 GANCHOS distintos para los primeros 3 segundos del episodio. Cada gancho son 2 líneas cortas de texto en pantalla (máximo 8 palabras por línea), en español, sin presentaciones, con conflicto o intriga visible desde el segundo 0. Usa 5 mecanismos DIFERENTES (ironía dramática, bomba de tiempo, revelación con objeto, humillación pública, pregunta directa…). Si hay ganchos ganadores en el banco, imita su estructura sin copiarlos.
+ESTILO: ${st.label}
+Responde SOLO JSON válido: {"variants":[{"lines":["línea 1","línea 2"],"why":"por qué engancha, 1 frase"}]}`;
+  const raw = await callLLM(system, JSON.stringify({ idea: input.idea, deseo: input.wish, serie: input.series, personajes: (input.characters || []).map((c: any) => c.name), episodiosAnteriores: input.history, bancoDeGanchos: input.bank }));
+  try {
+    const v = (parseJson(raw).variants || []).filter((x: any) => Array.isArray(x?.lines) && x.lines.length).slice(0, 5).map((x: any) => ({ lines: x.lines.slice(0, 2).map(String), why: String(x.why || "") }));
+    return v.length ? { mode: "llm", variants: v } : { mode: "plantilla-local", variants: templateHookVariants(input) };
+  } catch { return { mode: "plantilla-local", variants: templateHookVariants(input) }; }
 }

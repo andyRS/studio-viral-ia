@@ -6,6 +6,8 @@ import AiAuthNotice from "./AiAuthNotice";
 import { useData } from "@/lib/DataContext";
 import { postApi, isAuthError } from "@/lib/api-client";
 import { learnFromMetrics } from "@/lib/learning";
+import { buildHookBank } from "@/lib/hooks";
+import HookPicker from "./HookPicker";
 import { templateSeries, templateNext } from "@/lib/story";
 import { STYLES, type StyleKey } from "@/lib/knowledge";
 
@@ -46,6 +48,7 @@ export default function GeneratorModule() {
   // Continuar
   const [seriesId, setSeriesId] = useState("");
   const [wish, setWish] = useState("");
+  const [chosenHook, setChosenHook] = useState<string[] | null>(null);
 
   const episodesOf = (sid: string) => data.episodes.filter((e: any) => e.seriesId === sid).sort((a: any, b: any) => String(a.createdAt).localeCompare(String(b.createdAt)));
   const seriesList = useMemo(() => data.series.map((s: any) => {
@@ -55,6 +58,8 @@ export default function GeneratorModule() {
   const current = seriesList.find((s: any) => s.id === seriesId);
   const currentChars = data.characters.filter((c: any) => c.seriesId === seriesId);
   const learnings = useMemo(() => learnFromMetrics(data.metrics)?.text, [data.metrics]);
+  const bank = useMemo(() => buildHookBank(data.episodes, data.metrics), [data.episodes, data.metrics]);
+  const bankTop = bank.slice(0, 10).map(h => ({ gancho: h.hook, vistas: h.views, plataformas: h.platforms }));
   const account = data.accounts.find((a: any) => a.id === accountId) || data.accounts[0];
 
   async function call(path: string, body: any, local: () => any) {
@@ -79,14 +84,14 @@ export default function GeneratorModule() {
     if (!idea.trim()) { setNotice("Escribe la idea de la historia o elige una de las sugerencias."); return; }
     setLoading(true); setNotice(""); setAuthError(false);
     try {
-      const body = { idea, style, duration, account, notes, learnings };
+      const body = { idea, style, duration, account, notes, learnings, chosenHook };
       const res = await call("/api/series", body, () => templateSeries(body)); if (!res) return;
       const d = res.data;
       const s = await insert("series", { title: d.series?.title || idea.slice(0, 60), description: d.series?.logline || idea, accountId: account?.id });
       for (const c of d.characters || []) await insert("characters", { ...c, seriesId: s.id });
       const bible = { style, logline: d.series?.logline, world: d.series?.world, tone: d.series?.tone };
       const out = await saveEpisode(s.id, 1, d.episode, bible);
-      setSeriesId(s.id); setResult({ episode: out, seriesId: s.id, part: 1 }); setView("resultado"); setNotice(res.note);
+      setSeriesId(s.id); setResult({ episode: out, seriesId: s.id, part: 1 }); setView("resultado"); setNotice(res.note); setChosenHook(null);
     } finally { setLoading(false); }
   }
 
@@ -97,21 +102,21 @@ export default function GeneratorModule() {
       const eps = current.eps; const part = eps.length + 1;
       const bible = eps[0]?.output?.seriesBible || { style: "frutinovela", logline: current.description };
       const body = {
-        series: { title: current.title, logline: current.description }, bible, style: bible.style, partNumber: part, wish, duration, account, learnings,
+        series: { title: current.title, logline: current.description }, bible, style: bible.style, partNumber: part, wish, duration, account, learnings, chosenHook,
         characters: currentChars.map((c: any) => ({ name: c.name, visualES: c.visualES, visualEN: c.visualEN, clothing: c.clothing, subtitleColor: c.subtitleColor, speechStyle: c.speechStyle, pronunciations: c.pronunciations })),
         history: eps.map((e: any, i: number) => ({ part: i + 1, title: e.title, summary: e.output?.summary || e.theme })),
       };
       const res = await call("/api/next-episode", body, () => templateNext(body)); if (!res) return;
       for (const c of res.data.newCharacters || []) await insert("characters", { ...c, seriesId: current.id });
       const out = await saveEpisode(current.id, part, res.data.episode, bible);
-      setResult({ episode: out, seriesId: current.id, part }); setView("resultado"); setWish("");
+      setResult({ episode: out, seriesId: current.id, part }); setView("resultado"); setWish(""); setChosenHook(null);
       setNotice([res.note, (res.data.newCharacters || []).length ? `Personajes nuevos añadidos: ${res.data.newCharacters.map((c: any) => c.name).join(", ")}.` : ""].filter(Boolean).join(" "));
     } finally { setLoading(false); }
   }
 
   function openEpisode(sid: string, ep: any, part: number) { setSeriesId(sid); setResult({ episode: ep.output || {}, seriesId: sid, part }); setView("resultado"); setNotice(""); }
 
-  const Back = ({ to = "inicio" as View }) => <button onClick={() => { setView(to); setNotice(""); setAuthError(false); }} className="mb-4 text-sm text-slate-400 hover:text-white">← Volver</button>;
+  const Back = ({ to = "inicio" as View }) => <button onClick={() => { setView(to); setNotice(""); setAuthError(false); setChosenHook(null); }} className="mb-4 text-sm text-slate-400 hover:text-white">← Volver</button>;
 
   return (
     <section>
@@ -129,6 +134,12 @@ export default function GeneratorModule() {
             <span className="text-sm text-slate-400">{seriesList.length ? "Elige la serie y la IA escribe el siguiente episodio con los mismos personajes." : "Aún no tienes series. Crea la primera."}</span>
           </button>
         </div>
+        {!!bank.length && <>
+          <h3 className="mt-8 text-sm font-semibold uppercase tracking-wider text-slate-400">🎣 Banco de ganchos</h3>
+          <div className="mt-3 overflow-x-auto rounded-xl bg-[#121826]"><table className="w-full text-sm"><thead><tr className="text-left text-xs text-slate-400"><th className="p-2">Gancho</th><th className="p-2">Episodio</th><th className="p-2">Vistas</th><th className="p-2">Plataformas</th></tr></thead>
+            <tbody>{bank.slice(0, 12).map((h, i) => <tr key={i} className="border-t border-slate-800"><td className="p-2 font-medium">{h.hook}</td><td className="p-2 text-slate-400">{h.source}</td><td className="p-2">{h.views ? h.views.toLocaleString() : <span className="text-slate-500">sin métricas</span>}</td><td className="p-2 text-xs text-slate-400">{h.platforms.join(", ") || "—"}</td></tr>)}</tbody></table></div>
+          <p className="mt-1 text-xs text-slate-500">Registra las vistas en Métricas con el mismo título del episodio y aquí verás qué gancho rindió más. La IA usa los mejores al proponer ganchos nuevos.</p>
+        </>}
         {!!seriesList.length && <>
           <h3 className="mt-8 text-sm font-semibold uppercase tracking-wider text-slate-400">Tus series</h3>
           <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -174,6 +185,7 @@ export default function GeneratorModule() {
           </div>
           <div><p className="field-label">Notas opcionales</p>
             <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Ej.: que la abuela se llame Doña Guanábana, que pase en Navidad…" /></div>
+          <HookPicker online={mode === "supabase"} chosen={chosenHook} onChoose={setChosenHook} body={() => ({ idea, style, learnings, bank: bankTop })} />
           <button disabled={loading} onClick={createStory} className="w-full rounded bg-amber-500 px-5 py-3 text-base font-bold sm:w-auto">{loading ? "Creando la serie…" : "Crear serie y episodio 1"}</button>
         </div>
       </>}
@@ -207,6 +219,7 @@ export default function GeneratorModule() {
               <div className="rounded-xl bg-[#121826] p-4">
                 <p className="field-label">¿Qué quieres que pase en el episodio {current.eps.length + 1}? (opcional)</p>
                 <textarea value={wish} onChange={e => setWish(e.target.value)} placeholder="Déjalo vacío y la IA decide el giro que más enganche." />
+                <div className="mt-3"><HookPicker online={mode === "supabase"} chosen={chosenHook} onChoose={setChosenHook} body={() => ({ wish, style: current.style, series: { title: current.title, logline: current.description }, characters: currentChars.map((c: any) => ({ name: c.name })), history: current.eps.map((e: any, i: number) => ({ part: i + 1, summary: e.output?.summary || e.theme })), learnings, bank: bankTop })} /></div>
                 <div className="mt-3 flex flex-wrap items-center gap-3">
                   <select value={duration} onChange={e => setDuration(Number(e.target.value))} className="w-auto"><option value={45}>45 s</option><option value={60}>1 min</option><option value={90}>1 min 30</option><option value={120}>2 min</option><option value={180}>3 min</option></select>
                   <button disabled={loading} onClick={continueStory} className="rounded bg-amber-500 px-5 py-2.5 font-bold">{loading ? "Escribiendo…" : `Crear episodio ${current.eps.length + 1}`}</button>
