@@ -5,6 +5,7 @@ import PlatformAdaptations from "./PlatformAdaptations";
 import AiAuthNotice from "./AiAuthNotice";
 import { useData } from "@/lib/DataContext";
 import { postApi, isAuthError } from "@/lib/api-client";
+import { learnFromMetrics } from "@/lib/learning";
 import { templateSeries, templateNext } from "@/lib/story";
 import { STYLES, type StyleKey } from "@/lib/knowledge";
 
@@ -53,6 +54,7 @@ export default function GeneratorModule() {
   }).sort((a: any, b: any) => String(b.last?.createdAt || "").localeCompare(String(a.last?.createdAt || ""))), [data.series, data.episodes]);
   const current = seriesList.find((s: any) => s.id === seriesId);
   const currentChars = data.characters.filter((c: any) => c.seriesId === seriesId);
+  const learnings = useMemo(() => learnFromMetrics(data.metrics)?.text, [data.metrics]);
   const account = data.accounts.find((a: any) => a.id === accountId) || data.accounts[0];
 
   async function call(path: string, body: any, local: () => any) {
@@ -77,7 +79,7 @@ export default function GeneratorModule() {
     if (!idea.trim()) { setNotice("Escribe la idea de la historia o elige una de las sugerencias."); return; }
     setLoading(true); setNotice(""); setAuthError(false);
     try {
-      const body = { idea, style, duration, account, notes };
+      const body = { idea, style, duration, account, notes, learnings };
       const res = await call("/api/series", body, () => templateSeries(body)); if (!res) return;
       const d = res.data;
       const s = await insert("series", { title: d.series?.title || idea.slice(0, 60), description: d.series?.logline || idea, accountId: account?.id });
@@ -95,7 +97,7 @@ export default function GeneratorModule() {
       const eps = current.eps; const part = eps.length + 1;
       const bible = eps[0]?.output?.seriesBible || { style: "frutinovela", logline: current.description };
       const body = {
-        series: { title: current.title, logline: current.description }, bible, style: bible.style, partNumber: part, wish, duration, account,
+        series: { title: current.title, logline: current.description }, bible, style: bible.style, partNumber: part, wish, duration, account, learnings,
         characters: currentChars.map((c: any) => ({ name: c.name, visualES: c.visualES, visualEN: c.visualEN, clothing: c.clothing, subtitleColor: c.subtitleColor, speechStyle: c.speechStyle, pronunciations: c.pronunciations })),
         history: eps.map((e: any, i: number) => ({ part: i + 1, title: e.title, summary: e.output?.summary || e.theme })),
       };

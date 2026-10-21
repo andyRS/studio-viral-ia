@@ -40,7 +40,7 @@ const EPISODE_KEYS = "title (título corto del episodio), summary (resumen de 3-
 export async function generateSeries(input: any) {
   const st = styleOf(input.style);
   if (!process.env.LLM_API_KEY) return templateSeries(input);
-  const system = `${EPISODE_RULES}\n\n${MANUAL_VIRAL}\n\nTAREA: crea una SERIE NUEVA a partir de la idea del usuario y escribe su EPISODIO 1.
+  const system = `${EPISODE_RULES}\n\n${MANUAL_VIRAL}${input.learnings ? "\n\n" + input.learnings : ""}\n\nTAREA: crea una SERIE NUEVA a partir de la idea del usuario y escribe su EPISODIO 1.
 ESTILO VISUAL: ${st.visual}
 ESTILO DE VOZ: ${st.voice}
 Inventa de 3 a 6 personajes memorables con descripción visual fija y muy concreta (cabeza, pelo, ropa, accesorios) que se pueda repetir idéntica en cada prompt, un color de subtítulo distinto por personaje (hex sin #) y sus pronunciaciones difíciles.
@@ -68,7 +68,7 @@ export function templateSeries(input: any) {
 export async function generateNextEpisode(input: any) {
   const st = styleOf(input.style);
   if (!process.env.LLM_API_KEY) return templateNext(input);
-  const system = `${EPISODE_RULES}\n\n${MANUAL_VIRAL}\n\nTAREA: escribe el EPISODIO ${input.partNumber} de la serie "${input.series?.title}", continuando exactamente donde terminó el anterior.
+  const system = `${EPISODE_RULES}\n\n${MANUAL_VIRAL}${input.learnings ? "\n\n" + input.learnings : ""}\n\nTAREA: escribe el EPISODIO ${input.partNumber} de la serie "${input.series?.title}", continuando exactamente donde terminó el anterior.
 ESTILO VISUAL: ${st.visual}
 ESTILO DE VOZ: ${st.voice}
 CONTINUIDAD OBLIGATORIA: usa los personajes existentes con su descripción, ropa y forma de hablar SIN cambiarlas; abre retomando el cliffhanger del episodio anterior; si es TikTok/Facebook empieza con "Anteriormente..." de 5-8 s; termina con un cliffhanger nuevo más fuerte. Si la historia necesita un personaje nuevo, créalo en newCharacters con descripción fija (máximo 2).

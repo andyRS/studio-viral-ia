@@ -4,6 +4,7 @@ import AiAuthNotice from "./AiAuthNotice";
 import { useData } from "@/lib/DataContext";
 import { postApi, isAuthError } from "@/lib/api-client";
 import { templateMetricRecommendations } from "@/lib/llm";
+import { learnFromMetrics } from "@/lib/learning";
 
 const PLATFORMS = ["Instagram","Facebook","TikTok","YouTube Shorts"];
 function platformCells(m: any){
@@ -98,6 +99,7 @@ export default function MetricsModule(){
 
     <div className="grid md:grid-cols-3 gap-3 mt-4">{[["formula","Fórmula"],["hook","Gancho"],["duration","Duración"]].map(([k, label]) => <div key={k} className="rounded bg-[#121826] p-3"><b className="text-sm">Ranking {label}</b>{rank(k).map(([n, v]: any, i: number) => <p key={i} className="text-xs mt-1">{i + 1}. {n} — {Number(v).toLocaleString()} vistas</p>)}</div>)}</div>
     <div className="mt-3 rounded bg-emerald-900/30 p-3 text-sm">📈 Crecimiento: +{items.reduce((a, m) => a + m.followers, 0)} seguidores en el periodo · {items.reduce((a, m) => a + m.views, 0).toLocaleString()} vistas totales</div>
+    {(() => { const L = learnFromMetrics(items); return <div className="mt-3 rounded bg-violet-900/30 border border-violet-500/30 p-3 text-sm"><b>🧠 Lo que la IA aprende de tus métricas</b>{L ? <ul className="list-disc ml-5 mt-1 space-y-0.5">{L.hooks.length > 0 && <li>Mejores ganchos: {L.hooks.join(" · ")}</li>}{L.formulas.length > 0 && <li>Fórmulas ganadoras: {L.formulas.join(" · ")}</li>}{L.durations.length > 0 && <li>Mejor duración: {L.durations.join(", ")}</li>}</ul> : <p className="text-slate-400 mt-1">Registra al menos 2 videos con vistas y la IA empezará a usarlos en cada guion nuevo.</p>}{L && <p className="text-xs text-slate-400 mt-1">Esto se envía automáticamente a la IA al crear historias y episodios.</p>}</div>; })()}
     <button onClick={analyze} className="mt-3 rounded bg-amber-500 text-black font-bold px-4 py-2">Analizar con IA</button>
     {authError && <AiAuthNotice onLocalTemplate={analyzeLocal}/>}
     {recs.length > 0 && <><ol className="list-decimal ml-5 mt-3 text-sm space-y-1">{recs.map((r, i) => <li key={i}>{r}</li>)}</ol>{recMode && <p className="text-xs text-slate-500 mt-1">Fuente: {recMode}</p>}</>}
