@@ -1,6 +1,12 @@
 export async function callLLM(system:string, user:string):Promise<string>{
   const key=process.env.LLM_API_KEY; const provider=(process.env.LLM_PROVIDER||"anthropic").toLowerCase(); const model=process.env.LLM_MODEL||(provider==="openai"?"gpt-4o-mini":"claude-sonnet-5-5");
   if(!key) throw new Error("Falta LLM_API_KEY en variables de entorno. Configúrala en .env.local o usa el modo plantilla local.");
+  if(provider==="gemini"){
+    const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,{method:"POST",headers:{"x-goog-api-key":key,"Content-Type":"application/json"},body:JSON.stringify({systemInstruction:{parts:[{text:system}]},contents:[{role:"user",parts:[{text:user}]}],generationConfig:{temperature:0.8}})});
+    if(r.status===429) throw new Error("Límite gratuito de Gemini alcanzado. Se reinicia cada día a medianoche (hora del Pacífico); inténtalo más tarde.");
+    if(!r.ok) throw new Error(`Gemini error ${r.status}: ${await r.text()}`);
+    const j=await r.json(); return (j.candidates?.[0]?.content?.parts||[]).map((p:any)=>p.text||"").join("\n");
+  }
   if(provider==="openai"){
     const r=await fetch("https://api.openai.com/v1/chat/completions",{method:"POST",headers:{Authorization:`Bearer ${key}`,"Content-Type":"application/json"},body:JSON.stringify({model,messages:[{role:"system",content:system},{role:"user",content:user}],temperature:0.8})});
     if(!r.ok) throw new Error(`OpenAI error ${r.status}: ${await r.text()}`);
