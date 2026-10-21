@@ -8,6 +8,7 @@ import { postApi, isAuthError } from "@/lib/api-client";
 import { learnFromMetrics } from "@/lib/learning";
 import { buildHookBank } from "@/lib/hooks";
 import HookPicker from "./HookPicker";
+import MontajePanel from "./MontajePanel";
 import { templateSeries, templateNext } from "@/lib/story";
 import { STYLES, type StyleKey } from "@/lib/knowledge";
 
@@ -254,8 +255,8 @@ export default function GeneratorModule() {
 }
 
 function Result({ episode: out, part, seriesTitle, onBack, onNext }: any) {
-  const [tab, setTab] = useState<"guion" | "prompts" | "plataformas" | "archivos">("guion");
-  const tabs = [["guion", "Guion"], ["prompts", "Prompts"], ["plataformas", "Plataformas"], ["archivos", "Archivos"]] as const;
+  const [tab, setTab] = useState<"guion" | "prompts" | "plataformas" | "archivos" | "montaje">("guion");
+  const tabs = [["guion", "Guion"], ["prompts", "Prompts"], ["plataformas", "Plataformas"], ["archivos", "Archivos"], ["montaje", "Montaje"]] as const;
   return <>
     <button onClick={onBack} className="mb-4 text-sm text-slate-400 hover:text-white">← Inicio</button>
     <div className="flex flex-wrap items-start gap-3">
@@ -292,6 +293,7 @@ function Result({ episode: out, part, seriesTitle, onBack, onNext }: any) {
         <p className="text-sm text-slate-400">{out.description} {(out.hashtags || []).join(" ")}</p>
         <div className="flex flex-wrap gap-2"><DownloadJson data={out.guionJson || {}} /><DownloadJson data={out.platformAdaptations || []} filename="adaptaciones-plataformas.json" /></div>
       </div>}
+      {tab === "montaje" && <MontajePanel guion={out.guionJson || {}} title={`${seriesTitle || "serie"} ${part}`} />}
     </div>
   </>;
 }
