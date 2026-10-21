@@ -1,121 +1,299 @@
 "use client";
 import { useMemo, useState } from "react";
-import { DolaButton } from "./CopyButton";
-import CopyButton, { DownloadJson } from "./CopyButton";
-import PlatformAdaptations, { BaseFormulaCard } from "./PlatformAdaptations";
+import CopyButton, { DownloadJson, DolaButton } from "./CopyButton";
+import PlatformAdaptations from "./PlatformAdaptations";
 import AiAuthNotice from "./AiAuthNotice";
 import { useData } from "@/lib/DataContext";
 import { postApi, isAuthError } from "@/lib/api-client";
-import { templateEpisode } from "@/lib/llm";
+import { templateSeries, templateNext } from "@/lib/story";
+import { STYLES, type StyleKey } from "@/lib/knowledge";
 
-export default function GeneratorModule(){
+type View = "inicio" | "nueva" | "continuar" | "resultado";
+
+const IDEAS: Record<StyleKey, string[]> = {
+  frutinovela: [
+    "Un plátano motoconchista de Los Mina se enamora de la hija de una familia rica de cocos de Piantini",
+    "La esposa descubre que su marido, que 'trabaja en Nueva York', vive en el mismo barrio con otra",
+    "Un colmadero gana la lotería y todo el barrio aparece diciendo que es su familia",
+  ],
+  cristiana: [
+    "Una hija se avergüenza de su madre vendedora de dulces hasta que la ve orar por ella en la iglesia",
+    "Un padre que abandonó a sus hijos vuelve enfermo y pide perdón en Nochebuena",
+    "Un joven se burla de la fe de su abuela hasta que una noche ella es la única que contesta su llamada",
+  ],
+  cine90: [
+    "Una mujer encuentra en una tienda de antigüedades las cartas de amor que su madre nunca envió",
+    "Un taxista lleva cada año, el mismo día, a la misma pasajera al malecón sin saber por qué",
+    "Una cantante de boleros reconoce en primera fila al hombre que la dejó plantada en el altar",
+  ],
+};
+
+export default function GeneratorModule() {
   const { data, insert, remove, mode } = useData();
-  const accounts = data.accounts; const allSeries = data.series; const formulas = data.formulas; const allCharacters = data.characters;
-  const [accountId, setAccountId] = useState("");
-  const [seriesId, setSeriesId] = useState("");
-  const [formulaId, setFormulaId] = useState("");
-  const [selectedChars, setSelectedChars] = useState<string[]>([]);
-  const [theme, setTheme] = useState("Manguito descubre que Doña Aguacate le oculta una herencia");
-  const [duration, setDuration] = useState(90);
-  const [prev, setPrev] = useState("");
-  const [part, setPart] = useState(1);
-  const [out, setOut] = useState<any>(null);
+  const [view, setView] = useState<View>("inicio");
   const [loading, setLoading] = useState(false);
   const [authError, setAuthError] = useState(false);
   const [notice, setNotice] = useState("");
+  const [result, setResult] = useState<{ episode: any; seriesId: string; part: number } | null>(null);
 
-  const series = allSeries.find(s => s.id === seriesId) || allSeries[0];
-  const seriesCharacters = useMemo(() => series ? allCharacters.filter(c => c.seriesId === series.id) : allCharacters, [allCharacters, series]);
-  const characters = selectedChars.length ? allCharacters.filter(c => selectedChars.includes(c.id)) : seriesCharacters;
-  const formula = formulas.find(f => f.id === formulaId) || formulas[0];
-  const account = accounts.find(a => a.id === accountId) || accounts[0];
+  // Historia nueva
+  const [idea, setIdea] = useState("");
+  const [style, setStyle] = useState<StyleKey>("frutinovela");
+  const [accountId, setAccountId] = useState("");
+  const [duration, setDuration] = useState(90);
+  const [notes, setNotes] = useState("");
+  // Continuar
+  const [seriesId, setSeriesId] = useState("");
+  const [wish, setWish] = useState("");
 
-  function buildInput(){
-    return { theme, duration, previousSummary: prev, partNumber: part, seriesTitle: series?.title || "Manguito y Doña Aguacate", account, series, characters, formula };
+  const episodesOf = (sid: string) => data.episodes.filter((e: any) => e.seriesId === sid).sort((a: any, b: any) => String(a.createdAt).localeCompare(String(b.createdAt)));
+  const seriesList = useMemo(() => data.series.map((s: any) => {
+    const eps = episodesOf(s.id); const last = eps[eps.length - 1];
+    return { ...s, eps, last, style: (eps[0]?.output?.seriesBible?.style || "frutinovela") as StyleKey };
+  }).sort((a: any, b: any) => String(b.last?.createdAt || "").localeCompare(String(a.last?.createdAt || ""))), [data.series, data.episodes]);
+  const current = seriesList.find((s: any) => s.id === seriesId);
+  const currentChars = data.characters.filter((c: any) => c.seriesId === seriesId);
+  const account = data.accounts.find((a: any) => a.id === accountId) || data.accounts[0];
+
+  async function call(path: string, body: any, local: () => any) {
+    if (mode !== "supabase") return { data: local(), note: "Modo local: se usó una plantilla sin IA. Inicia sesión para que la IA escriba la historia completa." };
+    const r = await postApi(path, body);
+    if (isAuthError(r)) { setAuthError(true); return null; }
+    if (!r.json?.ok) { setNotice("Error de la IA: " + (r.json?.error || "HTTP " + r.status)); return null; }
+    return { data: r.json.data, note: r.json.data?.mode === "plantilla-local" ? "El servidor no tiene clave de IA configurada: se usó una plantilla." : "" };
   }
-  async function persistEpisode(dataOut: any){
-    const adaptations = dataOut.platformAdaptations || dataOut.platform_adaptations || [];
-    const normalized = { ...dataOut, platformAdaptations: adaptations, platform_adaptations: adaptations };
+
+  async function saveEpisode(sid: string, part: number, ep: any, bible?: any) {
+    const output = { ...ep, partNumber: part, seriesBible: bible ?? ep.seriesBible };
     await insert("episodes", {
-      title: theme, theme, duration, status: "Guion", previousSummary: prev,
-      accountId: account?.id, seriesId: series?.id, formulaId: formula?.id,
-      createdAt: new Date().toISOString(), versions: [normalized], output: normalized,
-      platformAdaptations: adaptations, platform_adaptations: adaptations,
+      title: ep.title || `Episodio ${part}`, theme: ep.summary || ep.title || "", duration, status: "Guion",
+      previousSummary: "", accountId: account?.id, seriesId: sid, createdAt: new Date().toISOString(),
+      versions: [output], output, platformAdaptations: ep.platformAdaptations || [], platform_adaptations: ep.platformAdaptations || [],
     });
-    return normalized;
+    return output;
   }
-  async function applyResult(dataOut: any, note: string){
-    const normalized = await persistEpisode(dataOut);
-    setOut(normalized); setNotice(note);
-  }
-  async function genLocal(){
-    setAuthError(false);
-    await applyResult(templateEpisode(buildInput()), "Generado con plantilla local en el cliente (sin IA). La API protegida /api/generate requiere iniciar sesión.");
-  }
-  async function gen(){
-    setLoading(true); setAuthError(false); setNotice("");
+
+  async function createStory() {
+    if (!idea.trim()) { setNotice("Escribe la idea de la historia o elige una de las sugerencias."); return; }
+    setLoading(true); setNotice(""); setAuthError(false);
     try {
-      if (mode !== "supabase") { await genLocal(); return; }
-      const r = await postApi("/api/generate", buildInput());
-      if (isAuthError(r)) { setAuthError(true); return; }
-      if (!r.json?.ok) { setNotice("Error de la API: " + (r.json?.error || ("HTTP " + r.status)) + " — puedes usar la plantilla local."); return; }
-      await applyResult(r.json.data, r.json.data?.mode === "plantilla-local" ? "Generado con plantilla local del servidor (sin LLM_API_KEY) y guardado en Supabase." : "Generado con IA y guardado en Supabase (tabla episodes).");
+      const body = { idea, style, duration, account, notes };
+      const res = await call("/api/series", body, () => templateSeries(body)); if (!res) return;
+      const d = res.data;
+      const s = await insert("series", { title: d.series?.title || idea.slice(0, 60), description: d.series?.logline || idea, accountId: account?.id });
+      for (const c of d.characters || []) await insert("characters", { ...c, seriesId: s.id });
+      const bible = { style, logline: d.series?.logline, world: d.series?.world, tone: d.series?.tone };
+      const out = await saveEpisode(s.id, 1, d.episode, bible);
+      setSeriesId(s.id); setResult({ episode: out, seriesId: s.id, part: 1 }); setView("resultado"); setNotice(res.note);
     } finally { setLoading(false); }
   }
-  function toggleChar(id: string){
-    setSelectedChars(prevSel => prevSel.includes(id) ? prevSel.filter(x => x !== id) : [...prevSel, id]);
-  }
-  function loadEpisode(ep: any){
-    if (ep.output) { setOut({ ...ep.output, platformAdaptations: ep.platformAdaptations || ep.output.platformAdaptations || [] }); setTheme(ep.theme || ep.title); setDuration(ep.duration || 90); }
+
+  async function continueStory() {
+    if (!current) return;
+    setLoading(true); setNotice(""); setAuthError(false);
+    try {
+      const eps = current.eps; const part = eps.length + 1;
+      const bible = eps[0]?.output?.seriesBible || { style: "frutinovela", logline: current.description };
+      const body = {
+        series: { title: current.title, logline: current.description }, bible, style: bible.style, partNumber: part, wish, duration, account,
+        characters: currentChars.map((c: any) => ({ name: c.name, visualES: c.visualES, visualEN: c.visualEN, clothing: c.clothing, subtitleColor: c.subtitleColor, speechStyle: c.speechStyle, pronunciations: c.pronunciations })),
+        history: eps.map((e: any, i: number) => ({ part: i + 1, title: e.title, summary: e.output?.summary || e.theme })),
+      };
+      const res = await call("/api/next-episode", body, () => templateNext(body)); if (!res) return;
+      for (const c of res.data.newCharacters || []) await insert("characters", { ...c, seriesId: current.id });
+      const out = await saveEpisode(current.id, part, res.data.episode, bible);
+      setResult({ episode: out, seriesId: current.id, part }); setView("resultado"); setWish("");
+      setNotice([res.note, (res.data.newCharacters || []).length ? `Personajes nuevos añadidos: ${res.data.newCharacters.map((c: any) => c.name).join(", ")}.` : ""].filter(Boolean).join(" "));
+    } finally { setLoading(false); }
   }
 
-  return <section>
-    <h2 className="text-xl font-bold">Generador de episodios</h2>
-    <div className="mt-4"><BaseFormulaCard/></div>
+  function openEpisode(sid: string, ep: any, part: number) { setSeriesId(sid); setResult({ episode: ep.output || {}, seriesId: sid, part }); setView("resultado"); setNotice(""); }
 
-    <div className="grid gap-2 md:grid-cols-3 mt-4">
-      <select value={account?.id || ""} onChange={e => setAccountId(e.target.value)}><option value="">Cuenta…</option>{accounts.map(a => <option key={a.id} value={a.id}>{a.name} ({a.platform})</option>)}</select>
-      <select value={series?.id || ""} onChange={e => { setSeriesId(e.target.value); setSelectedChars([]); }}><option value="">Serie…</option>{allSeries.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}</select>
-      <select value={formula?.id || ""} onChange={e => setFormulaId(e.target.value)}><option value="">Fórmula…</option>{formulas.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select>
-    </div>
-    <div className="mt-3 rounded bg-[#121826] p-3">
-      <p className="text-xs text-slate-400 mb-2">Personajes (si no marcas ninguno, se usan todos los de la serie):</p>
-      <div className="flex flex-wrap gap-2">
-        {seriesCharacters.map(c => <label key={c.id} className="flex items-center gap-1 text-sm rounded bg-slate-800 px-2 py-1">
-          <input type="checkbox" className="w-auto" checked={selectedChars.includes(c.id)} onChange={() => toggleChar(c.id)}/> {c.name}
-        </label>)}
-        {seriesCharacters.length === 0 && <span className="text-xs text-slate-500">Sin personajes en esta serie.</span>}
+  const Back = ({ to = "inicio" as View }) => <button onClick={() => { setView(to); setNotice(""); setAuthError(false); }} className="mb-4 text-sm text-slate-400 hover:text-white">← Volver</button>;
+
+  return (
+    <section>
+      {view === "inicio" && <>
+        <h2 className="text-xl font-bold">¿Qué quieres crear hoy?</h2>
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <button onClick={() => setView("nueva")} className="choice-card group">
+            <span className="choice-icon bg-gradient-to-br from-amber-400 to-orange-600 text-black">✦</span>
+            <span className="text-lg font-bold">Crear historia nueva</span>
+            <span className="text-sm text-slate-400">Das la idea y la IA crea la serie, sus personajes fijos y el episodio 1 con la fórmula viral.</span>
+          </button>
+          <button onClick={() => setView("continuar")} disabled={!seriesList.length} className="choice-card group">
+            <span className="choice-icon bg-violet-500/20 text-violet-200">▶</span>
+            <span className="text-lg font-bold">Continuar una serie</span>
+            <span className="text-sm text-slate-400">{seriesList.length ? "Elige la serie y la IA escribe el siguiente episodio con los mismos personajes." : "Aún no tienes series. Crea la primera."}</span>
+          </button>
+        </div>
+        {!!seriesList.length && <>
+          <h3 className="mt-8 text-sm font-semibold uppercase tracking-wider text-slate-400">Tus series</h3>
+          <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {seriesList.map((s: any) => (
+              <div key={s.id} className="rounded-xl bg-[#121826] p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-amber-300/80">{STYLES[s.style as StyleKey]?.label || "Serie"}</p>
+                <p className="mt-1 font-bold">{s.title}</p>
+                <p className="mt-1 line-clamp-2 text-sm text-slate-400">{s.last?.output?.summary || s.description}</p>
+                <div className="mt-3 flex items-center gap-2">
+                  <span className="text-xs text-slate-500">{s.eps.length} episodio(s)</span>
+                  <button onClick={() => { setSeriesId(s.id); setView("continuar"); }} className="ml-auto rounded bg-amber-500 px-3 py-1.5 text-xs font-bold">Continuar</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>}
+      </>}
+
+      {view === "nueva" && <>
+        <Back />
+        <h2 className="text-xl font-bold">Historia nueva</h2>
+        <div className="mt-4 space-y-4">
+          <div>
+            <p className="field-label">Estilo</p>
+            <div className="grid gap-2 sm:grid-cols-3">
+              {(Object.keys(STYLES) as StyleKey[]).map(k => (
+                <button key={k} onClick={() => setStyle(k)} className={`rounded-xl border px-3 py-3 text-left text-sm ${style === k ? "border-amber-400/60 bg-amber-400/10 text-amber-100" : "border-white/10 bg-white/[.03] text-slate-300"}`}>{STYLES[k].label}</button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <p className="field-label">Idea de la historia</p>
+            <textarea value={idea} onChange={e => setIdea(e.target.value)} placeholder="Ej.: Una madre humilde descubre que su hijo rico la niega delante de sus amigos…" />
+            <div className="mt-2 flex flex-wrap gap-2">
+              {IDEAS[style].map(t => <button key={t} onClick={() => setIdea(t)} className="rounded-full border border-white/10 bg-white/[.03] px-3 py-1.5 text-left text-xs text-slate-300 hover:bg-white/10">💡 {t}</button>)}
+            </div>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div><p className="field-label">Cuenta principal</p>
+              <select value={account?.id || ""} onChange={e => setAccountId(e.target.value)}>{data.accounts.map((a: any) => <option key={a.id} value={a.id}>{a.name} · {a.platform}</option>)}</select></div>
+            <div><p className="field-label">Duración</p>
+              <select value={duration} onChange={e => setDuration(Number(e.target.value))}><option value={45}>45 s</option><option value={60}>1 min</option><option value={90}>1 min 30</option><option value={120}>2 min</option><option value={180}>3 min</option></select></div>
+          </div>
+          <div><p className="field-label">Notas opcionales</p>
+            <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Ej.: que la abuela se llame Doña Guanábana, que pase en Navidad…" /></div>
+          <button disabled={loading} onClick={createStory} className="w-full rounded bg-amber-500 px-5 py-3 text-base font-bold sm:w-auto">{loading ? "Creando la serie…" : "Crear serie y episodio 1"}</button>
+        </div>
+      </>}
+
+      {view === "continuar" && <>
+        <Back />
+        <h2 className="text-xl font-bold">Continuar una serie</h2>
+        {!current ? (
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            {seriesList.map((s: any) => <button key={s.id} onClick={() => setSeriesId(s.id)} className="choice-card"><span className="font-bold">{s.title}</span><span className="text-sm text-slate-400">{s.eps.length} episodio(s)</span></button>)}
+          </div>
+        ) : (
+          <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_360px]">
+            <div className="space-y-4">
+              <div className="rounded-xl bg-[#121826] p-4">
+                <div className="flex items-center gap-2"><p className="font-bold">{current.title}</p>{seriesList.length > 1 && <button onClick={() => setSeriesId("")} className="ml-auto text-xs text-slate-400 hover:text-white">Cambiar serie</button>}</div>
+                <p className="mt-1 text-sm text-slate-400">{current.description}</p>
+                <ol className="timeline mt-4">
+                  {current.eps.map((e: any, i: number) => (
+                    <li key={e.id}>
+                      <button onClick={() => openEpisode(current.id, e, i + 1)} className="text-left">
+                        <span className="text-xs font-semibold text-amber-300">Episodio {i + 1}</span>
+                        <span className="block text-sm font-medium">{e.title}</span>
+                        <span className="block text-xs text-slate-400">{e.output?.summary || e.theme}</span>
+                      </button>
+                    </li>
+                  ))}
+                  {!current.eps.length && <li><span className="text-sm text-slate-400">Esta serie aún no tiene episodios.</span></li>}
+                </ol>
+              </div>
+              <div className="rounded-xl bg-[#121826] p-4">
+                <p className="field-label">¿Qué quieres que pase en el episodio {current.eps.length + 1}? (opcional)</p>
+                <textarea value={wish} onChange={e => setWish(e.target.value)} placeholder="Déjalo vacío y la IA decide el giro que más enganche." />
+                <div className="mt-3 flex flex-wrap items-center gap-3">
+                  <select value={duration} onChange={e => setDuration(Number(e.target.value))} className="w-auto"><option value={45}>45 s</option><option value={60}>1 min</option><option value={90}>1 min 30</option><option value={120}>2 min</option><option value={180}>3 min</option></select>
+                  <button disabled={loading} onClick={continueStory} className="rounded bg-amber-500 px-5 py-2.5 font-bold">{loading ? "Escribiendo…" : `Crear episodio ${current.eps.length + 1}`}</button>
+                </div>
+              </div>
+            </div>
+            <aside className="rounded-xl bg-[#121826] p-4 lg:self-start">
+              <p className="field-label">Personajes fijos ({currentChars.length})</p>
+              <ul className="space-y-2">
+                {currentChars.map((c: any) => (
+                  <li key={c.id} className="flex gap-2 text-sm">
+                    <span className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: c.subtitleColor }} />
+                    <span><b>{c.name}</b> <span className="text-slate-400">— {c.visualES}</span></span>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-3 text-xs text-slate-500">Se usan idénticos en cada episodio. Edítalos en Personajes.</p>
+            </aside>
+          </div>
+        )}
+      </>}
+
+      {view === "resultado" && result && <Result
+        episode={result.episode} part={result.part} seriesTitle={data.series.find((s: any) => s.id === result.seriesId)?.title}
+        onBack={() => setView("inicio")} onNext={() => { setSeriesId(result.seriesId); setView("continuar"); }} />}
+
+      {authError && <div className="mt-4"><AiAuthNotice /></div>}
+      {notice && <p className="mt-4 rounded-xl border border-amber-400/20 bg-amber-400/10 p-3 text-sm text-amber-100">{notice}</p>}
+      {view === "inicio" && !!data.episodes.length && <EpisodeArchive episodes={data.episodes} series={data.series} onOpen={openEpisode} onDelete={(id: string) => remove("episodes", id)} />}
+    </section>
+  );
+}
+
+function Result({ episode: out, part, seriesTitle, onBack, onNext }: any) {
+  const [tab, setTab] = useState<"guion" | "prompts" | "plataformas" | "archivos">("guion");
+  const tabs = [["guion", "Guion"], ["prompts", "Prompts"], ["plataformas", "Plataformas"], ["archivos", "Archivos"]] as const;
+  return <>
+    <button onClick={onBack} className="mb-4 text-sm text-slate-400 hover:text-white">← Inicio</button>
+    <div className="flex flex-wrap items-start gap-3">
+      <div className="flex-1 min-w-[220px]">
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-amber-300/80">{seriesTitle} · Episodio {part}</p>
+        <h2 className="text-xl font-bold">{out.title || `Episodio ${part}`}</h2>
+        {out.summary && <p className="mt-1 text-sm text-slate-400">{out.summary}</p>}
       </div>
+      <button onClick={onNext} className="rounded bg-amber-500 px-4 py-2 text-sm font-bold">Crear episodio {part + 1} →</button>
     </div>
-    <div className="grid gap-2 md:grid-cols-4 mt-3">
-      <input value={theme} onChange={e => setTheme(e.target.value)} placeholder="Tema"/>
-      <select value={duration} onChange={e => setDuration(Number(e.target.value))}><option value={30}>30s</option><option value={60}>60s</option><option value={90}>90s</option><option value={120}>2 min</option><option value={180}>3 min</option></select>
-      <input value={prev} onChange={e => setPrev(e.target.value)} placeholder="Resumen episodio anterior (activa Anteriormente... en TikTok)"/>
-      <input type="number" min={1} value={part} onChange={e => setPart(Number(e.target.value))} placeholder="N.º de parte"/>
-    </div>
-    <button disabled={loading} onClick={gen} className="mt-3 rounded bg-amber-500 text-black font-bold px-5 py-2">{loading ? "Generando..." : "Generar episodio + 4 fichas ✨"}</button>
-    {mode !== "supabase" && <p className="text-xs text-amber-200 mt-2">Modo sin login: el generador usa la plantilla local en tu navegador y guarda el episodio en localStorage. La IA de /api/generate requiere iniciar sesión.</p>}
-    {authError && <AiAuthNotice onLocalTemplate={genLocal}/>}
-    {notice && <p className="text-xs text-emerald-300 mt-2">{notice}</p>}
-
-    {out && <div className="mt-5 space-y-4">
-      <div className="rounded bg-[#121826] p-4"><h3 className="font-bold">a) Guion por bloques de 15s (desde la FÓRMULA BASE)</h3>{(out.scriptBlocks || []).map((b: any, i: number) => <div key={i} className="text-sm mt-2 border-b border-slate-800 pb-2"><b>Bloque {b.block} · {b.time}</b> — {b.scene}<br/>{(b.dialogue || []).map((d: any, j: number) => <span key={j}>{d.speaker}: “{d.text}”<br/></span>)}</div>)}<CopyButton text={JSON.stringify(out.scriptBlocks, null, 2)}/></div>
-      <div className="rounded bg-[#121826] p-4"><h3 className="font-bold">b) Prompts por bloque (Seedance 2.5) + Dola 60s</h3>{(out.prompts || []).map((p: string, i: number) => <details key={i} className="prompt-box" open={i===0}><summary><span>Bloque {i+1} · {i*15}-{(i+1)*15}s</span><CopyButton text={p}/></summary><p className="prompt-text">{p}</p></details>)}<details className="prompt-box" open><summary><span>Prompt Dola 60s</span><CopyButton text={out.dolaPrompt||""}/><DolaButton text={out.dolaPrompt||""}/></summary><p className="px-3 pb-1 text-[11px] text-amber-200/90">En Dola: activa la habilidad «Zehlas 1min», sube las fichas de los personajes en el orden en que aparecen arriba, pega el prompt y envía. Si Dola entrega 30 s, respóndele «continúa».</p><p className="prompt-text">{out.dolaPrompt}</p></details></div>
-      <div className="rounded bg-[#121826] p-4"><h3 className="font-bold">c) Reglas de diálogo</h3><p className="text-sm">{out.dialogueRules}</p><CopyButton text={out.dialogueRules || ""}/><h3 className="font-bold mt-3">d) Gancho base / Portada base / Descripción base</h3><p className="text-sm">{(out.hook || []).join(" / ")}<br/>Portada: {out.coverText}<br/>{out.description}<br/>{(out.hashtags || []).join(" ")}</p><p className="text-xs text-slate-400">Ojo: este texto base NO se publica igual en todas partes — publica con la ficha 4B de cada plataforma (abajo).</p></div>
-      <PlatformAdaptations adaptations={out.platformAdaptations || out.platform_adaptations || []}/>
-      <div className="flex gap-2 flex-wrap"><DownloadJson data={out.guionJson || {}}/><DownloadJson data={out.platformAdaptations || out.platform_adaptations || []} filename="adaptaciones-plataformas.json"/></div>
-      <p className="text-xs text-slate-500">Modo: {out.mode || "LLM"} · Episodio guardado {mode === "supabase" ? "en Supabase (tabla episodes, con platform_adaptations y versions)" : "en localStorage (episodes)"}.</p>
+    {!!(out.hook || []).length && <div className="mt-4 rounded-xl border border-amber-400/20 bg-gradient-to-br from-amber-400/10 to-transparent p-4">
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-amber-300">Gancho de los primeros 3 s</p>
+      <p className="mt-1 text-lg font-bold">{(out.hook || []).join(" / ")}</p>
     </div>}
-
-    <h3 className="font-bold mt-6">📚 Episodios guardados (historial de versiones)</h3>
-    <div className="space-y-2 mt-2">
-      {[...data.episodes].reverse().map(ep => <div key={ep.id} className="rounded bg-[#121826] p-3 flex flex-wrap items-center gap-2 text-sm">
-        <b className="flex-1 min-w-[200px]">{ep.title}</b>
-        <span className="text-xs text-slate-400">{ep.duration}s · {ep.status} · {(ep.versions || []).length} versión(es) · {(ep.platformAdaptations || ep.platform_adaptations || []).length} fichas 4B</span>
-        <button className="rounded bg-slate-700 px-3 py-1 text-xs" onClick={() => loadEpisode(ep)}>Ver</button>
-        <button className="text-red-400 text-xs" onClick={() => remove("episodes", ep.id)}>Eliminar</button>
-      </div>)}
-      {data.episodes.length === 0 && <p className="text-sm text-slate-400">Todavía no has generado episodios.</p>}
+    <div className="tabs mt-5">{tabs.map(([k, l]) => <button key={k} onClick={() => setTab(k)} className={tab === k ? "tab-active" : ""}>{l}</button>)}</div>
+    <div className="mt-4">
+      {tab === "guion" && <div className="space-y-3">
+        {(out.scriptBlocks || []).map((b: any, i: number) => (
+          <div key={i} className="rounded-xl bg-[#121826] p-4">
+            <p className="text-xs font-semibold text-amber-300">Bloque {b.block ?? i + 1} · {b.time}</p>
+            {b.scene && <p className="mt-1 text-sm text-slate-400">{b.scene}</p>}
+            <div className="mt-2 space-y-1">{(b.dialogue || []).map((d: any, j: number) => <p key={j} className="text-sm"><b>{d.speaker}:</b> “{d.text}”</p>)}</div>
+          </div>
+        ))}
+        {out.dialogueRules && <p className="text-xs text-slate-500">{out.dialogueRules}</p>}
+      </div>}
+      {tab === "prompts" && <div>
+        <details className="prompt-box" open><summary><span>Prompt Dola 60s</span><CopyButton text={out.dolaPrompt || ""} /><DolaButton text={out.dolaPrompt || ""} /></summary><p className="prompt-text">{out.dolaPrompt}</p></details>
+        {(out.prompts || []).map((p: string, i: number) => <details key={i} className="prompt-box"><summary><span>Bloque {i + 1} · {i * 15}-{(i + 1) * 15}s</span><CopyButton text={p} /></summary><p className="prompt-text">{p}</p></details>)}
+      </div>}
+      {tab === "plataformas" && <PlatformAdaptations adaptations={out.platformAdaptations || out.platform_adaptations || []} />}
+      {tab === "archivos" && <div className="rounded-xl bg-[#121826] p-4 space-y-3">
+        <p className="text-sm text-slate-300">Portada: <b>{out.coverText}</b></p>
+        <p className="text-sm text-slate-400">{out.description} {(out.hashtags || []).join(" ")}</p>
+        <div className="flex flex-wrap gap-2"><DownloadJson data={out.guionJson || {}} /><DownloadJson data={out.platformAdaptations || []} filename="adaptaciones-plataformas.json" /></div>
+      </div>}
     </div>
-  </section>;
+  </>;
+}
+
+function EpisodeArchive({ episodes, series, onOpen, onDelete }: any) {
+  const [open, setOpen] = useState(false);
+  return <div className="mt-8">
+    <button onClick={() => setOpen(!open)} className="text-sm font-semibold uppercase tracking-wider text-slate-400 hover:text-white">{open ? "▾" : "▸"} Todos los episodios ({episodes.length})</button>
+    {open && <div className="mt-3 space-y-2">
+      {[...episodes].reverse().map((ep: any) => {
+        const s = series.find((x: any) => x.id === ep.seriesId);
+        return <div key={ep.id} className="flex flex-wrap items-center gap-2 rounded-xl bg-[#121826] p-3 text-sm">
+          <span className="flex-1 min-w-[200px]"><b>{ep.title}</b> <span className="text-xs text-slate-500">· {s?.title || "Sin serie"}</span></span>
+          <button className="rounded bg-slate-700 px-3 py-1 text-xs" onClick={() => onOpen(ep.seriesId, ep, ep.output?.partNumber || 1)}>Ver</button>
+          <button className="text-xs text-red-400" onClick={() => onDelete(ep.id)}>Eliminar</button>
+        </div>;
+      })}
+    </div>}
+  </div>;
 }

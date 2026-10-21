@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateEpisode } from "@/lib/llm";
+export const maxDuration = 60;
 import { requireUser } from "@/lib/auth-guard";
 // POST /api/generate — Módulo 4 + 4B — PROTEGIDA: requiere sesión Supabase.
 // Sin sesión -> 401 sin llamar al LLM. Sin Supabase configurado -> 503.

@@ -1,10 +1,10 @@
 import type { Account, CalendarEntry, Character, Formula, Metric, Product, ProductTest, Series } from "./types";
 export const seedAccounts: Account[] = [
-  { id:"acc-1", name:"Frutinovelas RD", platform:"TikTok", niche:"frutinovelas", audience:"Dominicanos 18-45, diáspora en EE.UU.", idealDuration:"90s" },
-  { id:"acc-2", name:"Frutinovelas RD FB", platform:"Facebook", niche:"frutinovelas", audience:"Familias dominicanas 25-55", idealDuration:"2-3 min" },
-  { id:"acc-3", name:"Fe que Transforma", platform:"Instagram", niche:"cristiano", audience:"Cristianos latinos 25-60", idealDuration:"90s" },
-  { id:"acc-4", name:"Frutinovelas RD Shorts", platform:"YouTube Shorts", niche:"frutinovelas", audience:"Público general que descubre Shorts, RD y diáspora", idealDuration:"45-90s" },
-];
+  { id:"acc-1", name:"Películas que no existen", platform:"Instagram", niche:"cine90", audience:"Latinos 18-45 que aman el drama romántico", idealDuration:"30-60s" },
+  { id:"acc-2", name:"FrutiEnganchados", platform:"Facebook", niche:"frutinovelas", audience:"Familias dominicanas 25-55", idealDuration:"60-90s" },
+  { id:"acc-3", name:"FrutiEnganchados", platform:"TikTok", niche:"frutinovelas", audience:"Dominicanos 18-45 y diáspora", idealDuration:"1-3 min" },
+  { id:"acc-4", name:"Frutinovela cristiana", platform:"TikTok", niche:"cristiano", audience:"Cristianos latinos 25-60", idealDuration:"1-2 min" },
+]
 export const seedSeries: Series[] = [
   { id:"ser-1", title:"Manguito y Doña Aguacate", description:"Microdrama frutinovela dominicana: Manguito, un tíguere que finge ser rico, tiene esposa (Doña Aguacate) y novia (Chinola), y le debe dinero a Don Piña, el papá de Chinola.", accountId:"acc-1" },
   { id:"ser-2", title:"La madre que él negó", description:"Historia de redención cristiana sobre una madre que ora por su hijo.", accountId:"acc-3" },

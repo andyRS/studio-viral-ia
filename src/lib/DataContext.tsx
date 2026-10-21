@@ -17,7 +17,7 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import { createClient, hasSupabase } from "./supabase/client";
 import { load, save, uid } from "./store";
 import { COLLECTIONS, LOCAL_KEY_OF, TABLE_OF, fromRow, toRow, type CollectionName } from "./db";
-import { seedAccounts, seedCalendarEntries, seedCharacters, seedFormulas, seedMetrics, seedProducts, seedProductTests, seedSeries } from "./seed";
+import { seedAccounts, seedFormulas } from "./seed";
 import type { Account, CalendarEntry, Character, ClipCheck, Cost, Episode, Formula, Metric, Product, ProductTest, ProductionCard, Series, ViralAnalysis } from "./types";
 
 export type { CollectionName };
@@ -52,11 +52,11 @@ export function useData(): DataCtx {
 }
 
 function localDefaults(): DataState {
+  // Sin series, personajes ni métricas de ejemplo: la app arranca limpia para crear historias nuevas.
   return {
-    accounts: seedAccounts, series: seedSeries, characters: seedCharacters, formulas: seedFormulas,
-    episodes: [], productionCards: [{ id: "card-1", episodeId: "", title: "Manguito y Doña Aguacate — Ep.1", stage: "Idea" }],
-    clipChecks: [], costs: [], calendarEntries: seedCalendarEntries(), metrics: seedMetrics,
-    viralAnalyses: [], products: seedProducts, productTests: seedProductTests,
+    accounts: seedAccounts, series: [], characters: [], formulas: seedFormulas,
+    episodes: [], productionCards: [], clipChecks: [], costs: [], calendarEntries: [], metrics: [],
+    viralAnalyses: [], products: [], productTests: [],
   };
 }
 function loadLocal(): DataState {
@@ -111,21 +111,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           for (const f of seedFormulas) {
             const { data: row, error: insErr } = await supabase.from("formulas").insert(toRow("formulas", f, user.id)).select().single();
             if (!insErr && row) state.formulas.push(fromRow("formulas", row));
-          }
-        }
-        // Serie + personajes de ejemplo («Manguito y Doña Aguacate»):
-        if (state.series.length === 0) {
-          const seriesIdMap = new Map<string, string>();
-          for (const s of seedSeries) {
-            const { data: row, error: insErr } = await supabase.from("series").insert(toRow("series", { ...s, accountId: undefined }, user.id)).select().single();
-            if (!insErr && row) { seriesIdMap.set(s.id, row.id); state.series.push(fromRow("series", row)); }
-          }
-          if (state.characters.length === 0) {
-            for (const ch of seedCharacters) {
-              const newSeriesId = seriesIdMap.get(ch.seriesId);
-              const { data: row, error: insErr } = await supabase.from("characters").insert(toRow("characters", { ...ch, seriesId: newSeriesId }, user.id)).select().single();
-              if (!insErr && row) state.characters.push(fromRow("characters", row));
-            }
           }
         }
         loadedForRef.current = user.id;

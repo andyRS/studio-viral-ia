@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { callLLM, templateMetricRecommendations } from "@/lib/llm";
+export const maxDuration = 60;
 import { requireUser } from "@/lib/auth-guard";
 // POST /api/analyze-metrics — PROTEGIDA: requiere sesión Supabase (401 sin login).
 export async function POST(req: NextRequest){
