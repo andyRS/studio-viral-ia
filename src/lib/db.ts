@@ -55,7 +55,21 @@ export const uuidOrNull = (v: any): string | null => (isUuid(v) ? v : null);
 
 type Row = Record<string, any>;
 
+// Quita mitades de emoji sueltas (surrogates sin pareja): con ellas el cuerpo no es JSON
+// válido y Supabase responde "Empty or invalid json".
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+function wellFormed(v: any): any {
+  if (typeof v === "string") return v.replace(LONE_SURROGATE, "");
+  if (Array.isArray(v)) return v.map(wellFormed);
+  if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, wellFormed(x)]));
+  return v;
+}
+
 export function toRow(collection: CollectionName, item: any, userId: string): Row {
+  return wellFormed(rowOf(collection, item, userId));
+}
+
+function rowOf(collection: CollectionName, item: any, userId: string): Row {
   switch (collection) {
     case "accounts": return { user_id: userId, name: item.name, platform: item.platform, niche: item.niche, audience: item.audience ?? "", ideal_duration: item.idealDuration ?? "" };
     case "series": return { user_id: userId, account_id: uuidOrNull(item.accountId), title: item.title, description: item.description ?? "" };

@@ -44,7 +44,7 @@ export default function MetaConnect() {
     try {
       const r = await fetch("/api/meta/import", { method: "POST" }); const j = await r.json().catch(() => ({}));
       if (!j.ok) { setMsg("Error: " + (j.error || "HTTP " + r.status)); return; }
-      let added = 0, updated = 0, linked = 0;
+      let added = 0, updated = 0, linked = 0; const failed: string[] = [];
       for (const m of j.metrics || []) {
         const ep = matchEpisode(m.caption, data.episodes);
         if (ep) linked++;
@@ -52,14 +52,16 @@ export default function MetaConnect() {
           externalId: m.externalId, permalink: m.permalink, platform: m.platform, date: m.date,
           views: m.views, avgWatch: m.avgWatch, interactions: m.interactions, followers: m.followers, duration: m.duration || ep?.duration || 0,
           shares: m.shares, saves: m.saves, skipRate: m.skipRate, reach: m.reach,
-          episodeId: ep?.id, episodeTitle: ep?.title || (m.caption.split("\n")[0].slice(0, 80) || `Reel ${m.date}`),
+          episodeId: ep?.id, episodeTitle: ep?.title || (Array.from(m.caption.split("\n")[0]).slice(0, 80).join("").trim() || `Reel ${m.date}`),
           hook: ep ? hookText(ep.output?.hook) : "", formula: "",
         };
         const prev = data.metrics.find((x: any) => x.externalId === m.externalId);
-        if (prev) { await update("metrics", prev.id, { ...prev, ...row, hook: row.hook || prev.hook, formula: prev.formula }); updated++; }
-        else { await insert("metrics", row); added++; }
+        try {
+          if (prev) { await update("metrics", prev.id, { ...prev, ...row, hook: row.hook || prev.hook, formula: prev.formula }); updated++; }
+          else { await insert("metrics", row); added++; }
+        } catch (e: any) { failed.push(`${m.platform} ${m.date}: ${e?.message || e}`); }
       }
-      setMsg(`✓ ${added} Reels nuevos, ${updated} actualizados (${linked} enlazados a episodios de la app).${(j.errors || []).length ? " Avisos: " + j.errors.join(" · ") : ""}`);
+      setMsg(`✓ ${added} Reels nuevos, ${updated} actualizados (${linked} enlazados a episodios de la app).${failed.length ? ` ${failed.length} no se pudieron guardar: ${failed.slice(0, 2).join(" · ")}.` : ""}${(j.errors || []).length ? " Avisos: " + j.errors.join(" · ") : ""}`);
     } finally { setBusy(false); }
   }
 
