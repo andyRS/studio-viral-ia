@@ -12,3 +12,11 @@ export function DownloadJson({ data, filename = "guion.json" }: { data: any; fil
   function dl() { const b = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }); const a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = filename; a.click(); }
   return <button type="button" onClick={dl} className="rounded-lg border border-emerald-400/30 bg-emerald-500/15 px-3 py-1 text-xs font-medium text-emerald-300 hover:bg-emerald-500/25">Descargar {filename}</button>;
 }
+export function DolaButton({ text }: { text: string }) {
+  async function go(e: React.MouseEvent) {
+    e.preventDefault(); e.stopPropagation();
+    try { await navigator.clipboard.writeText(text); } catch {}
+    window.open("https://www.dola.com/chat", "_blank", "noopener");
+  }
+  return <button type="button" onClick={go} className="rounded-lg border border-violet-400/40 bg-violet-500/15 px-3 py-1 text-xs font-medium text-violet-200 hover:bg-violet-500/25">Copiar y abrir Dola</button>;
+}

@@ -10,6 +10,7 @@ import CalendarModule from "@/components/CalendarModule";
 import MetricsModule from "@/components/MetricsModule";
 import ViralAnalyzerModule from "@/components/ViralAnalyzerModule";
 import DropshippingModule from "@/components/DropshippingModule";
+import DolaStudioModule from "@/components/DolaStudioModule";
 
 const I = (d: string) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px] shrink-0" aria-hidden="true">
@@ -26,6 +27,7 @@ const ICONS: Record<string, ReactNode> = {
   virales: I("M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14z|M21 21l-5-5"),
   dropshipping: I("M6 7h12l-1 13H7z|M9 7a3 3 0 0 1 6 0"),
   cuentas: I("M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z|M4 21a8 8 0 0 1 16 0"),
+  dola: I("M4 5h16v12H4z|M8 21h8|M12 17v4|M10 9l4 2-4 2z"),
   mas: I("M5 12h.01|M12 12h.01|M19 12h.01"),
 };
 
@@ -33,6 +35,7 @@ type Mod = { id: string; label: string; desc: string };
 const GROUPS: { title: string; items: Mod[] }[] = [
   { title: "Crear", items: [
     { id: "generador", label: "Generador", desc: "Guion, prompts Seedance 2.5 y 4 versiones por plataforma" },
+    { id: "dola", label: "Estudio Dola", desc: "Dola integrado al lado de tus prompts" },
     { id: "personajes", label: "Personajes", desc: "Fichas fijas, colores y pronunciaciones" },
     { id: "formulas", label: "Fórmulas", desc: "Estructuras virales probadas" },
   ]},
@@ -64,6 +67,7 @@ function ModuleView({ id }: { id: string }) {
     case "calendario": return <CalendarModule />;
     case "metricas": return <MetricsModule />;
     case "virales": return <ViralAnalyzerModule />;
+    case "dola": return <DolaStudioModule />;
     default: return <DropshippingModule />;
   }
 }
@@ -118,7 +122,7 @@ function DashboardInner() {
       </header>
 
       <main className="flex-1 min-w-0 px-4 pb-28 pt-5 md:px-8 md:pb-10 md:pt-8">
-        <div className="mx-auto w-full max-w-6xl">
+        <div className={`mx-auto w-full ${active === "dola" ? "max-w-[1600px]" : "max-w-6xl"}`}>
           <div className="mb-6 flex items-start gap-3">
             <div className="grid h-10 w-10 place-items-center rounded-xl border border-white/10 bg-white/[.04] text-amber-300">{ICONS[current.id]}</div>
             <div>

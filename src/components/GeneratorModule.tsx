@@ -1,5 +1,6 @@
 "use client";
 import { useMemo, useState } from "react";
+import { DolaButton } from "./CopyButton";
 import CopyButton, { DownloadJson } from "./CopyButton";
 import PlatformAdaptations, { BaseFormulaCard } from "./PlatformAdaptations";
 import AiAuthNotice from "./AiAuthNotice";
@@ -99,7 +100,7 @@ export default function GeneratorModule(){
 
     {out && <div className="mt-5 space-y-4">
       <div className="rounded bg-[#121826] p-4"><h3 className="font-bold">a) Guion por bloques de 15s (desde la FÓRMULA BASE)</h3>{(out.scriptBlocks || []).map((b: any, i: number) => <div key={i} className="text-sm mt-2 border-b border-slate-800 pb-2"><b>Bloque {b.block} · {b.time}</b> — {b.scene}<br/>{(b.dialogue || []).map((d: any, j: number) => <span key={j}>{d.speaker}: “{d.text}”<br/></span>)}</div>)}<CopyButton text={JSON.stringify(out.scriptBlocks, null, 2)}/></div>
-      <div className="rounded bg-[#121826] p-4"><h3 className="font-bold">b) Prompts por bloque (Seedance 2.5) + Dola 60s</h3>{(out.prompts || []).map((p: string, i: number) => <details key={i} className="prompt-box" open={i===0}><summary><span>Bloque {i+1} · {i*15}-{(i+1)*15}s</span><CopyButton text={p}/></summary><p className="prompt-text">{p}</p></details>)}<details className="prompt-box"><summary><span>Prompt Dola 60s</span><CopyButton text={out.dolaPrompt||""}/></summary><p className="prompt-text">{out.dolaPrompt}</p></details></div>
+      <div className="rounded bg-[#121826] p-4"><h3 className="font-bold">b) Prompts por bloque (Seedance 2.5) + Dola 60s</h3>{(out.prompts || []).map((p: string, i: number) => <details key={i} className="prompt-box" open={i===0}><summary><span>Bloque {i+1} · {i*15}-{(i+1)*15}s</span><CopyButton text={p}/></summary><p className="prompt-text">{p}</p></details>)}<details className="prompt-box" open><summary><span>Prompt Dola 60s</span><CopyButton text={out.dolaPrompt||""}/><DolaButton text={out.dolaPrompt||""}/></summary><p className="px-3 pb-1 text-[11px] text-amber-200/90">En Dola: activa la habilidad «Zehlas 1min», sube las fichas de los personajes en el orden en que aparecen arriba, pega el prompt y envía. Si Dola entrega 30 s, respóndele «continúa».</p><p className="prompt-text">{out.dolaPrompt}</p></details></div>
       <div className="rounded bg-[#121826] p-4"><h3 className="font-bold">c) Reglas de diálogo</h3><p className="text-sm">{out.dialogueRules}</p><CopyButton text={out.dialogueRules || ""}/><h3 className="font-bold mt-3">d) Gancho base / Portada base / Descripción base</h3><p className="text-sm">{(out.hook || []).join(" / ")}<br/>Portada: {out.coverText}<br/>{out.description}<br/>{(out.hashtags || []).join(" ")}</p><p className="text-xs text-slate-400">Ojo: este texto base NO se publica igual en todas partes — publica con la ficha 4B de cada plataforma (abajo).</p></div>
       <PlatformAdaptations adaptations={out.platformAdaptations || out.platform_adaptations || []}/>
       <div className="flex gap-2 flex-wrap"><DownloadJson data={out.guionJson || {}}/><DownloadJson data={out.platformAdaptations || out.platform_adaptations || []} filename="adaptaciones-plataformas.json"/></div>
