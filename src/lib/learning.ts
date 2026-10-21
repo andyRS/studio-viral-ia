@@ -12,7 +12,7 @@ function score(m: Metric): number {
   const quality =
     m.platform === "TikTok" ? (m.completion || 0)
     : m.platform === "YouTube Shorts" ? (m.retention || m.viewedVsSwiped || 0)
-    : m.platform === "Instagram" ? (views ? (((m.shares || 0) + (m.saves || 0)) / views) * 100 : 0)
+    : m.platform === "Instagram" ? (typeof m.skipRate === "number" ? 100 - m.skipRate : views ? (((m.shares || 0) + (m.saves || 0)) / views) * 100 : 0)
     : (m.avgWatch || 0);
   return views * (1 + Math.min(quality, 100) / 100);
 }

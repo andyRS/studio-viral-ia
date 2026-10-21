@@ -1,5 +1,5 @@
 "use client";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { DataProvider, SessionBar, useData } from "@/lib/DataContext";
 import AccountsModule from "@/components/AccountsModule";
 import CharactersModule from "@/components/CharactersModule";
@@ -87,6 +87,8 @@ function Brand() {
 function DashboardInner() {
   const [active, setActive] = useState("generador");
   const [sheet, setSheet] = useState(false);
+  // ?modulo=metricas abre directamente ese módulo (lo usa la vuelta de Facebook).
+  useEffect(() => { const m = new URLSearchParams(window.location.search).get("modulo"); if (m && ALL.some(x => x.id === m)) setActive(m); }, []);
   const { error } = useData();
   const go = (id: string) => { setActive(id); setSheet(false); if (typeof window !== "undefined") window.scrollTo({ top: 0 }); };
   const current = ALL.find(m => m.id === active)!;

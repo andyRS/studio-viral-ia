@@ -21,3 +21,7 @@ alter table public.episodes add column if not exists platform_adaptations jsonb 
 alter table public.metrics add column if not exists extra jsonb default '{}'::jsonb;
 -- RLS
 do $$ declare t text; begin foreach t in array array['accounts','series','characters','formulas','episodes','production_cards','clip_checks','costs','calendar_entries','metrics','viral_analyses','products','product_tests'] loop execute format('alter table public.%I enable row level security;', t); execute format('drop policy if exists "own rows" on public.%I;', t); execute format('create policy "own rows" on public.%I for all using (auth.uid() = user_id) with check (auth.uid() = user_id);', t); end loop; end $$;
+-- Conexiones con redes (Meta): tokens de página. RLS activado SIN políticas:
+-- solo el servidor (service role) puede leerla; el navegador nunca ve los tokens.
+create table if not exists public.social_connections (user_id uuid references auth.users(id) on delete cascade, provider text not null, data jsonb not null default '{}'::jsonb, updated_at timestamptz default now(), primary key (user_id, provider));
+alter table public.social_connections enable row level security;

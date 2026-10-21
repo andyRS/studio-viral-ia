@@ -5,11 +5,12 @@ import { useData } from "@/lib/DataContext";
 import { postApi, isAuthError } from "@/lib/api-client";
 import { templateMetricRecommendations } from "@/lib/llm";
 import { learnFromMetrics } from "@/lib/learning";
+import MetaConnect from "./MetaConnect";
 
 const PLATFORMS = ["Instagram","Facebook","TikTok","YouTube Shorts"];
 function platformCells(m: any){
   if (!m) return ["—","—","—"];
-  if (m.platform === "Instagram") return [`${(m.shares || 0).toLocaleString()} compartidos`, `${(m.saves || 0).toLocaleString()} guardados`, `+${m.followers} seguidores`];
+  if (m.platform === "Instagram") return [`${(m.shares || 0).toLocaleString()} compartidos`, `${(m.saves || 0).toLocaleString()} guardados`, typeof m.skipRate === "number" ? `${m.skipRate}% lo salta en 3 s` : `+${m.followers} seguidores`];
   if (m.platform === "Facebook") return [`${m.avgWatch}s tiempo promedio`, `${(m.oneMinViews || 0).toLocaleString()} vistas de 1 min`, `US$${Number(m.estRevenue || 0).toFixed(2)} ingresos est.`];
   if (m.platform === "TikTok") return [`${m.completion || 0}% visto completo`, `+${m.followers} nuevos seguidores`, `${(m.searches || 0).toLocaleString()} desde búsquedas`];
   return [`${m.viewedVsSwiped || 0}% visto vs deslizado`, `${m.retention || 0}% retención`, `+${m.followers} seguidores`];
@@ -56,6 +57,7 @@ export default function MetricsModule(){
   return <section>
     <h2 className="text-xl font-bold">Métricas y comparación por plataforma</h2>
     <p className="text-xs text-slate-500 mt-1">{mode === "supabase" ? "Guardado en Supabase (tabla metrics, métricas 4B en columna extra)." : "Modo sin login: localStorage."}</p>
+    <MetaConnect />
 
     <h3 className="font-bold mt-4">📊 Mismo episodio, lado a lado en las 4 plataformas</h3>
     {episodeTitles.length > 0 ? <>
