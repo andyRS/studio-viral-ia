@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import CopyButton, { DownloadJson, DolaButton } from "./CopyButton";
 import PlatformAdaptations from "./PlatformAdaptations";
 import AiAuthNotice from "./AiAuthNotice";
@@ -32,8 +32,9 @@ const IDEAS: Record<StyleKey, string[]> = {
   ],
 };
 
-export default function GeneratorModule() {
+export default function GeneratorModule({ focusEpisodeId }: { focusEpisodeId?: string } = {}) {
   const { data, insert, remove, mode } = useData();
+  const focusedEpisodeRef = useRef<string | null>(null);
   const [view, setView] = useState<View>("inicio");
   const [loading, setLoading] = useState(false);
   const [authError, setAuthError] = useState(false);
@@ -64,11 +65,11 @@ export default function GeneratorModule() {
   const account = data.accounts.find((a: any) => a.id === accountId) || data.accounts[0];
 
   async function call(path: string, body: any, local: () => any) {
-    if (mode !== "supabase") return { data: local(), note: "Modo local: se usó una plantilla sin IA. Inicia sesión para que la IA escriba la historia completa." };
+    if (mode !== "supabase") return { data: local(), note: "Borrador creado con plantilla, sin IA. Guardado solo en este navegador." };
     const r = await postApi(path, body);
     if (isAuthError(r)) { setAuthError(true); return null; }
-    if (!r.json?.ok) { setNotice("Error de la IA: " + (r.json?.error || "HTTP " + r.status)); return null; }
-    return { data: r.json.data, note: r.json.data?.mode === "plantilla-local" ? "El servidor no tiene clave de IA configurada: se usó una plantilla." : "" };
+    if (!r.json?.ok) { setNotice("No se pudo generar el contenido. Inténtalo de nuevo."); return null; }
+    return { data: r.json.data, note: r.json.data?.mode === "plantilla-local" ? "Borrador creado con plantilla, sin IA. Guardado en tu cuenta." : "Contenido creado con IA y guardado en tu cuenta." };
   }
 
   async function saveEpisode(sid: string, part: number, ep: any, bible?: any) {
@@ -116,6 +117,17 @@ export default function GeneratorModule() {
   }
 
   function openEpisode(sid: string, ep: any, part: number) { setSeriesId(sid); setResult({ episode: ep.output || {}, seriesId: sid, part }); setView("resultado"); setNotice(""); }
+  useEffect(() => {
+    if (!focusEpisodeId) { focusedEpisodeRef.current = null; return; }
+    if (focusedEpisodeRef.current === focusEpisodeId) return;
+    const episode = data.episodes.find(ep => ep.id === focusEpisodeId);
+    if (!episode) return;
+    const siblings = data.episodes.filter(ep => ep.seriesId === episode.seriesId)
+      .sort((a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || "")));
+    const part = episode.output?.partNumber || siblings.findIndex(ep => ep.id === episode.id) + 1 || 1;
+    openEpisode(episode.seriesId || "", episode, part);
+    focusedEpisodeRef.current = focusEpisodeId;
+  }, [focusEpisodeId, data.episodes]);
 
   const Back = ({ to = "inicio" as View }) => <button onClick={() => { setView(to); setNotice(""); setAuthError(false); setChosenHook(null); }} className="mb-4 text-sm text-slate-400 hover:text-white">← Volver</button>;
 
@@ -127,19 +139,19 @@ export default function GeneratorModule() {
           <button onClick={() => setView("nueva")} className="choice-card group">
             <span className="choice-icon bg-gradient-to-br from-amber-400 to-orange-600 text-black">✦</span>
             <span className="text-lg font-bold">Crear historia nueva</span>
-            <span className="text-sm text-slate-400">Das la idea y la IA crea la serie, sus personajes fijos y el episodio 1 con la fórmula viral.</span>
+            <span className="text-sm text-slate-400">Parte de tu idea para crear la serie, los personajes fijos y el episodio 1.</span>
           </button>
           <button onClick={() => setView("continuar")} disabled={!seriesList.length} className="choice-card group">
             <span className="choice-icon bg-violet-500/20 text-violet-200">▶</span>
             <span className="text-lg font-bold">Continuar una serie</span>
-            <span className="text-sm text-slate-400">{seriesList.length ? "Elige la serie y la IA escribe el siguiente episodio con los mismos personajes." : "Aún no tienes series. Crea la primera."}</span>
+            <span className="text-sm text-slate-400">{seriesList.length ? "Elige una serie y prepara el siguiente episodio con sus personajes." : "Aún no tienes series. Crea la primera."}</span>
           </button>
         </div>
         {!!bank.length && <>
           <h3 className="mt-8 text-sm font-semibold uppercase tracking-wider text-slate-400">🎣 Banco de ganchos</h3>
           <div className="mt-3 overflow-x-auto rounded-xl bg-[#121826]"><table className="w-full text-sm"><thead><tr className="text-left text-xs text-slate-400"><th className="p-2">Gancho</th><th className="p-2">Episodio</th><th className="p-2">Vistas</th><th className="p-2">Plataformas</th></tr></thead>
             <tbody>{bank.slice(0, 12).map((h, i) => <tr key={i} className="border-t border-slate-800"><td className="p-2 font-medium">{h.hook}</td><td className="p-2 text-slate-400">{h.source}</td><td className="p-2">{h.views ? h.views.toLocaleString() : <span className="text-slate-500">sin métricas</span>}</td><td className="p-2 text-xs text-slate-400">{h.platforms.join(", ") || "—"}</td></tr>)}</tbody></table></div>
-          <p className="mt-1 text-xs text-slate-500">Registra las vistas en Métricas con el mismo título del episodio y aquí verás qué gancho rindió más. La IA usa los mejores al proponer ganchos nuevos.</p>
+          <p className="mt-1 text-xs text-slate-500">Registra las vistas en Métricas con el mismo título del episodio para revisar qué ganchos rindieron más.</p>
         </>}
         {!!seriesList.length && <>
           <h3 className="mt-8 text-sm font-semibold uppercase tracking-wider text-slate-400">Tus series</h3>
@@ -163,29 +175,29 @@ export default function GeneratorModule() {
         <Back />
         <h2 className="text-xl font-bold">Historia nueva</h2>
         <div className="mt-4 space-y-4">
-          <div>
-            <p className="field-label">Estilo</p>
+          <fieldset>
+            <legend className="field-label">Estilo</legend>
             <div className="grid gap-2 sm:grid-cols-3">
               {(Object.keys(STYLES) as StyleKey[]).map(k => (
-                <button key={k} onClick={() => setStyle(k)} className={`rounded-xl border px-3 py-3 text-left text-sm ${style === k ? "border-amber-400/60 bg-amber-400/10 text-amber-100" : "border-white/10 bg-white/[.03] text-slate-300"}`}>{STYLES[k].label}</button>
+                <button key={k} type="button" aria-pressed={style === k} onClick={() => setStyle(k)} className={`rounded-xl border px-3 py-3 text-left text-sm ${style === k ? "border-amber-400/60 bg-amber-400/10 text-amber-100" : "border-white/10 bg-white/[.03] text-slate-300"}`}>{STYLES[k].label}</button>
               ))}
             </div>
-          </div>
+          </fieldset>
           <div>
-            <p className="field-label">Idea de la historia</p>
-            <textarea value={idea} onChange={e => setIdea(e.target.value)} placeholder="Ej.: Una madre humilde descubre que su hijo rico la niega delante de sus amigos…" />
+            <label htmlFor="generator-idea" className="field-label block">Idea de la historia</label>
+            <textarea id="generator-idea" value={idea} onChange={e => setIdea(e.target.value)} placeholder="Ej.: Una madre humilde descubre que su hijo rico la niega delante de sus amigos…" />
             <div className="mt-2 flex flex-wrap gap-2">
               {IDEAS[style].map(t => <button key={t} onClick={() => setIdea(t)} className="rounded-full border border-white/10 bg-white/[.03] px-3 py-1.5 text-left text-xs text-slate-300 hover:bg-white/10">💡 {t}</button>)}
             </div>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
-            <div><p className="field-label">Cuenta principal</p>
-              <select value={account?.id || ""} onChange={e => setAccountId(e.target.value)}>{data.accounts.map((a: any) => <option key={a.id} value={a.id}>{a.name} · {a.platform}</option>)}</select></div>
-            <div><p className="field-label">Duración</p>
-              <select value={duration} onChange={e => setDuration(Number(e.target.value))}><option value={45}>45 s</option><option value={60}>1 min</option><option value={90}>1 min 30</option><option value={120}>2 min</option><option value={180}>3 min</option></select></div>
+            <div><label htmlFor="generator-account" className="field-label block">Cuenta principal</label>
+              <select id="generator-account" value={account?.id || ""} onChange={e => setAccountId(e.target.value)}>{data.accounts.map((a: any) => <option key={a.id} value={a.id}>{a.name} · {a.platform}</option>)}</select></div>
+            <div><label htmlFor="generator-duration" className="field-label block">Duración</label>
+              <select id="generator-duration" value={duration} onChange={e => setDuration(Number(e.target.value))}><option value={45}>45 s</option><option value={60}>1 min</option><option value={90}>1 min 30</option><option value={120}>2 min</option><option value={180}>3 min</option></select></div>
           </div>
-          <div><p className="field-label">Notas opcionales</p>
-            <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Ej.: que la abuela se llame Doña Guanábana, que pase en Navidad…" /></div>
+          <div><label htmlFor="generator-notes" className="field-label block">Notas opcionales</label>
+            <input id="generator-notes" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Ej.: que la abuela se llame Doña Guanábana, que pase en Navidad…" /></div>
           <HookPicker online={mode === "supabase"} chosen={chosenHook} onChoose={setChosenHook} body={() => ({ idea, style, learnings, bank: bankTop })} />
           <button disabled={loading} onClick={createStory} className="w-full rounded bg-amber-500 px-5 py-3 text-base font-bold sm:w-auto">{loading ? "Creando la serie…" : "Crear serie y episodio 1"}</button>
         </div>
@@ -218,11 +230,12 @@ export default function GeneratorModule() {
                 </ol>
               </div>
               <div className="rounded-xl bg-[#121826] p-4">
-                <p className="field-label">¿Qué quieres que pase en el episodio {current.eps.length + 1}? (opcional)</p>
-                <textarea value={wish} onChange={e => setWish(e.target.value)} placeholder="Déjalo vacío y la IA decide el giro que más enganche." />
+                <label htmlFor="generator-next-wish" className="field-label block">¿Qué quieres que pase en el episodio {current.eps.length + 1}? (opcional)</label>
+                <textarea id="generator-next-wish" value={wish} onChange={e => setWish(e.target.value)} placeholder="Déjalo vacío para proponer un giro." />
                 <div className="mt-3"><HookPicker online={mode === "supabase"} chosen={chosenHook} onChoose={setChosenHook} body={() => ({ wish, style: current.style, series: { title: current.title, logline: current.description }, characters: currentChars.map((c: any) => ({ name: c.name })), history: current.eps.map((e: any, i: number) => ({ part: i + 1, summary: e.output?.summary || e.theme })), learnings, bank: bankTop })} /></div>
                 <div className="mt-3 flex flex-wrap items-center gap-3">
-                  <select value={duration} onChange={e => setDuration(Number(e.target.value))} className="w-auto"><option value={45}>45 s</option><option value={60}>1 min</option><option value={90}>1 min 30</option><option value={120}>2 min</option><option value={180}>3 min</option></select>
+                  <label htmlFor="generator-next-duration" className="sr-only">Duración del próximo episodio</label>
+                  <select id="generator-next-duration" value={duration} onChange={e => setDuration(Number(e.target.value))} className="w-auto"><option value={45}>45 s</option><option value={60}>1 min</option><option value={90}>1 min 30</option><option value={120}>2 min</option><option value={180}>3 min</option></select>
                   <button disabled={loading} onClick={continueStory} className="rounded bg-amber-500 px-5 py-2.5 font-bold">{loading ? "Escribiendo…" : `Crear episodio ${current.eps.length + 1}`}</button>
                 </div>
               </div>
@@ -248,7 +261,7 @@ export default function GeneratorModule() {
         onBack={() => setView("inicio")} onNext={() => { setSeriesId(result.seriesId); setView("continuar"); }} />}
 
       {authError && <div className="mt-4"><AiAuthNotice /></div>}
-      {notice && <p className="mt-4 rounded-xl border border-amber-400/20 bg-amber-400/10 p-3 text-sm text-amber-100">{notice}</p>}
+      {notice && <p role="status" className="mt-4 rounded-xl border border-amber-400/20 bg-amber-400/10 p-3 text-sm text-amber-100">{notice}</p>}
       {view === "inicio" && !!data.episodes.length && <EpisodeArchive episodes={data.episodes} series={data.series} onOpen={openEpisode} onDelete={(id: string) => remove("episodes", id)} />}
     </section>
   );
@@ -284,8 +297,8 @@ function Result({ episode: out, part, seriesTitle, onBack, onNext }: any) {
         {out.dialogueRules && <p className="text-xs text-slate-500">{out.dialogueRules}</p>}
       </div>}
       {tab === "prompts" && <div>
-        <details className="prompt-box" open><summary><span>Prompt Dola 60s</span><CopyButton text={out.dolaPrompt || ""} /><DolaButton text={out.dolaPrompt || ""} /></summary><p className="prompt-text">{out.dolaPrompt}</p></details>
-        {(out.prompts || []).map((p: string, i: number) => <details key={i} className="prompt-box"><summary><span>Bloque {i + 1} · {i * 15}-{(i + 1) * 15}s</span><CopyButton text={p} /></summary><p className="prompt-text">{p}</p></details>)}
+        <details className="prompt-box" open><summary><span>Prompt Dola 60s</span></summary><div className="flex flex-wrap gap-2 px-3 pb-1"><CopyButton text={out.dolaPrompt || ""} /><DolaButton text={out.dolaPrompt || ""} /></div><p className="prompt-text">{out.dolaPrompt}</p></details>
+        {(out.prompts || []).map((p: string, i: number) => <details key={i} className="prompt-box"><summary><span>Bloque {i + 1} · {i * 15}-{(i + 1) * 15}s</span></summary><div className="px-3 pb-1"><CopyButton text={p} /></div><p className="prompt-text">{p}</p></details>)}
       </div>}
       {tab === "plataformas" && <PlatformAdaptations adaptations={out.platformAdaptations || out.platform_adaptations || []} />}
       {tab === "archivos" && <div className="rounded-xl bg-[#121826] p-4 space-y-3">
@@ -301,14 +314,14 @@ function Result({ episode: out, part, seriesTitle, onBack, onNext }: any) {
 function EpisodeArchive({ episodes, series, onOpen, onDelete }: any) {
   const [open, setOpen] = useState(false);
   return <div className="mt-8">
-    <button onClick={() => setOpen(!open)} className="text-sm font-semibold uppercase tracking-wider text-slate-400 hover:text-white">{open ? "▾" : "▸"} Todos los episodios ({episodes.length})</button>
+    <button onClick={() => setOpen(!open)} aria-expanded={open} className="text-sm font-semibold uppercase tracking-wider text-slate-400 hover:text-white">{open ? "▾" : "▸"} Todos los episodios ({episodes.length})</button>
     {open && <div className="mt-3 space-y-2">
       {[...episodes].reverse().map((ep: any) => {
         const s = series.find((x: any) => x.id === ep.seriesId);
         return <div key={ep.id} className="flex flex-wrap items-center gap-2 rounded-xl bg-[#121826] p-3 text-sm">
           <span className="flex-1 min-w-[200px]"><b>{ep.title}</b> <span className="text-xs text-slate-500">· {s?.title || "Sin serie"}</span></span>
           <button className="rounded bg-slate-700 px-3 py-1 text-xs" onClick={() => onOpen(ep.seriesId, ep, ep.output?.partNumber || 1)}>Ver</button>
-          <button className="text-xs text-red-400" onClick={() => onDelete(ep.id)}>Eliminar</button>
+          <button className="text-xs text-slate-400 hover:text-red-300" onClick={() => { if (window.confirm("¿Eliminar el episodio «" + ep.title + "»? Esta acción no se puede deshacer.")) onDelete(ep.id); }}>Eliminar episodio</button>
         </div>;
       })}
     </div>}

@@ -79,9 +79,9 @@ export default function DolaStudioModule() {
       {ep && (
         <div className="rounded-xl bg-[#121826] p-4">
           <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">2 · Pega el prompt</p>
-          <details className="prompt-box" open><summary><span>Prompt Dola 60s</span><CopyButton text={out.dolaPrompt || ""} /></summary><p className="prompt-text">{out.dolaPrompt || "Este episodio no tiene prompt de Dola."}</p></details>
+          <details className="prompt-box" open><summary><span>Prompt Dola 60s</span></summary><div className="flex justify-end px-3 pb-1"><CopyButton text={out.dolaPrompt || ""} /></div><p className="prompt-text">{out.dolaPrompt || "Este episodio no tiene prompt de Dola."}</p></details>
           {(out.prompts || []).map((p: string, i: number) => (
-            <details key={i} className="prompt-box"><summary><span>Bloque {i + 1} · {i * 15}-{(i + 1) * 15}s</span><CopyButton text={p} /></summary><p className="prompt-text">{p}</p></details>
+            <details key={i} className="prompt-box"><summary><span>Bloque {i + 1} · {i * 15}-{(i + 1) * 15}s</span></summary><div className="flex justify-end px-3 pb-1"><CopyButton text={p} /></div><p className="prompt-text">{p}</p></details>
           ))}
           <p className="mt-3 text-xs text-slate-400">Si Dola entrega solo 30 s, escríbele «continúa». Descarga los clips.</p>
         </div>
@@ -89,7 +89,7 @@ export default function DolaStudioModule() {
       {ep && (
         <div className="rounded-xl bg-[#121826] p-4">
           <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">3 · Envíalo a Claude</p>
-          <p className="mt-2 text-sm text-slate-300">Descarga el paquete y adjúntalo en tu chat con Claude junto con los clips de Dola. Claude revisa, monta y prepara las 4 versiones.</p>
+          <p className="mt-2 text-sm text-slate-300">Descarga el paquete y adjúntalo en tu chat con Claude junto con los clips de Dola. Solicita allí la revisión, el montaje y las cuatro versiones; comprueba cada entrega antes de publicarla.</p>
           <button onClick={() => downloadText(buildClaudePack(ep, chars, d.metrics || [], d.clipChecks || []), `paquete-claude-${(ep.title || "episodio").replace(/[^a-z0-9áéíóúñ]+/gi, "-").toLowerCase()}.md`)}
             className="mt-3 w-full rounded bg-amber-500 px-4 py-2 font-bold">Descargar paquete para Claude</button>
         </div>

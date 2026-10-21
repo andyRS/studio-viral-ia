@@ -1,84 +1,118 @@
 "use client";
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { useData } from "@/lib/DataContext";
 
-const stages = ["Idea","Guion","Clips generados","Montaje","Publicado"];
-const checks: [string, string][] = [["facesConsistent","Caras consistentes"],["fullPhrases","Frases completas"],["pronunciationOk","Pronunciación correcta"],["noWatermark","Sin marca de agua"],["fruitHeads","Cabezas de fruta en todas las tomas"]];
+const stages = ["Idea", "Guion", "Clips generados", "Montaje", "Publicado"];
+const checks: [string, string][] = [["facesConsistent", "Caras consistentes"], ["fullPhrases", "Frases completas"], ["pronunciationOk", "Pronunciación correcta"], ["noWatermark", "Sin marca de agua"], ["fruitHeads", "Cabezas de fruta en todas las tomas"]];
 
-export default function ProductionModule(){
+export default function ProductionModule() {
   const { data, insert, update, remove, mode } = useData();
-  const cards = data.productionCards; const costs = data.costs; const clipChecks = data.clipChecks; const episodes = data.episodes;
+  const { productionCards: cards, costs, clipChecks, episodes } = data;
   const [newTitle, setNewTitle] = useState("");
+  const [newEpisodeId, setNewEpisodeId] = useState("");
   const [selectedCardId, setSelectedCardId] = useState("");
+  const [pendingDelete, setPendingDelete] = useState<{ kind: "card" | "cost"; id: string } | null>(null);
   const [costForm, setCostForm] = useState({ tool: "Higgsfield", credits: 10, costUsd: 2.5, episodeId: "" });
-  const total = costs.reduce((a, c) => a + Number(c.costUsd || 0), 0);
-  const selectedCard = cards.find(c => c.id === selectedCardId) || cards[0];
-  // La ficha de revisión se asocia al episodio de la tarjeta (o a la propia
-  // tarjeta si aún no hay episodio generado): una fila en clip_checks.
-  const checkKey = selectedCard ? (selectedCard.episodeId || selectedCard.id) : "";
-  const checkRow = clipChecks.find(c => c.episodeId === checkKey && (c.clipIndex ?? 0) === 0);
+  const total = costs.reduce((sum, cost) => sum + Number(cost.costUsd || 0), 0);
+  const selectedCard = cards.find(card => card.id === selectedCardId) || cards[0];
+  // clip_checks.episode_id referencia episodes.id; nunca se usa el ID de la tarjeta.
+  const selectedEpisodeId = selectedCard && episodes.some(episode => episode.id === selectedCard.episodeId) ? selectedCard.episodeId : "";
+  const checkRow = selectedEpisodeId ? clipChecks.find(check => check.episodeId === selectedEpisodeId && (check.clipIndex ?? 0) === 0) : undefined;
   const checkState: any = checkRow || { facesConsistent: false, fullPhrases: false, pronunciationOk: false, noWatermark: false, fruitHeads: false };
-  const episodeTitle = (id?: string) => episodes.find(e => e.id === id)?.title || cards.find(c => c.id === id)?.title || "";
+  const episodeTitle = (id?: string) => episodes.find(episode => episode.id === id)?.title || cards.find(card => card.id === id)?.title || "";
 
-  async function toggleCheck(key: string, value: boolean){
-    if (!selectedCard) return;
+  async function toggleCheck(key: string, value: boolean) {
+    if (!selectedEpisodeId) return;
     if (checkRow) await update("clipChecks", checkRow.id, { [key]: value });
-    else await insert("clipChecks", { episodeId: checkKey, clipIndex: 0, facesConsistent: false, fullPhrases: false, pronunciationOk: false, noWatermark: false, fruitHeads: false, [key]: value });
+    else await insert("clipChecks", { episodeId: selectedEpisodeId, clipIndex: 0, facesConsistent: false, fullPhrases: false, pronunciationOk: false, noWatermark: false, fruitHeads: false, [key]: value });
   }
-  async function addCard(){
-    const title = newTitle.trim() || ("Nuevo episodio " + (cards.length + 1));
-    const created = await insert("productionCards", { title, stage: "Idea", episodeId: "" });
+  async function addCard(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const title = newTitle.trim();
+    if (!title) return;
+    const episodeId = episodes.some(episode => episode.id === newEpisodeId) ? newEpisodeId : "";
+    const created = await insert("productionCards", { title, stage: "Idea", episodeId });
     setNewTitle("");
+    setNewEpisodeId("");
     if (created?.id) setSelectedCardId(created.id);
   }
-  async function addCost(){
-    await insert("costs", { tool: costForm.tool, credits: Number(costForm.credits), costUsd: Number(costForm.costUsd), episodeId: costForm.episodeId || selectedCard?.episodeId || "" });
+  async function addCost(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!Number.isFinite(costForm.credits) || !Number.isFinite(costForm.costUsd) || costForm.credits < 0 || costForm.costUsd < 0) return;
+    const episodeId = episodes.some(episode => episode.id === costForm.episodeId) ? costForm.episodeId : "";
+    await insert("costs", { tool: costForm.tool, credits: costForm.credits, costUsd: costForm.costUsd, episodeId });
+  }
+  async function confirmDelete(kind: "card" | "cost", id: string) {
+    await remove(kind === "card" ? "productionCards" : "costs", id);
+    if (kind === "card" && selectedCardId === id) setSelectedCardId("");
+    setPendingDelete(null);
   }
 
-  return <section>
-    <h2 className="text-xl font-bold">Producción — Kanban</h2>
-    <p className="text-xs text-slate-500 mt-1">{mode === "supabase" ? "Guardado en Supabase (production_cards, clip_checks, costs)." : "Modo sin login: localStorage."} Toca una tarjeta para seleccionarla y editar su checklist.</p>
-    <div className="grid gap-3 md:grid-cols-5 mt-4 overflow-x-auto">
-      {stages.map(s => <div key={s} className="min-w-[160px] rounded bg-[#121826] p-3">
-        <h3 className="font-semibold text-sm">{s}</h3>
-        {cards.filter(c => c.stage === s).map(c => <div key={c.id} onClick={() => setSelectedCardId(c.id)} className={`mt-2 rounded p-2 text-sm cursor-pointer ${selectedCard?.id === c.id ? "bg-amber-900/60 border border-amber-500" : "bg-slate-800"}`}>
-          {c.title}
-          <div className="flex gap-1 mt-2">{stages.map(ns => <button key={ns} title={ns} onClick={(e) => { e.stopPropagation(); update("productionCards", c.id, { stage: ns }); }} className={`h-2 flex-1 rounded ${ns === s ? "bg-amber-500" : "bg-slate-600"}`}/>)}</div>
-          <button className="text-red-400 text-[11px] mt-1" onClick={(e) => { e.stopPropagation(); remove("productionCards", c.id); }}>Eliminar tarjeta</button>
-        </div>)}
-      </div>)}
-    </div>
-    <div className="flex gap-2 mt-3 flex-wrap">
-      <input placeholder="Título de la tarjeta / episodio" value={newTitle} onChange={e => setNewTitle(e.target.value)} className="min-w-[220px]"/>
-      <button className="rounded bg-amber-500 text-black px-3 py-1 text-sm font-bold" onClick={addCard}>+ Tarjeta</button>
+  return <section className="space-y-7">
+    <div>
+      <h2 className="text-xl font-bold">Centro de producción</h2>
+      <p className="mt-1 text-sm text-slate-400">Sigue cada episodio de la idea a la publicación. {mode === "supabase" ? "Los cambios se guardan en tu cuenta." : "Los cambios se guardan en este dispositivo."}</p>
     </div>
 
-    <h3 className="font-bold mt-6">Checklist por clip {selectedCard ? `— ${selectedCard.title}` : ""}</h3>
-    {selectedCard ? <>
-      {checks.map(([k, label]) => <label key={k} className="flex gap-2 text-sm mt-1"><input type="checkbox" className="w-auto" checked={!!checkState[k]} onChange={e => toggleCheck(k, e.target.checked)}/> {label}</label>)}
-      <p className="text-xs text-slate-500 mt-1">Se guarda en {mode === "supabase" ? "clip_checks (Supabase)" : "localStorage"} al marcar cada punto.</p>
-    </> : <p className="text-sm text-slate-400">Crea o selecciona una tarjeta para usar el checklist.</p>}
-
-    <h3 className="font-bold mt-6">Créditos y costos — Total: ${total.toFixed(2)}</h3>
-    <div className="flex gap-2 mt-2 flex-wrap items-center">
-      <select value={costForm.tool} onChange={e => setCostForm({ ...costForm, tool: e.target.value })}><option>Higgsfield</option><option>Dola</option><option>Otro</option></select>
-      <input type="number" value={costForm.credits} onChange={e => setCostForm({ ...costForm, credits: Number(e.target.value) })} placeholder="Créditos" className="w-24"/>
-      <input type="number" step="0.01" value={costForm.costUsd} onChange={e => setCostForm({ ...costForm, costUsd: Number(e.target.value) })} placeholder="US$" className="w-24"/>
-      <select value={costForm.episodeId} onChange={e => setCostForm({ ...costForm, episodeId: e.target.value })}>
-        <option value="">Episodio (opcional)…</option>
-        {episodes.map(ep => <option key={ep.id} value={ep.id}>{ep.title}</option>)}
-      </select>
-      <button className="rounded bg-slate-700 px-3 py-1 text-sm" onClick={addCost}>+ Registrar costo</button>
-      <button className="rounded bg-slate-800 px-3 py-1 text-sm" onClick={() => { setCostForm({ tool: "Higgsfield", credits: 10, costUsd: 2.5, episodeId: costForm.episodeId }); }}>Higgsfield 10cr</button>
-      <button className="rounded bg-slate-800 px-3 py-1 text-sm" onClick={() => { setCostForm({ tool: "Dola", credits: 5, costUsd: 1, episodeId: costForm.episodeId }); }}>Dola 5cr</button>
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5" aria-label="Etapas de producción">
+      {stages.map(stage => {
+        const stageCards = cards.filter(card => card.stage === stage);
+        return <div key={stage} className="min-w-0 rounded-xl bg-[#121826] p-3">
+          <h3 className="flex items-center justify-between gap-2 text-sm font-semibold"><span>{stage}</span><span className="rounded-full border border-white/10 px-2 py-0.5 text-xs text-slate-300" aria-label={`${stageCards.length} tarjetas`}>{stageCards.length}</span></h3>
+          <div className="mt-3 space-y-2">
+            {stageCards.length === 0 && <p className="rounded-lg border border-dashed border-white/10 p-3 text-xs text-slate-400">Sin episodios en esta etapa.</p>}
+            {stageCards.map(card => <article key={card.id} className={`min-w-0 rounded-lg border p-2.5 text-sm ${selectedCard?.id === card.id ? "border-amber-500/60 bg-amber-500/10" : "border-white/10 bg-slate-800/60"}`}>
+              <button type="button" onClick={() => setSelectedCardId(card.id)} aria-pressed={selectedCard?.id === card.id} className="min-h-11 w-full break-words rounded-md px-1 py-2 text-left font-semibold text-white hover:text-amber-200">{card.title}<span className="mt-1 block text-xs font-normal text-slate-400">{selectedCard?.id === card.id ? "Seleccionado para revisión" : "Seleccionar para revisar"}</span></button>
+              <label htmlFor={`production-stage-${card.id}`} className="mt-2 block text-xs text-slate-300">Etapa</label>
+              <select id={`production-stage-${card.id}`} value={card.stage} onChange={event => update("productionCards", card.id, { stage: event.target.value })} className="mt-1 min-h-11 text-sm">{stages.map(nextStage => <option key={nextStage} value={nextStage}>{nextStage}</option>)}</select>
+              <label htmlFor={`production-episode-${card.id}`} className="mt-2 block text-xs text-slate-300">Episodio vinculado</label>
+              <select id={`production-episode-${card.id}`} value={episodes.some(episode => episode.id === card.episodeId) ? card.episodeId : ""} onChange={event => update("productionCards", card.id, { episodeId: event.target.value })} className="mt-1 min-h-11 text-sm">
+                <option value="">Sin vincular</option>
+                {episodes.map(episode => <option key={episode.id} value={episode.id}>{episode.title}</option>)}
+              </select>
+              {!episodes.some(episode => episode.id === card.episodeId) && <p className="mt-1 text-xs text-slate-400">Vincula un episodio para guardar la revisión.</p>}
+              {pendingDelete?.kind === "card" && pendingDelete.id === card.id ? <div className="mt-2 rounded-lg border border-red-400/30 bg-red-500/10 p-2" role="group" aria-label={`Confirmar eliminación de ${card.title}`}>
+                <p className="text-xs text-red-100">¿Eliminar esta tarjeta?</p>
+                <div className="mt-2 flex flex-wrap gap-2"><button type="button" className="min-h-10 rounded-md border border-white/15 px-2 text-xs" onClick={() => setPendingDelete(null)}>Cancelar</button><button type="button" className="min-h-10 rounded-md bg-red-500 px-2 text-xs font-semibold text-white" onClick={() => confirmDelete("card", card.id)}>Sí, eliminar</button></div>
+              </div> : <button type="button" className="mt-2 min-h-10 rounded-md px-2 text-xs text-slate-300 hover:bg-white/5 hover:text-white" onClick={() => setPendingDelete({ kind: "card", id: card.id })}>Eliminar tarjeta</button>}
+            </article>)}
+          </div>
+        </div>;
+      })}
     </div>
-    <ul className="text-sm mt-2 space-y-1">
-      {costs.map(c => <li key={c.id} className="flex gap-2 items-center"><span>{c.tool}: {c.credits} créditos — ${Number(c.costUsd).toFixed(2)}{episodeTitle(c.episodeId) ? ` · ${episodeTitle(c.episodeId)}` : ""}</span><button className="text-red-400 text-xs" onClick={() => remove("costs", c.id)}>Eliminar</button></li>)}
-      {costs.length === 0 && <li className="text-slate-400">Sin costos registrados.</li>}
-    </ul>
-    {episodes.length > 0 && <div className="mt-3 text-sm space-y-1">
-      <b>Costo por episodio:</b>
-      {episodes.map(ep => <p key={ep.id} className="text-xs text-slate-300">{ep.title}: ${costs.filter(c => c.episodeId === ep.id).reduce((a, c) => a + Number(c.costUsd || 0), 0).toFixed(2)}</p>)}
-    </div>}
+
+    <form onSubmit={addCard} className="flex flex-wrap items-end gap-3 rounded-xl bg-[#121826] p-4">
+      <div className="min-w-[220px] flex-1"><label htmlFor="production-new-title" className="mb-1 block text-sm font-medium">Título del episodio o tarjeta</label><input id="production-new-title" value={newTitle} onChange={event => setNewTitle(event.target.value)} placeholder="Ej.: Episodio 2 · El encuentro" required /></div>
+      <div className="min-w-[220px] flex-1"><label htmlFor="production-new-episode" className="mb-1 block text-sm font-medium">Vincular episodio</label><select id="production-new-episode" value={newEpisodeId} onChange={event => setNewEpisodeId(event.target.value)}><option value="">Sin vincular por ahora</option>{episodes.map(episode => <option key={episode.id} value={episode.id}>{episode.title}</option>)}</select></div>
+      <button type="submit" className="min-h-11 rounded-lg bg-amber-500 px-4 text-sm font-bold">Añadir a producción</button>
+    </form>
+
+    <div className="rounded-xl bg-[#121826] p-4">
+      <h3 className="font-bold">Revisión general{selectedCard ? ` · ${selectedCard.title}` : ""}</h3>
+      {selectedCard ? <>
+        {selectedEpisodeId ? <p className="mt-1 text-xs text-slate-400">Revisión de {episodes.find(episode => episode.id === selectedEpisodeId)?.title}. Si varias tarjetas usan este episodio, comparten esta ficha.</p> : <p className="mt-2 rounded-lg border border-amber-400/20 bg-amber-400/5 p-3 text-sm text-amber-100">{episodes.length ? "Vincula esta tarjeta a un episodio guardado para activar la revisión." : "Todavía no hay episodios guardados. Crea uno en Generador y luego vincúlalo para activar la revisión."}</p>}
+        <fieldset disabled={!selectedEpisodeId} className="mt-3 grid gap-1 sm:grid-cols-2 disabled:opacity-50"><legend className="sr-only">Puntos de revisión</legend>{checks.map(([key, label]) => <label key={key} className="flex min-h-11 items-center gap-3 rounded-lg px-2 text-sm hover:bg-white/5"><input type="checkbox" checked={!!checkState[key]} onChange={event => toggleCheck(key, event.target.checked)} />{label}</label>)}</fieldset>
+      </> : <p className="mt-2 text-sm text-slate-400">Crea una tarjeta para empezar la revisión.</p>}
+    </div>
+
+    <div className="rounded-xl bg-[#121826] p-4">
+      <h3 className="font-bold">Créditos y costos <span className="text-amber-300">· Total: ${total.toFixed(2)}</span></h3>
+      <form onSubmit={addCost} className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5 xl:items-end">
+        <div><label htmlFor="production-cost-tool" className="mb-1 block text-sm">Herramienta</label><select id="production-cost-tool" value={costForm.tool} onChange={event => setCostForm({ ...costForm, tool: event.target.value })}><option>Higgsfield</option><option>Dola</option><option>Otro</option></select></div>
+        <div><label htmlFor="production-cost-credits" className="mb-1 block text-sm">Créditos</label><input id="production-cost-credits" type="number" min="0" step="1" required value={costForm.credits} onChange={event => setCostForm({ ...costForm, credits: Number(event.target.value) })} /></div>
+        <div><label htmlFor="production-cost-usd" className="mb-1 block text-sm">Costo (US$)</label><input id="production-cost-usd" type="number" min="0" step="0.01" required value={costForm.costUsd} onChange={event => setCostForm({ ...costForm, costUsd: Number(event.target.value) })} /></div>
+        <div><label htmlFor="production-cost-episode" className="mb-1 block text-sm">Episodio</label><select id="production-cost-episode" value={costForm.episodeId} onChange={event => setCostForm({ ...costForm, episodeId: event.target.value })}><option value="">Sin asignar</option>{episodes.map(episode => <option key={episode.id} value={episode.id}>{episode.title}</option>)}</select></div>
+        <button type="submit" className="min-h-11 rounded-lg bg-slate-700 px-3 text-sm font-semibold">Registrar costo</button>
+      </form>
+      <div className="mt-3 flex flex-wrap gap-2" aria-label="Valores rápidos de costo">
+        <button type="button" className="min-h-10 rounded-lg bg-slate-800 px-3 text-xs" onClick={() => setCostForm({ tool: "Higgsfield", credits: 10, costUsd: 2.5, episodeId: costForm.episodeId })}>Higgsfield · 10 créditos</button>
+        <button type="button" className="min-h-10 rounded-lg bg-slate-800 px-3 text-xs" onClick={() => setCostForm({ tool: "Dola", credits: 5, costUsd: 1, episodeId: costForm.episodeId })}>Dola · 5 créditos</button>
+      </div>
+      {costs.length ? <ul className="mt-4 space-y-2 text-sm">{costs.map(cost => <li key={cost.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 p-2.5">
+        <span className="min-w-0 break-words">{cost.tool}: {cost.credits} créditos · ${Number(cost.costUsd).toFixed(2)}{episodeTitle(cost.episodeId) ? ` · ${episodeTitle(cost.episodeId)}` : ""}</span>
+        {pendingDelete?.kind === "cost" && pendingDelete.id === cost.id ? <span className="flex flex-wrap items-center gap-2" role="group" aria-label={`Confirmar eliminación del costo de ${cost.tool}`}><span className="text-xs text-red-200">¿Eliminar costo?</span><button type="button" className="min-h-10 rounded-md border border-white/15 px-2 text-xs" onClick={() => setPendingDelete(null)}>Cancelar</button><button type="button" className="min-h-10 rounded-md bg-red-500 px-2 text-xs font-semibold text-white" onClick={() => confirmDelete("cost", cost.id)}>Sí, eliminar</button></span> : <button type="button" className="min-h-10 rounded-md px-2 text-xs text-slate-300 hover:bg-white/5 hover:text-white" onClick={() => setPendingDelete({ kind: "cost", id: cost.id })}>Eliminar</button>}
+      </li>)}</ul> : <p className="mt-4 rounded-lg border border-dashed border-white/10 p-3 text-sm text-slate-400">Todavía no hay costos registrados.</p>}
+      {episodes.length > 0 && <div className="mt-4 border-t border-white/10 pt-3 text-sm"><h4 className="font-semibold">Costo por episodio</h4><ul className="mt-2 space-y-1">{episodes.map(episode => <li key={episode.id} className="flex justify-between gap-3 text-slate-300"><span className="min-w-0 truncate">{episode.title}</span><span className="shrink-0">${costs.filter(cost => cost.episodeId === episode.id).reduce((sum, cost) => sum + Number(cost.costUsd || 0), 0).toFixed(2)}</span></li>)}</ul></div>}
+    </div>
   </section>;
 }

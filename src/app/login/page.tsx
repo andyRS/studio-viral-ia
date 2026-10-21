@@ -1,34 +1,78 @@
 "use client";
-import { useState } from "react";
+
+import { useRef, useState, type FormEvent } from "react";
 import { createClient, hasSupabase } from "@/lib/supabase/client";
+
 export default function LoginPage() {
-  const [email, setEmail] = useState(""); const [password, setPassword] = useState(""); const [msg, setMsg] = useState(""); const [busy, setBusy] = useState(false);
-  async function submit(e: any) {
-    e.preventDefault();
-    if (!hasSupabase()) { setMsg("Supabase no está configurado. Puedes usar la app en modo local."); return; }
-    setBusy(true); const { error } = await createClient().auth.signInWithPassword({ email, password }); setBusy(false);
-    setMsg(error ? error.message : "¡Bienvenido! Entrando…"); if (!error) window.location.href = "/";
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [msg, setMsg] = useState("");
+  const [msgType, setMsgType] = useState<"error" | "success">("success");
+  const [busy, setBusy] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!hasSupabase()) {
+      setMsgType("error");
+      setMsg("Supabase no está configurado. Puedes usar la app en modo local.");
+      return;
+    }
+    setBusy(true);
+    setMsg("");
+    try {
+      const { error } = await createClient().auth.signInWithPassword({ email, password });
+      setMsgType(error ? "error" : "success");
+      setMsg(error ? error.message : "¡Bienvenido! Entrando…");
+      if (!error) window.location.href = "/";
+    } catch {
+      setMsgType("error");
+      setMsg("No se pudo completar el inicio de sesión. Inténtalo de nuevo.");
+    } finally {
+      setBusy(false);
+    }
   }
+
   async function register() {
-    if (!hasSupabase()) return setMsg("Configura NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_ANON_KEY primero.");
-    setBusy(true); const { error } = await createClient().auth.signUp({ email, password }); setBusy(false);
-    setMsg(error ? error.message : "Revisa tu correo para confirmar la cuenta.");
+    if (!formRef.current?.reportValidity()) return;
+    if (!hasSupabase()) {
+      setMsgType("error");
+      setMsg("Supabase no está configurado. Puedes usar la app en modo local.");
+      return;
+    }
+    setBusy(true);
+    setMsg("");
+    try {
+      const { error } = await createClient().auth.signUp({ email, password });
+      setMsgType(error ? "error" : "success");
+      setMsg(error ? error.message : "Revisa tu correo para confirmar la cuenta.");
+    } catch {
+      setMsgType("error");
+      setMsg("No se pudo crear la cuenta. Inténtalo de nuevo.");
+    } finally {
+      setBusy(false);
+    }
   }
-  return (
-    <main className="grid min-h-screen place-items-center px-5">
-      <div className="w-full max-w-sm">
-        <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br from-amber-400 to-orange-600 text-lg font-black text-black shadow-lg shadow-orange-900/40">EV</div>
-        <h1 className="mt-5 text-center text-2xl font-extrabold tracking-tight">Estudio Viral</h1>
-        <p className="mt-1 text-center text-sm text-slate-400">Inicia sesión para guardar tus series y usar la IA</p>
-        <form onSubmit={submit} className="mt-7 space-y-3 rounded-2xl border border-white/10 bg-white/[.03] p-5">
-          <input type="email" placeholder="correo@ejemplo.com" value={email} onChange={e => setEmail(e.target.value)} required autoComplete="email" />
-          <input type="password" placeholder="Contraseña" value={password} onChange={e => setPassword(e.target.value)} required autoComplete="current-password" />
-          <button disabled={busy} className="w-full rounded bg-amber-500 py-2.5 font-bold text-black">{busy ? "Un momento…" : "Entrar"}</button>
-          <button type="button" disabled={busy} onClick={register} className="w-full rounded-xl border border-white/10 py-2.5 text-sm text-slate-200 hover:bg-white/5">Crear cuenta</button>
-          {msg && <p className="text-sm text-amber-300">{msg}</p>}
-        </form>
-        <a href="/" className="mt-5 block text-center text-sm text-slate-400 hover:text-white">Usar en modo local sin sesión →</a>
+
+  return <main className="grid min-h-screen place-items-center px-4 py-10 sm:px-6">
+    <div className="w-full max-w-md">
+      <div className="flex flex-col items-center text-center">
+        <span className="studio-brand-mark !h-14 !w-14 !rounded-2xl !text-lg" aria-hidden="true"><span>EV</span></span>
+        <p className="studio-eyebrow mt-5 text-[#FFBF65]">Creative Intelligence Studio</p>
+        <h1 className="mt-2 text-3xl font-extrabold tracking-tight text-white">Estudio Viral</h1>
+        <p className="mt-2 max-w-sm text-sm leading-6 text-slate-300">Entra para guardar tus proyectos y acceder a las funciones de IA de tu cuenta.</p>
       </div>
-    </main>
-  );
+
+      <form ref={formRef} onSubmit={submit} className="studio-panel mt-7 space-y-4 p-5 sm:p-6">
+        <div><label htmlFor="login-email" className="field-label block">Correo electrónico</label><input id="login-email" type="email" placeholder="correo@ejemplo.com" value={email} onChange={event => setEmail(event.target.value)} required autoComplete="email" /></div>
+        <div><label htmlFor="login-password" className="field-label block">Contraseña</label><input id="login-password" type="password" placeholder="Tu contraseña" value={password} onChange={event => setPassword(event.target.value)} required autoComplete="current-password" /></div>
+        <div className="space-y-2 pt-1">
+          <button type="submit" disabled={busy} className="min-h-11 w-full rounded-xl bg-[#FF9F1C] px-4 py-2.5 text-sm font-bold text-[#090D16] hover:brightness-110">{busy ? "Un momento…" : "Iniciar sesión"}</button>
+          <button type="button" disabled={busy} onClick={register} className="min-h-11 w-full rounded-xl border border-white/15 bg-white/5 px-4 py-2.5 text-sm font-semibold text-slate-100 hover:bg-white/10">Crear cuenta</button>
+        </div>
+        {msg && <p role={msgType === "error" ? "alert" : "status"} className={`rounded-xl border p-3 text-sm ${msgType === "error" ? "border-rose-400/25 bg-rose-400/10 text-rose-200" : "border-emerald-400/25 bg-emerald-400/10 text-emerald-200"}`}>{msg}</p>}
+      </form>
+      <a href="/" className="mt-5 block rounded-lg py-2 text-center text-sm font-semibold text-slate-300 hover:text-white">Continuar en modo local sin sesión →</a>
+    </div>
+  </main>;
 }
