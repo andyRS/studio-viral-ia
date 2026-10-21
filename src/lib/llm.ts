@@ -1,14 +1,43 @@
 import { MANUAL_VIRAL } from "./knowledge";
+
+// Modelos de respaldo si el principal está saturado (503) o sin cuota (429).
+// Se pueden cambiar con LLM_FALLBACK_MODELS="modelo1,modelo2".
+const GEMINI_FALLBACKS = "gemini-3.5-flash-lite,gemini-3.6-flash";
+// Vercel corta las funciones a los 60 s: pasado este tiempo no se empieza otro intento.
+const GEMINI_BUDGET_MS = 35000;
+const GEMINI_HARD_LIMIT_MS = 52000;
+const sleep = (ms:number) => new Promise(r => setTimeout(r, ms));
+
+async function callGemini(key:string, model:string, system:string, user:string):Promise<string>{
+  const models = Array.from(new Set([model, ...(process.env.LLM_FALLBACK_MODELS || GEMINI_FALLBACKS).split(",").map(s => s.trim()).filter(Boolean)]));
+  const body = JSON.stringify({systemInstruction:{parts:[{text:system}]},contents:[{role:"user",parts:[{text:user}]}],generationConfig:{temperature:0.8,maxOutputTokens:16000}});
+  let last = ""; const start = Date.now();
+  for (const m of models) {
+    if (Date.now() - start > GEMINI_BUDGET_MS) break;
+    // El principal se reintenta una vez (los picos de demanda suelen durar segundos); los de respaldo, no.
+    for (let attempt = 0; attempt < (m === model ? 2 : 1); attempt++) {
+      if (attempt > 0 && Date.now() - start > GEMINI_BUDGET_MS) break;
+      // Tope por llamada para responder antes de que Vercel corte la función (60 s).
+      const ctrl = new AbortController(); const timer = setTimeout(() => ctrl.abort(), Math.max(5000, GEMINI_HARD_LIMIT_MS - (Date.now() - start)));
+      let r: Response;
+      try { r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(m)}:generateContent`, { method: "POST", headers: { "x-goog-api-key": key, "Content-Type": "application/json" }, body, signal: ctrl.signal }); }
+      catch (e: any) { if (e?.name === "AbortError") throw new Error(`El modelo ${m} tardó demasiado en responder. Usa un modelo más rápido en Vercel (LLM_MODEL=gemini-3.5-flash-lite) o inténtalo de nuevo.`); throw e; }
+      finally { clearTimeout(timer); }
+      if (r.ok) { const j = await r.json(); return (j.candidates?.[0]?.content?.parts || []).map((p:any) => p.text || "").join("\n"); }
+      const detail = await r.text();
+      if (r.status === 503 || r.status === 500) { last = `${m} saturado`; if (attempt === 0 && m === model) await sleep(1500); continue; }
+      if (r.status === 429) { last = `${m} sin cuota gratuita por hoy`; break; }
+      if (r.status === 404) { last = `${m} no existe`; break; }
+      throw new Error(`Gemini error ${r.status}: ${detail}`);
+    }
+  }
+  throw new Error(`Gemini no está disponible ahora mismo (${last}). Google tiene picos de demanda: espera un par de minutos y vuelve a intentarlo. Si es por cuota, se reinicia a medianoche (hora del Pacífico).`);
+}
 export async function callLLM(system:string, user:string):Promise<string>{
   const key=process.env.LLM_API_KEY; const provider=(process.env.LLM_PROVIDER||"anthropic").toLowerCase();
   const model=process.env.LLM_MODEL||(provider==="openai"?"gpt-4o-mini":provider==="gemini"?"gemini-3.5-flash-lite":"claude-sonnet-5-5");
   if(!key) throw new Error("Falta LLM_API_KEY en variables de entorno. Configúrala en .env.local o usa el modo plantilla local.");
-  if(provider==="gemini"){
-    const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,{method:"POST",headers:{"x-goog-api-key":key,"Content-Type":"application/json"},body:JSON.stringify({systemInstruction:{parts:[{text:system}]},contents:[{role:"user",parts:[{text:user}]}],generationConfig:{temperature:0.8,maxOutputTokens:16000}})});
-    if(r.status===429) throw new Error("Límite gratuito de Gemini alcanzado. Se reinicia cada día a medianoche (hora del Pacífico); inténtalo más tarde.");
-    if(!r.ok) throw new Error(`Gemini error ${r.status}: ${await r.text()}`);
-    const j=await r.json(); return (j.candidates?.[0]?.content?.parts||[]).map((p:any)=>p.text||"").join("\n");
-  }
+  if(provider==="gemini") return callGemini(key, model, system, user);
   if(provider==="openai"||provider==="gemini"){
     // Gemini usa su endpoint compatible con OpenAI (clave gratis de Google AI Studio).
     const url=provider==="gemini"?"https://generativelanguage.googleapis.com/v1beta/openai/chat/completions":"https://api.openai.com/v1/chat/completions";
