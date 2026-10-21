@@ -1,0 +1,30 @@
+# Servidor de montaje en Fly.io. Desplegar desde esta carpeta con: fly deploy
+# Cambia "app" si Fly dice que el nombre ya está ocupado.
+app = "montaje-estudio-viral"
+primary_region = "mia"   # Miami, la más cercana a RD
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8000"
+  ALLOWED_ORIGINS = "https://studio-viral-ia.vercel.app"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = "stop"   # se apaga sin uso: solo pagas mientras monta
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/salud"
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "60s"
+
+[[vm]]
+  memory = "2gb"
+  cpu_kind = "shared"
+  cpus = 2
