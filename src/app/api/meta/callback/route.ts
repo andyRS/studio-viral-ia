@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth-guard";
-import { checkState, exchangeCode, saveConnection } from "@/lib/meta";
+import { checkState, exchangeCode, loadConnection, saveConnection } from "@/lib/meta";
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 // GET /api/meta/callback — Facebook vuelve aquí con ?code; se guardan los tokens de página en el servidor.
@@ -11,7 +11,10 @@ export async function GET(req: NextRequest) {
   if (q.get("error")) return back("cancelado", q.get("error_description") || "");
   if (!checkState(q.get("state") || "", auth.user.id)) return back("error", "La sesión de conexión caducó. Vuelve a intentarlo.");
   try {
-    const conn = await exchangeCode(q.get("code") || "", origin);
+    const conn: any = await exchangeCode(q.get("code") || "", origin);
+    // Al reconectar se conserva la elección de páginas (las que sigan existiendo).
+    const prev = await loadConnection(auth.user.id).catch(() => null);
+    if (Array.isArray(prev?.selected)) conn.selected = prev.selected.filter((id: string) => conn.pages.some((p: any) => p.id === id));
     await saveConnection(auth.user.id, conn);
     return back(conn.pages.length ? "conectado" : "sin-paginas");
   } catch (e: any) { return back("error", e.message); }

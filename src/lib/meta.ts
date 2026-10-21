@@ -75,7 +75,7 @@ export async function exchangeCode(code: string, origin: string) {
 
 // Lo que ve el navegador: nombres, nunca tokens.
 export function publicView(conn: any) {
-  return { connected: !!conn, userName: conn?.userName, connectedAt: conn?.connectedAt, pages: (conn?.pages || []).map((p: any) => ({ id: p.id, name: p.name, ig: p.ig?.username || null })) };
+  return { connected: !!conn, userName: conn?.userName, connectedAt: conn?.connectedAt, selected: Array.isArray(conn?.selected) ? conn.selected : null, pages: (conn?.pages || []).map((p: any) => ({ id: p.id, name: p.name, ig: p.ig?.username || null })) };
 }
 
 async function pool<T, R>(items: T[], n: number, fn: (x: T) => Promise<R>): Promise<R[]> {
@@ -120,25 +120,52 @@ async function facebookReels(page: any): Promise<ImportedMetric[]> {
   const list = await graph(`/${page.id}/video_reels`, { fields: "id,description,created_time,length,permalink_url", limit: String(REELS_LIMIT), access_token: page.token });
   const rows = await pool(list.data || [], 5, async (r: any) => {
     const v = await insights(`/${r.id}/video_insights`, page.token,
-      ["blue_reels_play_count", "post_impressions_unique", "post_video_avg_time_watched", "post_video_social_actions", "post_video_followers"],
+      // post_impressions_unique ya no es válida para reels en v26: si se pide, falla toda la llamada.
+      ["blue_reels_play_count", "post_video_avg_time_watched", "post_video_social_actions", "post_video_followers", "post_video_likes_by_reaction_type"],
       ["blue_reels_play_count", "post_video_avg_time_watched"]);
     if (!v) return null;
-    const social = v.post_video_social_actions || {};
+    const social = v.post_video_social_actions || {}; // {} cuando no hay comentarios ni compartidos
     const shares = num(social.SHARE ?? social.share);
+    const likes = Object.values(v.post_video_likes_by_reaction_type || {}).reduce((a: number, x: any) => a + num(x), 0) as number;
     return {
       externalId: `fb:${r.id}`, platform: "Facebook" as const, account: page.name, caption: r.description || "", date: String(r.created_time || "").slice(0, 10),
       permalink: r.permalink_url ? (String(r.permalink_url).startsWith("http") ? r.permalink_url : `https://www.facebook.com${r.permalink_url}`) : "",
       views: num(v.blue_reels_play_count), avgWatch: Math.round(num(v.post_video_avg_time_watched) / 100) / 10,
-      interactions: shares + num(social.COMMENT ?? social.comment), followers: num(v.post_video_followers), duration: Math.round(num(r.length)),
-      shares, reach: num(v.post_impressions_unique),
+      interactions: likes + shares + num(social.COMMENT ?? social.comment), followers: num(v.post_video_followers), duration: Math.round(num(r.length)),
+      shares,
     };
   });
   return rows.filter(Boolean) as ImportedMetric[];
 }
 
+// Páginas que el usuario eligió ver (null = aún no ha elegido: no se importa nada).
+export const selectedPages = (conn: any) => Array.isArray(conn?.selected) ? (conn.pages || []).filter((p: any) => conn.selected.includes(p.id)) : [];
+
+// IDs (externalId) de los Reels de una página, para borrar sus métricas al quitarla.
+async function externalIdsOf(page: any) {
+  const ids: string[] = [];
+  try { const l = await graph(`/${page.id}/video_reels`, { fields: "id", limit: "100", access_token: page.token }); ids.push(...(l.data || []).map((r: any) => `fb:${r.id}`)); } catch {}
+  if (page.ig) try { const l = await graph(`/${page.ig.id}/media`, { fields: "id", limit: "100", access_token: page.token }); ids.push(...(l.data || []).map((m: any) => `ig:${m.id}`)); } catch {}
+  return ids;
+}
+
+export async function setSelection(userId: string, ids: string[]) {
+  const conn = await loadConnection(userId);
+  if (!conn) throw new Error("Primero conecta Facebook e Instagram.");
+  const valid = new Set((conn.pages || []).map((p: any) => p.id));
+  const next = ids.filter(id => valid.has(id));
+  // Al quitar una página se borran sus métricas ya importadas (también en la primera elección,
+  // por si se importó todo antes de que existiera la selección).
+  const before = Array.isArray(conn.selected) ? conn.selected : (conn.pages || []).map((p: any) => p.id);
+  const removed = (conn.pages || []).filter((p: any) => before.includes(p.id) && !next.includes(p.id));
+  const removedExternalIds = (await pool(removed, 4, externalIdsOf)).flat();
+  await saveConnection(userId, { ...conn, selected: next });
+  return { selected: next, removedExternalIds };
+}
+
 export async function importMetrics(conn: any) {
   const metrics: ImportedMetric[] = []; const errors: string[] = [];
-  for (const page of conn?.pages || []) {
+  for (const page of selectedPages(conn)) {
     try { metrics.push(...await facebookReels(page)); } catch (e: any) { errors.push(`Facebook · ${page.name}: ${e.message}`); }
     if (page.ig) try { metrics.push(...await instagramReels(page)); } catch (e: any) { errors.push(`Instagram · @${page.ig.username}: ${e.message}`); }
   }
