@@ -66,7 +66,7 @@ export default function MetaConnect() {
         const ep = matchEpisode(m.caption, data.episodes);
         if (ep) linked++;
         const row = {
-          externalId: m.externalId, permalink: m.permalink, platform: m.platform, date: m.date,
+          externalId: m.externalId, permalink: m.permalink, platform: m.platform, date: m.date, accountName: m.account, thumb: m.thumb,
           views: m.views, avgWatch: m.avgWatch, interactions: m.interactions, followers: m.followers, duration: m.duration || ep?.duration || 0,
           shares: m.shares, saves: m.saves, skipRate: m.skipRate, reach: m.reach,
           episodeId: ep?.id, episodeTitle: ep?.title || (Array.from(m.caption.split("\n")[0]).slice(0, 80).join("").trim() || `Reel ${m.date}`),

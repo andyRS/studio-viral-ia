@@ -96,11 +96,11 @@ async function insights(path: string, token: string, full: string[], basic: stri
 export interface ImportedMetric {
   externalId: string; platform: "Facebook" | "Instagram"; account: string; caption: string; permalink: string; date: string;
   views: number; avgWatch: number; interactions: number; followers: number; duration: number;
-  shares?: number; saves?: number; skipRate?: number; reach?: number;
+  shares?: number; saves?: number; skipRate?: number; reach?: number; thumb?: string;
 }
 
 async function instagramReels(page: any): Promise<ImportedMetric[]> {
-  const media = await graph(`/${page.ig.id}/media`, { fields: "id,caption,media_product_type,timestamp,permalink", limit: String(REELS_LIMIT), access_token: page.token });
+  const media = await graph(`/${page.ig.id}/media`, { fields: "id,caption,media_product_type,timestamp,permalink,thumbnail_url", limit: String(REELS_LIMIT), access_token: page.token });
   const reels = (media.data || []).filter((m: any) => m.media_product_type === "REELS");
   const rows = await pool(reels, 5, async (m: any) => {
     const v = await insights(`/${m.id}/insights`, page.token,
@@ -108,7 +108,7 @@ async function instagramReels(page: any): Promise<ImportedMetric[]> {
       ["views", "reach", "saved", "shares", "total_interactions"]);
     if (!v) return null;
     return {
-      externalId: `ig:${m.id}`, platform: "Instagram" as const, account: `@${page.ig.username}`, caption: m.caption || "", permalink: m.permalink || "", date: String(m.timestamp || "").slice(0, 10),
+      externalId: `ig:${m.id}`, platform: "Instagram" as const, account: `@${page.ig.username}`, caption: m.caption || "", permalink: m.permalink || "", thumb: m.thumbnail_url || "", date: String(m.timestamp || "").slice(0, 10),
       views: num(v.views), avgWatch: Math.round(num(v.ig_reels_avg_watch_time) / 100) / 10, interactions: num(v.total_interactions), followers: 0, duration: 0,
       shares: num(v.shares), saves: num(v.saved), reach: num(v.reach), skipRate: typeof v.reels_skip_rate === "number" ? Math.round(v.reels_skip_rate * 10) / 10 : undefined,
     };
@@ -117,7 +117,7 @@ async function instagramReels(page: any): Promise<ImportedMetric[]> {
 }
 
 async function facebookReels(page: any): Promise<ImportedMetric[]> {
-  const list = await graph(`/${page.id}/video_reels`, { fields: "id,description,created_time,length,permalink_url", limit: String(REELS_LIMIT), access_token: page.token });
+  const list = await graph(`/${page.id}/video_reels`, { fields: "id,description,created_time,length,permalink_url,picture,thumbnails{uri,is_preferred}", limit: String(REELS_LIMIT), access_token: page.token });
   const rows = await pool(list.data || [], 5, async (r: any) => {
     const v = await insights(`/${r.id}/video_insights`, page.token,
       // post_impressions_unique ya no es válida para reels en v26: si se pide, falla toda la llamada.
@@ -128,7 +128,7 @@ async function facebookReels(page: any): Promise<ImportedMetric[]> {
     const shares = num(social.SHARE ?? social.share);
     const likes = Object.values(v.post_video_likes_by_reaction_type || {}).reduce((a: number, x: any) => a + num(x), 0) as number;
     return {
-      externalId: `fb:${r.id}`, platform: "Facebook" as const, account: page.name, caption: r.description || "", date: String(r.created_time || "").slice(0, 10),
+      externalId: `fb:${r.id}`, platform: "Facebook" as const, account: page.name, caption: r.description || "", thumb: (r.thumbnails?.data || []).find((t: any) => t.is_preferred)?.uri || r.thumbnails?.data?.[0]?.uri || r.picture || "", date: String(r.created_time || "").slice(0, 10),
       permalink: r.permalink_url ? (String(r.permalink_url).startsWith("http") ? r.permalink_url : `https://www.facebook.com${r.permalink_url}`) : "",
       views: num(v.blue_reels_play_count), avgWatch: Math.round(num(v.post_video_avg_time_watched) / 100) / 10,
       interactions: likes + shares + num(social.COMMENT ?? social.comment), followers: num(v.post_video_followers), duration: Math.round(num(r.length)),
