@@ -5,7 +5,7 @@ import { callLLM } from "./llm";
 import { CHRISTIAN_RULES, FRUIT_CAST_RULES, MANUAL_VIRAL, STYLES, type StyleKey } from "./knowledge";
 import { templateHookVariants, type HookVariant } from "./hooks";
 import { castNeedsRepair, isFruitStyle, norm, normalizeCast, templateCast, type CastMember } from "./cast";
-import { buildProduction, sceneCountFor, templateScenes } from "./production";
+import { buildProduction, NARRATOR, sceneCountFor, templateScenes } from "./production";
 
 export const styleKey = (s?: string): StyleKey => ((s as StyleKey) in STYLES ? (s as StyleKey) : "frutinovela");
 const providerMode = () => ((process.env.LLM_PROVIDER || "").toLowerCase() === "gemini" ? "gemini" : "llm");
@@ -102,6 +102,20 @@ function fallbackNotice(error: unknown) {
   return `La IA no respondió (${why}). Se creó un borrador con la plantilla local, con el elenco de frutas y las escenas completas; vuelve a intentarlo en unos minutos para un guion escrito por la IA.`;
 }
 
+// Un texto de la IA solo pasa a producción si respeta el metraje y tiene una
+// progresión real. El generador no debe etiquetar como guion terminado una
+// respuesta recortada o una frase repetida en casi todas las escenas.
+function validateEpisode(episode: ReturnType<typeof buildProduction>, duration: number) {
+  const expected = sceneCountFor(duration);
+  if (episode.scenes.length !== expected) throw new Error(`el guion tenía ${episode.scenes.length} escenas en vez de ${expected}`);
+  if (episode.scenes[episode.scenes.length - 1]?.speaker !== NARRATOR) throw new Error("faltó el cierre del narrador");
+  const lines = episode.scenes.map(scene => norm(scene.line));
+  const counts = new Map<string, number>();
+  for (const line of lines) counts.set(line, (counts.get(line) || 0) + 1);
+  if (Math.max(...Array.from(counts.values())) > 2) throw new Error("el guion repitió el mismo diálogo");
+  if (episode.duration !== expected * 8) throw new Error("la duración del guion no coincide con sus escenas");
+}
+
 // ---------- HISTORIA NUEVA ----------
 export async function generateSeries(input: any) {
   const style = styleKey(input.style);
@@ -121,7 +135,7 @@ Responde SOLO JSON: {"series":{"title":"","logline":"","world":"","tone":""},"ch
     const episodeRaw = renameSpeakers(parsed.episode || parsed, parsed.characters, characters);
     const title = String(parsed.series?.title || idea).trim().slice(0, 100);
     const episode = buildProduction(episodeRaw, { style, duration, characters, idea, chosenHook: input.chosenHook, seriesTitle: title, partNumber: 1 });
-    if (episode.scenes.length < 4) throw new Error("la respuesta tenía muy pocas escenas");
+    validateEpisode(episode, duration);
     const mode = providerMode();
     return { mode, series: { title, logline: String(parsed.series?.logline || idea).trim(), world: String(parsed.series?.world || ""), tone: String(parsed.series?.tone || ""), style }, characters, episode: { ...episode, mode } };
   } catch (error) {
@@ -164,7 +178,7 @@ Responde SOLO JSON: {"episode":{"title":"","summary":"","hook":["",""],"coverTex
     const newCharacters = normalizeCast(newRows, style, { taken: existing });
     const characters = [...existing, ...newCharacters];
     const episode = buildProduction(parsed.episode || parsed, { style, duration, characters, idea: String(input.wish || input.series?.title || ""), chosenHook: input.chosenHook, seriesTitle: String(input.series?.title || "Serie"), partNumber: Number(input.partNumber || 2), previousSummary: String((input.history || []).slice(-1)[0]?.summary || "") });
-    if (episode.scenes.length < 4) throw new Error("la respuesta tenía muy pocas escenas");
+    validateEpisode(episode, duration);
     const mode = providerMode();
     return { mode, episode: { ...episode, mode }, newCharacters };
   } catch (error) {

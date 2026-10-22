@@ -310,7 +310,8 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
           const oldEpisode = data.episodes.find((e: any) => e.seriesId === result.seriesId && (e.output === result.episode || e.output?.title === result.episode?.title));
           setIdea(oldSeries?.description || oldEpisode?.theme || result.episode?.description || "");
           setStyle((result.episode?.seriesBible?.style || "frutinovela") as StyleKey);
-          setDuration(Number(result.episode?.duration || oldEpisode?.duration || 90));
+          const previousDuration = Number(result.episode?.duration || oldEpisode?.duration || 88);
+          setDuration(DURATIONS.reduce((best, option) => Math.abs(option - previousDuration) < Math.abs(best - previousDuration) ? option : best, 88));
           setView("nueva");
           setNotice("Revisa la idea y crea una versión nueva con Gemini. El borrador anterior se conserva hasta que decidas eliminarlo.");
         }} />}

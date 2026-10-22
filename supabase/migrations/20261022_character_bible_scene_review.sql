@@ -10,3 +10,9 @@ alter table public.characters
   add column if not exists reference_approved_at timestamptz,
   add column if not exists reference_history jsonb default '[]'::jsonb;
 alter table public.clip_checks add column if not exists approved bool default false, add column if not exists reference_signature text default '';
+
+-- Los guiones que salieron de la plantilla local nunca deben aparentar estar listos para producir.
+update public.episodes
+set status = 'Borrador'
+where versions -> -1 ->> 'mode' = 'plantilla-local'
+  and status is distinct from 'Borrador';
