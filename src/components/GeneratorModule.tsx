@@ -102,7 +102,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
     const referenceVersions = Object.fromEntries((ep.cast || []).map((c: any) => [String(c.name).toLowerCase(), data.characters.find(x => x.seriesId === sid && x.name.toLowerCase() === String(c.name).toLowerCase())?.referenceVersion || 1]));
     const output = { ...ep, partNumber: part, seriesBible: bible ?? ep.seriesBible, referenceVersions };
     const saved = await insert("episodes", {
-      title: ep.title || `Episodio ${part}`, theme: ep.summary || ep.title || "", duration: ep.duration || duration, status: ep.mode === "plantilla-local" ? "Borrador" : "Guion",
+      title: ep.title || `Episodio ${part}`, theme: ep.summary || ep.title || "", duration: ep.duration || duration, status: ep.mode === "plantilla-local" || ep.mode === "gemini-borrador" ? "Borrador" : "Guion",
       previousSummary: "", accountId: account?.id, seriesId: sid, createdAt: new Date().toISOString(),
       versions: [output], output, platformAdaptations: ep.platformAdaptations || [], platform_adaptations: ep.platformAdaptations || [],
     });
@@ -365,8 +365,9 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
   const [tab, setTab] = useState<Tab>("guion");
   const [reviewed, setReviewed] = useState(false);
   useEffect(() => { setReviewed(false); setTab(initialTab && out.mode !== "plantilla-local" ? initialTab : "guion"); }, [out, initialTab]);
-  const fromAI = !!out.mode && out.mode !== "plantilla-local" && cast.length >= 2;
+  const fromAI = !!out.mode && out.mode !== "plantilla-local" && out.mode !== "gemini-borrador" && cast.length >= 2;
   const isTemplate = out.mode === "plantilla-local";
+  const isAIDraft = out.mode === "gemini-borrador";
   const master = cast.map(c => data.characters.find(x => x.seriesId === seriesId && x.name.toLowerCase() === String(c.name).toLowerCase()));
   const referencesReady = !!cast.length && master.every(c => !!c?.imageUrl && !!c?.referenceApprovedAt);
   const snapshotValid = !!out.referenceVersions && master.every((c, i) => Number(c?.referenceVersion || 1) === Number(out.referenceVersions[String(cast[i].name).toLowerCase()]));
@@ -398,8 +399,8 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
       <button onClick={onNext} className="rounded bg-amber-500 px-4 py-2 text-sm font-bold">Crear episodio {part + 1} →</button>
     </div>
     <div className={`mt-4 rounded-xl border p-4 text-sm ${fromAI ? "border-emerald-400/25 bg-emerald-400/[.07] text-emerald-100" : "border-amber-400/30 bg-amber-400/[.08] text-amber-100"}`}>
-      <p className="font-bold">{fromAI ? `Guion escrito por la IA · ${cast.length} personajes · ${scenes.length || (out.scriptBlocks || []).length} escenas · ${fullDuration} s` : isTemplate ? "Borrador de la plantilla local (sin IA)" : "Borrador anterior sin elenco de producción"}</p>
-      <p className="mt-1 text-xs leading-5">{fromAI ? "Orden de trabajo: aprueba las fichas maestras → genera imágenes con esas referencias → anima y revisa cada escena → monta el vídeo." : isTemplate ? "El diálogo es genérico. Este borrador no ofrece prompts de producción ni montaje; vuelve a crear el guion con Gemini." : "Este episodio se creó con una versión anterior. Recréalo para tener el elenco y las escenas de producción."}</p>
+      <p className="font-bold">{fromAI ? `Guion escrito por la IA · ${cast.length} personajes · ${scenes.length || (out.scriptBlocks || []).length} escenas · ${fullDuration} s` : isTemplate ? "Borrador de la plantilla local (sin IA)" : isAIDraft ? "Borrador de Gemini · pendiente de corregir" : "Borrador anterior sin elenco de producción"}</p>
+      <p className="mt-1 text-xs leading-5">{fromAI ? "Orden de trabajo: aprueba las fichas maestras → genera imágenes con esas referencias → anima y revisa cada escena → monta el vídeo." : isTemplate ? "El diálogo es genérico. Este borrador no ofrece prompts de producción ni montaje; vuelve a crear el guion con Gemini." : isAIDraft ? `Se conservaron las escenas y personajes de Gemini, pero ${out.qualityIssues?.join("; ") || "el guion necesita revisión"}. Recréalo con la IA antes de producir.` : "Este episodio se creó con una versión anterior. Recréalo para tener el elenco y las escenas de producción."}</p>
       {!fromAI && <button onClick={onRecreate} className="mt-3 rounded-lg bg-amber-500 px-3 py-2 text-xs font-bold text-slate-950 hover:bg-amber-400">Recrear con la IA</button>}
       {out.shortForLongPlatforms && <p className="mt-2 text-xs">{out.shortForLongPlatforms}</p>}
     </div>

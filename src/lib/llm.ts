@@ -1,8 +1,8 @@
 // Modelos de respaldo si el principal está saturado (503) o sin cuota (429).
 // Se pueden cambiar con LLM_FALLBACK_MODELS="modelo1,modelo2".
 const GEMINI_FALLBACKS = "gemini-3.6-flash,gemini-3.5-flash-lite";
-// Esperas antes de cada reintento del modelo principal (picos de demanda de Google).
-const RETRY_WAITS_MS = [2000, 5000, 10000];
+// Si el modelo principal está saturado, pasar pronto a uno de respaldo operativo.
+const RETRY_WAITS_MS = [1500];
 // Las rutas de IA tienen maxDuration = 180 s en Vercel: no se empieza otro intento
 // pasado BUDGET y ninguna llamada sigue abierta pasado HARD_LIMIT.
 export const LLM_BUDGET_MS = 140000;
@@ -13,20 +13,26 @@ const sleep = (ms:number) => new Promise(r => setTimeout(r, ms));
 // Error de disponibilidad (saturado, sin cuota, lento): quien llama puede caer a la plantilla local.
 export class LLMUnavailableError extends Error {}
 
-async function callGemini(key:string, model:string, system:string, user:string, json=false):Promise<string>{
+async function callGemini(key:string, model:string, system:string, user:string, json=false, timeoutMs?:number):Promise<string>{
   const fallbacks = (process.env.LLM_FALLBACK_MODELS || GEMINI_FALLBACKS).split(",").map(s => s.trim()).filter(Boolean);
   const models = Array.from(new Set([model, ...fallbacks]));
   const body = JSON.stringify({systemInstruction:{parts:[{text:system}]},contents:[{role:"user",parts:[{text:user}]}],generationConfig:{temperature:0.7,maxOutputTokens:MAX_OUTPUT_TOKENS,...(json?{responseMimeType:"application/json"}:{})}});
   let last = ""; const start = Date.now();
+  const budget = Math.min(LLM_BUDGET_MS, timeoutMs || LLM_BUDGET_MS);
+  const hardLimit = Math.min(LLM_HARD_LIMIT_MS, timeoutMs || LLM_HARD_LIMIT_MS);
   for (const m of models) {
-    // Principal: 1 intento + 3 reintentos (2 s, 5 s, 10 s). Respaldo: 1 intento + 1 reintento.
-    const waits = m === model ? RETRY_WAITS_MS : [2000];
+    // Un reintento corto por modelo evita bloquear la creación durante minutos.
+    const waits = m === model ? RETRY_WAITS_MS : [1500];
     for (let attempt = 0; attempt <= waits.length; attempt++) {
-      if (Date.now() - start > LLM_BUDGET_MS) throw new LLMUnavailableError(`Gemini no respondió a tiempo (${last || "sin respuesta"}).`);
-      const ctrl = new AbortController(); const timer = setTimeout(() => ctrl.abort(), Math.max(5000, LLM_HARD_LIMIT_MS - (Date.now() - start)));
+      if (Date.now() - start >= budget) throw new LLMUnavailableError(`Gemini no respondió a tiempo (${last || "sin respuesta"}).`);
+      const ctrl = new AbortController();
+      const remaining = hardLimit - (Date.now() - start);
+      // Un episodio completo tarda 20-60 s en responder: no cortarlo antes de tiempo.
+      const attemptLimit = m === model ? 80000 : 90000;
+      const timer = setTimeout(() => ctrl.abort(), Math.max(1000, Math.min(attemptLimit, remaining)));
       let r: Response;
       try { r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(m)}:generateContent`, { method: "POST", headers: { "x-goog-api-key": key, "Content-Type": "application/json" }, body, signal: ctrl.signal }); }
-      catch (e: any) { if (e?.name === "AbortError") throw new LLMUnavailableError(`El modelo ${m} tardó demasiado en responder.`); last = `${m}: ${e?.message || "error de red"}`; continue; }
+      catch (e: any) { if (e?.name === "AbortError") { last = `${m} tardó demasiado en responder`; break; } last = `${m}: ${e?.message || "error de red"}`; continue; }
       finally { clearTimeout(timer); }
       if (r.ok) {
         const j = await r.json(); const answer = (j.candidates?.[0]?.content?.parts || []).map((p:any) => p.text || "").join("\n");
@@ -46,11 +52,11 @@ async function callGemini(key:string, model:string, system:string, user:string, 
   throw new LLMUnavailableError(`Gemini no está disponible ahora mismo (${last}).`);
 }
 
-export async function callLLM(system:string, user:string, options?:{json?:boolean}):Promise<string>{
+export async function callLLM(system:string, user:string, options?:{json?:boolean;timeoutMs?:number}):Promise<string>{
   const key=process.env.LLM_API_KEY; const provider=(process.env.LLM_PROVIDER||"anthropic").toLowerCase();
   const model=process.env.LLM_MODEL||(provider==="openai"?"gpt-4o-mini":provider==="gemini"?"gemini-3.5-flash-lite":"claude-sonnet-5-5");
   if(!key) throw new LLMUnavailableError("Falta LLM_API_KEY en el servidor.");
-  if(provider==="gemini") return callGemini(key, model, system, user, options?.json === true);
+  if(provider==="gemini") return callGemini(key, model, system, user, options?.json === true, options?.timeoutMs);
   if(provider==="openai"){
     const r=await fetch("https://api.openai.com/v1/chat/completions",{method:"POST",headers:{Authorization:`Bearer ${key}`,"Content-Type":"application/json"},body:JSON.stringify({model,messages:[{role:"system",content:system},{role:"user",content:user}],temperature:0.8,max_tokens:MAX_OUTPUT_TOKENS,...(options?.json?{response_format:{type:"json_object"}}:{})})});
     if(r.status===429||r.status===503) throw new LLMUnavailableError(`OpenAI no disponible (${r.status}).`);

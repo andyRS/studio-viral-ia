@@ -73,10 +73,11 @@ function checkChristian(r, label) {
   // Lote para Flow: instrucción + fichas [P01..] + escenas [001..], con identificadores de 5 caracteres.
   const { buildFlowBatch } = require("../src/lib/production.ts");
   const lote = buildFlowBatch(t1.episode);
-  assert.ok(lote.full.startsWith("Crea todas las imágenes"), "lote sin instrucción");
+  // Fase 2: el lote asume las fichas ya aprobadas (Fase 1) y solo trae las escenas; las fichas van aparte.
+  assert.ok(lote.full.startsWith("Adjunta en Flow las fichas maestras"), "lote sin instrucción");
   assert.equal(lote.count.fichas, t1.characters.length);
   assert.equal(lote.count.escenas, t1.episode.scenes.length);
-  assert.ok(lote.full.includes("[P01]\n") && lote.full.includes("[001]\n"), "identificadores en su propia línea");
+  assert.ok(lote.fichas.includes("[P01]\n") && lote.full.includes("[001]\n") && !lote.full.includes("[P01]\n"), "identificadores en su propia línea; fichas aparte");
   // Referencias fuera del prompt: ningún prompt individual lleva identificadores.
   assert.ok(t1.episode.scenes.every(s => !/^\[/.test(s.imagePromptFlow) && !/\[(P\d\d|\d{3})\]/.test(s.animationPrompt)), "IDs dentro del prompt");
   // Ficha de escena y de episodio.

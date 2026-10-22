@@ -2,9 +2,10 @@
 // La IA escribe elenco y escenas; el código valida, repara el elenco de frutas y construye
 // todos los prompts de producción (production.ts). Si la IA no responde, plantilla local con aviso.
 import { callLLM } from "./llm";
+import { jsonrepair } from "jsonrepair";
 import { CHRISTIAN_RULES, FRUIT_CAST_RULES, MANUAL_VIRAL, STYLES, type StyleKey } from "./knowledge";
 import { templateHookVariants, type HookVariant } from "./hooks";
-import { castNeedsRepair, isFruitStyle, norm, normalizeCast, templateCast, type CastMember } from "./cast";
+import { isFruitStyle, norm, normalizeCast, templateCast, type CastMember } from "./cast";
 import { buildProduction, NARRATOR, sceneCountFor, templateScenes } from "./production";
 
 export const styleKey = (s?: string): StyleKey => ((s as StyleKey) in STYLES ? (s as StyleKey) : "frutinovela");
@@ -16,18 +17,23 @@ export function parseJson(raw: string): any {
   const body = a >= 0 && b > a ? clean.slice(a, b + 1) : clean;
   try { return JSON.parse(body); }
   catch {
-    // Reparaciones de los fallos típicos del modelo: comas sobrantes, comillas tipográficas y saltos de línea crudos.
-    const fixed = body.replace(/,\s*([}\]])/g, "$1").replace(/[“”]/g, '"').replace(/\r?\n(?=[^"]*"[^"]*(?:"[^"]*"[^"]*)*$)/g, " ");
-    return JSON.parse(fixed);
+    // Gemini puede devolver comillas sin escapar, claves sin comillas o comas
+    // sobrantes incluso con responseMimeType JSON. Reparar sin alterar el guion.
+    return JSON.parse(jsonrepair(body));
   }
 }
 
 // Llama a la IA y lee el JSON; si la respuesta viene rota, la pide una vez más.
 async function askJson(system: string, user: string) {
-  try { return parseJson(await callLLM(system, user, { json: true })); }
+  const startedAt = Date.now();
+  let raw = "";
+  try { raw = await callLLM(system, user, { json: true }); return parseJson(raw); }
   catch (e) {
-    if (!(e instanceof SyntaxError)) throw e;
-    return parseJson(await callLLM(system + "\n\nIMPORTANTE: tu respuesta anterior no era JSON válido. Devuelve SOLO un objeto JSON válido, sin comas sobrantes.", user, { json: true }));
+    if (!(e instanceof SyntaxError) || !raw) throw e;
+    const remaining = 145000 - (Date.now() - startedAt);
+    if (remaining < 5000) throw e;
+    const fixed = await callLLM("Repara el JSON recibido sin inventar ni quitar datos. Devuelve exclusivamente el objeto JSON válido.", raw, { json: true, timeoutMs: Math.min(25000, remaining) });
+    return parseJson(fixed);
   }
 }
 
@@ -77,16 +83,6 @@ const SCENES_SCHEMA = `"scenes":[{"title":"título corto de la escena","goal":"o
 const PUBLISH_SCHEMA = `"cover":{"frame":"qué fotograma usar (máxima emoción, sin spoiler)","lines":["línea 1","línea 2"],"part":"PARTE 1"},"platforms":{"facebook":{"title":"","description":"","hashtags":[],"hour":"","cta":"","pinnedComment":""},"tiktok":{"title":"","description":"","hashtags":[],"hour":"","cta":"","pinnedComment":""},"instagram":{"title":"","description":"","hashtags":[],"hour":"","cta":"","pinnedComment":""},"youtube":{"title":"","description":"","hashtags":[],"hour":"","cta":"","pinnedComment":""}},"selfScore":{"hook":0,"clarity":0,"escalation":0,"twist":0,"comments":0}`;
 const FICHA_SCHEMA = `"ficha":{"biblicalBase":"libro capítulo:versículos si aplica, si no vacío","synopsis":"","hookImage":"primera imagen impactante","hookText":"frase del fotograma cero","conflict":"qué quiere el protagonista y qué se lo impide","development":"","climax":"","resolution":"","closing":"reflexión, pregunta o conexión con el siguiente episodio"},"social":{"title":"","hooks":["","",""],"frameZeroText":"","tiktokDescription":"","question":"","coverIdea":"portada vertical 9:16","music":"recomendación de música cinematográfica","biblicalPassage":""}`;
 
-// Segunda llamada corta: solo el elenco, cuando el primero vino sin frutas o con nombres genéricos.
-async function repairCast(characters: unknown, style: StyleKey, idea: string) {
-  try {
-    const raw = await callLLM(`${FRUIT_CAST_RULES}\n\nTAREA: asigna una fruta a cada personaje según las reglas, dale un nombre dominicano con su fruta y completa su ficha. Conserva el orden y el rol de cada uno. Responde SOLO JSON: {"characters":[${CAST_FIELDS(style)}]}`,
-      JSON.stringify({ idea, characters }), { json: true });
-    const fixed = parseJson(raw).characters;
-    return Array.isArray(fixed) && fixed.length ? fixed : characters;
-  } catch { return characters; }
-}
-
 // Si un personaje cambió de nombre al repararlo, sus frases en las escenas se reasignan.
 function renameSpeakers(episode: any, before: unknown, after: CastMember[]) {
   const rows = Array.isArray(before) ? before : [];
@@ -95,6 +91,27 @@ function renameSpeakers(episode: any, before: unknown, after: CastMember[]) {
   if (!map.size || !Array.isArray(episode?.scenes)) return episode;
   const fix = (n: unknown) => map.get(norm(n)) || n;
   return { ...episode, scenes: episode.scenes.map((s: any) => ({ ...s, speaker: fix(s.speaker), onScreen: Array.isArray(s.onScreen) ? s.onScreen.map(fix) : s.onScreen })) };
+}
+
+// Si Gemini olvidó la voz final, se pide solo ese remate y se añade después de
+// su última escena. buildProduction recorta del medio, conservando ambas escenas finales.
+async function ensureNarratorEnding(raw: any, idea: string, style: StyleKey, timeoutMs = 25000) {
+  const scenes = Array.isArray(raw?.scenes) ? raw.scenes : [];
+  const last = scenes[scenes.length - 1];
+  if (!last || /narrador|narradora|voz en off/.test(norm(last.speaker))) return raw;
+  if (timeoutMs < 5000) return raw;
+  try {
+    const response = await callLLM(
+      `Eres guionista de microdramas. Escribe solo una línea FINAL para Narrador en off, en español dominicano, de 6 a 14 palabras. Debe abrir un misterio CONCRETO de esta historia ("Lo que X no sabe es que...") y provocar una Parte 2. No repitas el diálogo anterior. Responde solo JSON: {"linea":"..."}.`,
+      JSON.stringify({ idea, resumen: raw.summary, cierrePlaneado: raw.ficha?.closing, ultimasEscenas: scenes.slice(-2).map((scene: any) => ({ speaker: scene.speaker, line: scene.line, setting: scene.setting })) }),
+      { json: true, timeoutMs },
+    );
+    let line = String(parseJson(response).linea || "").replace(/\s+/g, " ").trim();
+    const words = line.split(/\s+/).length;
+    if (words < 6 || words > 18 || norm(line) === norm(last.line)) return raw;
+    if (style === "cristiana" && !/escribe am[eé]n/i.test(line)) line += " Escribe AMÉN.";
+    return { ...raw, scenes: [...scenes, { title: "Cierre y cliffhanger", goal: "Abrir el siguiente episodio", setting: last.setting, speaker: NARRATOR, line, emotion: "intriga", onScreen: [], transition: "Fundido a negro" }] };
+  } catch { return raw; }
 }
 
 function fallbackNotice(error: unknown) {
@@ -118,6 +135,7 @@ function validateEpisode(episode: ReturnType<typeof buildProduction>, duration: 
 
 // ---------- HISTORIA NUEVA ----------
 export async function generateSeries(input: any) {
+  const startedAt = Date.now();
   const style = styleKey(input.style);
   const duration = Number(input.duration || 90);
   const idea = String(input.idea || input.replica || "").trim();
@@ -129,14 +147,18 @@ export async function generateSeries(input: any) {
     const system = `${styleRules(style)}${extraContext(input)}\n\n${sceneBrief(style, count)}\n\n${miPedido(input, style, duration, count, type)}\n\nTAREA: crea una SERIE NUEVA a partir del pedido y escribe su EPISODIO 1 (Parte 1). Elenco de 3 a 6 personajes.
 Responde SOLO JSON: {"series":{"title":"","logline":"","world":"","tone":""},"characters":[${CAST_FIELDS(style)}],"episode":{"title":"","summary":"3-4 frases con el cliffhanger final","hook":["línea 1","línea 2"],"coverText":"","description":"","hashtags":[],${FICHA_SCHEMA},${PUBLISH_SCHEMA},${SCENES_SCHEMA}}}`;
     const parsed = await askJson(system, JSON.stringify({ idea, duracionSegundos: duration, cuentaPrincipal: input.account?.name, notas: input.notes }));
-    let chars = parsed.characters;
-    if (castNeedsRepair(chars, style)) chars = await repairCast(chars, style, idea);
-    const characters = normalizeCast(chars, style).slice(0, 6);
-    const episodeRaw = renameSpeakers(parsed.episode || parsed, parsed.characters, characters);
+    // Normalizar aquí evita una segunda llamada larga: el modelo define los
+    // roles y rasgos; el código asegura fruta, nombre y ficha coherentes.
+    const characters = normalizeCast(parsed.characters, style).slice(0, 6);
+    const episodeRaw = await ensureNarratorEnding(renameSpeakers(parsed.episode || parsed, parsed.characters, characters), idea, style, Math.min(25000, 150000 - (Date.now() - startedAt)));
     const title = String(parsed.series?.title || idea).trim().slice(0, 100);
     const episode = buildProduction(episodeRaw, { style, duration, characters, idea, chosenHook: input.chosenHook, seriesTitle: title, partNumber: 1 });
-    validateEpisode(episode, duration);
     const mode = providerMode();
+    try { validateEpisode(episode, duration); }
+    catch (qualityError) {
+      const issue = qualityError instanceof Error ? qualityError.message : String(qualityError);
+      return { mode: "gemini-borrador", notice: `Gemini escribió el guion, pero ${issue}. Se guardó como borrador para revisión; no se enviará a producción.`, series: { title, logline: String(parsed.series?.logline || idea).trim(), world: String(parsed.series?.world || ""), tone: String(parsed.series?.tone || ""), style }, characters, episode: { ...episode, mode: "gemini-borrador", qualityIssues: [issue] } };
+    }
     return { mode, series: { title, logline: String(parsed.series?.logline || idea).trim(), world: String(parsed.series?.world || ""), tone: String(parsed.series?.tone || ""), style }, characters, episode: { ...episode, mode } };
   } catch (error) {
     return { ...templateSeries(input), notice: fallbackNotice(error) };
@@ -155,6 +177,7 @@ export function templateSeries(input: any) {
 
 // ---------- CONTINUAR UNA SERIE ----------
 export async function generateNextEpisode(input: any) {
+  const startedAt = Date.now();
   const style = styleKey(input.style);
   const duration = Number(input.duration || 90);
   if (!process.env.LLM_API_KEY) return { ...templateNext(input), notice: "El servidor no tiene clave de IA: se usó la plantilla local." };
@@ -177,9 +200,14 @@ Responde SOLO JSON: {"episode":{"title":"","summary":"","hook":["",""],"coverTex
     const newRows = (Array.isArray(parsed.newCharacters) ? parsed.newCharacters : []).filter((c: any) => c?.name && !known.has(norm(c.name))).slice(0, 2);
     const newCharacters = normalizeCast(newRows, style, { taken: existing });
     const characters = [...existing, ...newCharacters];
-    const episode = buildProduction(parsed.episode || parsed, { style, duration, characters, idea: String(input.wish || input.series?.title || ""), chosenHook: input.chosenHook, seriesTitle: String(input.series?.title || "Serie"), partNumber: Number(input.partNumber || 2), previousSummary: String((input.history || []).slice(-1)[0]?.summary || "") });
-    validateEpisode(episode, duration);
+    const episodeRaw = await ensureNarratorEnding(parsed.episode || parsed, String(input.wish || input.series?.title || ""), style, Math.min(25000, 150000 - (Date.now() - startedAt)));
+    const episode = buildProduction(episodeRaw, { style, duration, characters, idea: String(input.wish || input.series?.title || ""), chosenHook: input.chosenHook, seriesTitle: String(input.series?.title || "Serie"), partNumber: Number(input.partNumber || 2), previousSummary: String((input.history || []).slice(-1)[0]?.summary || "") });
     const mode = providerMode();
+    try { validateEpisode(episode, duration); }
+    catch (qualityError) {
+      const issue = qualityError instanceof Error ? qualityError.message : String(qualityError);
+      return { mode: "gemini-borrador", notice: `Gemini escribió el episodio, pero ${issue}. Se guardó como borrador para revisión; no se enviará a producción.`, episode: { ...episode, mode: "gemini-borrador", qualityIssues: [issue] }, newCharacters };
+    }
     return { mode, episode: { ...episode, mode }, newCharacters };
   } catch (error) {
     return { ...templateNext(input), notice: fallbackNotice(error) };
