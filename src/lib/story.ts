@@ -7,6 +7,7 @@ import { CHRISTIAN_RULES, FRUIT_CAST_RULES, MANUAL_VIRAL, STYLES, type StyleKey 
 import { templateHookVariants, type HookVariant } from "./hooks";
 import { castNeedsRepair, isFruitStyle, norm, normalizeCast, templateCast, type CastMember } from "./cast";
 import { buildProduction, NARRATOR, sceneCountFor, templateScenes } from "./production";
+import { christianSafe, templateIdeas, type IdeasRequest, type StoryIdea } from "./ideas";
 
 export const styleKey = (s?: string): StyleKey => ((s as StyleKey) in STYLES ? (s as StyleKey) : "frutinovela");
 const providerMode = () => ((process.env.LLM_PROVIDER || "").toLowerCase() === "gemini" ? "gemini" : "llm");
@@ -257,4 +258,48 @@ Responde SOLO JSON válido: {"variants":[{"lines":["línea 1","línea 2"],"why":
     const v = (parseJson(raw).variants || []).filter((x: any) => Array.isArray(x?.lines) && x.lines.length).slice(0, 5).map((x: any) => ({ lines: x.lines.slice(0, 2).map(String), why: String(x.why || "") }));
     return v.length ? { mode: "llm", variants: v } : { mode: "plantilla-local", variants: templateHookVariants(input) };
   } catch { return { mode: "plantilla-local", variants: templateHookVariants(input) }; }
+}
+
+// ---------- IDEAS CON IA (conversación) ----------
+// Ideas nuevas en el formato que funciona; evita repetir lo ya propuesto. Si la IA no responde,
+// se usan combinaciones al azar (templateIdeas), nunca una lista fija.
+export async function generateIdeas(input: IdeasRequest): Promise<{ mode: string; reply: string; ideas: StoryIdea[] }> {
+  const style = styleKey(input.style);
+  const count = Math.min(6, Math.max(1, Number(input.count) || 5));
+  const fallback = (why?: string) => ({ mode: "plantilla-local", reply: why ? `La IA no respondió (${why}). Te dejo combinaciones nuevas al azar con la misma fórmula.` : "Ideas combinadas al azar con la fórmula que funciona.", ideas: templateIdeas({ ...input, style, count }) });
+  if (!process.env.LLM_API_KEY) return fallback();
+  const bib = input.biblical?.character?.trim();
+  const biblical = bib ? `PERSONAJE BÍBLICO: ${bib}. MODALIDAD: ${input.biblical?.mode === "moderna"
+    ? "adaptación moderna (la misma estructura del relato llevada a la República Dominicana de hoy: barrio, iglesia evangélica, Nueva York, remesas…)"
+    : "época bíblica (escenarios, vestuario y costumbres de la época, sin ningún elemento moderno)"}.
+Respeta los hechos principales del relato y su enseñanza; indica biblicalBase (libro capítulo:versículos). Los diálogos son dramatización: nunca los presentes como citas bíblicas literales. Lleva el relato a la fórmula viral: empieza por su momento más humillante o dramático, con un objeto que revela y un giro.` : "";
+  const system = `${styleRules(style)}
+
+TAREA: eres el director creativo. Propón ${count} ideas NUEVAS para ${STYLES[style].label}, distintas entre sí y distintas de todo lo que aparece en EVITAR.
+Cada idea cumple la fórmula: conflicto o humillación visible en el segundo 0-1, juego de estatus, revelación mediante un objeto, escalada, giro final y narrador solo en la última frase${style === "cristiana" ? ', y cierre con "Escribe AMÉN"' : ""}. Varía los mecanismos entre ideas (madre negada, amor prohibido por clase, traición o hijo escondido, herencia, ironía dramática, bomba de tiempo). Identidad dominicana.
+${biblical}
+Si el usuario pide algo concreto en la conversación, priorízalo.
+Responde SOLO JSON: {"reply":"1-2 frases para el usuario","ideas":[{"title":"","idea":"una o dos frases para el formulario","hook":["línea 1 (máx 7 palabras)","línea 2"],"object":"","twist":"","mechanism":"","cast":[{"name":"","fruit":"","role":""}],"biblicalBase":"","why":"por qué engancha"}]}`;
+  try {
+    const parsed = await askJson(system, JSON.stringify({
+      pedido: input.direction || "Sorpréndeme con ideas que enganchen",
+      conversacion: (input.history || []).slice(-8),
+      evitar: (input.avoid || []).slice(-60),
+    }));
+    const ideas: StoryIdea[] = (Array.isArray(parsed.ideas) ? parsed.ideas : []).filter((x: any) => x && String(x.idea || "").trim()).slice(0, count).map((x: any) => ({
+      title: String(x.title || "").trim() || String(x.idea).slice(0, 50),
+      idea: String(x.idea).trim(),
+      hook: (Array.isArray(x.hook) ? x.hook : []).map((l: unknown) => String(l).trim()).filter(Boolean).slice(0, 2),
+      object: String(x.object || "").trim() || undefined, twist: String(x.twist || "").trim() || undefined,
+      mechanism: String(x.mechanism || "").trim() || undefined,
+      cast: Array.isArray(x.cast) ? x.cast.filter((c: any) => c?.name).slice(0, 6).map((c: any) => ({ name: String(c.name), fruit: c.fruit ? String(c.fruit) : undefined, role: String(c.role || "") })) : undefined,
+      biblicalBase: String(x.biblicalBase || "").trim() || undefined, why: String(x.why || "").trim() || undefined,
+    }));
+    if (!ideas.length) return fallback("respuesta sin ideas");
+    if (style === "cristiana") for (const i of ideas) {
+      i.title = christianSafe(i.title); i.idea = christianSafe(i.idea); i.hook = i.hook.map(christianSafe);
+      if (i.object) i.object = christianSafe(i.object); if (i.twist) i.twist = christianSafe(i.twist);
+    }
+    return { mode: providerMode(), reply: String(parsed.reply || "").trim() || "Aquí tienes ideas nuevas.", ideas };
+  } catch (e: any) { return fallback(e?.message || String(e)); }
 }

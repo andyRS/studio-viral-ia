@@ -9,6 +9,8 @@ import { learnFromMetrics } from "@/lib/learning";
 import { buildHookBank } from "@/lib/hooks";
 import { useDeleteSeries, confirmDelete } from "@/lib/useDelete";
 import HookPicker from "./HookPicker";
+import IdeasPanel from "./IdeasPanel";
+import type { StoryIdea } from "@/lib/ideas";
 import SceneDesk from "./SceneDesk";
 import { STYLES, type StyleKey } from "@/lib/knowledge";
 import { templateSeries, templateNext } from "@/lib/story";
@@ -62,6 +64,18 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
   const [accountId, setAccountId] = useState("");
   const [duration, setDuration] = useState(88);
   const [notes, setNotes] = useState("");
+  // «Usar esta idea»: rellena la idea y deja en las notas lo que la IA debe respetar (base bíblica,
+  // gancho, objeto, giro y elenco sugeridos). Las notas van a «MI PEDIDO» del prompt maestro.
+  const useIdea = (i: StoryIdea) => {
+    setIdea(i.idea);
+    setNotes([
+      i.biblicalBase && `Base bíblica: ${i.biblicalBase} (respeta los hechos; los diálogos son dramatización)`,
+      i.hook?.length && `Gancho sugerido: ${i.hook.join(" / ")}`,
+      i.object && `Objeto que revela: ${i.object}`,
+      i.twist && `Giro: ${i.twist}`,
+      i.cast?.length && `Elenco sugerido: ${i.cast.map(c => `${c.name}${c.fruit ? ` (${c.fruit})` : ""}${c.role ? `, ${c.role}` : ""}`).join("; ")}`,
+    ].filter(Boolean).join(". "));
+  };
   // Tipo de pedido: historia nueva o réplica de un viral ajeno (se copia estructura y emoción).
   const [kind, setKind] = useState<"nueva" | "replica">("nueva");
   const [replica, setReplica] = useState("");
@@ -234,9 +248,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
               <textarea id="generator-replica" value={replica} onChange={e => setReplica(e.target.value)} placeholder="Qué pasa en el vídeo, su gancho, quién humilla a quién, qué objeto revela el giro… Se copia la estructura y la emoción, nunca los personajes ni el diálogo." /></div>}
             <label htmlFor="generator-idea" className="field-label block">{kind === "replica" ? "Idea para adaptarlo a RD" : "Idea de la historia"}</label>
             <textarea id="generator-idea" value={idea} onChange={e => setIdea(e.target.value)} placeholder="Ej.: Una madre humilde descubre que su hijo rico la niega delante de sus amigos…" />
-            <div className="mt-2 flex flex-wrap gap-2">
-              {IDEAS[style].map(t => <button key={t} onClick={() => setIdea(t)} className="rounded-full border border-white/10 bg-white/[.03] px-3 py-1.5 text-left text-xs text-slate-300 hover:bg-white/10">💡 {t}</button>)}
-            </div>
+            <div className="mt-3"><IdeasPanel style={style} online={mode === "supabase"} existing={data.series.map((x: any) => `${x.title}. ${x.description || ""}`)} onUse={useIdea} /></div>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <div><label htmlFor="generator-account" className="field-label block">Cuenta principal</label>
