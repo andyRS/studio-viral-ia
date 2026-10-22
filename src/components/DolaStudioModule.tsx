@@ -56,7 +56,9 @@ export default function DolaStudioModule() {
     return saved && Number(saved.referenceVersion || 1) === Number(out.referenceVersions[String(castMember.name).toLowerCase()]);
   });
   const endingProtected = !out.dolaIsAdaptation || (Array.isArray(out.dolaSceneNumbers) && out.dolaSceneNumbers.includes(out.scenes?.length));
-  const verified = !!out.mode && out.mode !== "plantilla-local" && Array.isArray(out.cast) && out.cast.length >= 2 && !missingMasters.length && versionsMatch && endingProtected;
+  // La plantilla local también se puede producir (con aviso): lo que se exige es elenco y fichas aprobadas.
+  const verified = !!out.mode && Array.isArray(out.cast) && out.cast.length >= 2 && !missingMasters.length && versionsMatch && endingProtected;
+  const isTemplate = out.mode === "plantilla-local";
   const sec = Array.isArray(out.scenes) && out.scenes.length ? 8 : 15;
   const dolaDuration = out.dolaDuration || 60;
 
@@ -88,7 +90,8 @@ export default function DolaStudioModule() {
       {ep && (
         <div className="rounded-xl bg-[#121826] p-4">
           <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">2 · Pega el prompt</p>
-          {!verified && <p className="mt-3 rounded-lg border border-amber-400/30 bg-amber-400/10 p-3 text-xs leading-5 text-amber-100">{out.mode === "plantilla-local" ? "Este episodio es un borrador de plantilla. Recréalo con Gemini antes de producir." : missingMasters.length ? `Faltan fichas maestras aprobadas: ${missingMasters.map((c: any) => c.name).join(", ")}. Apruébalas en Generador → Biblia.` : !versionsMatch ? "El guion usa fichas anteriores o no tiene versión registrada. Regenera el episodio con la biblia actual." : !endingProtected ? "Este prompt es anterior a la corrección de duración y puede cortar el cierre. Regenera el episodio antes de usar Dola." : "Este episodio necesita revisión en Generador antes de producir."}</p>}
+          {!verified && <p className="mt-3 rounded-lg border border-amber-400/30 bg-amber-400/10 p-3 text-xs leading-5 text-amber-100">{!Array.isArray(out.cast) || out.cast.length < 2 ? "Este episodio no tiene elenco de producción. Recréalo desde el Generador." : missingMasters.length ? `Faltan fichas maestras aprobadas: ${missingMasters.map((c: any) => c.name).join(", ")}. Apruébalas en Generador → Biblia.` : !versionsMatch ? "El guion usa fichas anteriores o no tiene versión registrada. Regenera el episodio con la biblia actual." : !endingProtected ? "Este prompt es anterior a la corrección de duración y puede cortar el cierre. Regenera el episodio antes de usar Dola." : "Este episodio necesita revisión en Generador antes de producir."}</p>}
+          {verified && isTemplate && <p className="mt-3 rounded-lg border border-amber-400/30 bg-amber-400/10 p-3 text-xs leading-5 text-amber-100">Borrador de la plantilla local: el diálogo es de estructura genérica. Revísalo antes de producir o recréalo con la IA.</p>}
           {verified && out.dolaIsAdaptation && <p className="mt-3 rounded-lg border border-sky-400/20 bg-sky-400/[.06] p-3 text-xs text-sky-100">Versión de {dolaDuration} s: mantiene el inicio y el cierre. Escenas originales incluidas: {(out.dolaSceneNumbers || []).join(", ")}.</p>}
           {verified && <details className="prompt-box" open><summary><span>Prompt Dola {dolaDuration} s{out.dolaIsAdaptation ? " · adaptación" : ""}</span></summary><div className="flex justify-end px-3 pb-1"><CopyButton text={out.dolaPrompt || ""} /></div><p className="prompt-text">{out.dolaPrompt || "Este episodio no tiene prompt de Dola."}</p></details>}
           {verified && (out.prompts || []).map((p: string, i: number) => (

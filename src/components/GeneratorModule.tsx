@@ -364,7 +364,7 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
   const ficha = out.ficha || null; const social = out.social || null;
   const [tab, setTab] = useState<Tab>("guion");
   const [reviewed, setReviewed] = useState(false);
-  useEffect(() => { setReviewed(false); setTab(initialTab && out.mode !== "plantilla-local" ? initialTab : "guion"); }, [out, initialTab]);
+  useEffect(() => { setReviewed(false); setTab(initialTab || "guion"); }, [out, initialTab]);
   const fromAI = !!out.mode && out.mode !== "plantilla-local" && out.mode !== "gemini-borrador" && cast.length >= 2;
   const isTemplate = out.mode === "plantilla-local";
   const isAIDraft = out.mode === "gemini-borrador";
@@ -378,7 +378,7 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
   const dolaDuration = out.dolaDuration || 60;
   const sec = scenes.length ? 8 : 15;
   const lote = useMemo(() => buildFlowBatch(out), [out]);
-  const tabs: [Tab, string][] = [["guion", "Guion"], ...(cast.length ? [["elenco", "1 · Biblia"]] as [Tab, string][] : []), ...(fromAI && scenes.length ? [["imagenes", "2 · Imágenes"], ["animacion", "3 · Animación"], ["mesa", "4 · Mesa y montaje"]] as [Tab, string][] : []), ...(social ? [["redes", "Redes"]] as [Tab, string][] : []), ["plataformas", "Plataformas"], ...(!isTemplate ? [["archivos", "Archivos"]] as [Tab, string][] : [])];
+  const tabs: [Tab, string][] = [["guion", "Guion"], ...(cast.length ? [["elenco", "1 · Biblia"]] as [Tab, string][] : []), ...(scenes.length && cast.length >= 2 ? [["imagenes", "2 · Imágenes"], ["animacion", "3 · Animación"], ["mesa", "4 · Mesa y montaje"]] as [Tab, string][] : []), ...(social ? [["redes", "Redes"]] as [Tab, string][] : []), ["plataformas", "Plataformas"], ...(!isTemplate ? [["archivos", "Archivos"]] as [Tab, string][] : [])];
   async function uploadMaster(c: any, file: File | undefined) {
     if (!file) return;
     if (file.size > 2 * 1024 * 1024) { window.alert("Exporta la ficha en menos de 2 MB para guardarla en tu cuenta."); return; }
@@ -400,12 +400,12 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
     </div>
     <div className={`mt-4 rounded-xl border p-4 text-sm ${fromAI ? "border-emerald-400/25 bg-emerald-400/[.07] text-emerald-100" : "border-amber-400/30 bg-amber-400/[.08] text-amber-100"}`}>
       <p className="font-bold">{fromAI ? `Guion escrito por la IA · ${cast.length} personajes · ${scenes.length || (out.scriptBlocks || []).length} escenas · ${fullDuration} s` : isTemplate ? "Borrador de la plantilla local (sin IA)" : isAIDraft ? "Borrador de Gemini · pendiente de corregir" : "Borrador anterior sin elenco de producción"}</p>
-      <p className="mt-1 text-xs leading-5">{fromAI ? "Orden de trabajo: aprueba las fichas maestras → genera imágenes con esas referencias → anima y revisa cada escena → monta el vídeo." : isTemplate ? "El diálogo es genérico. Este borrador no ofrece prompts de producción ni montaje; vuelve a crear el guion con Gemini." : isAIDraft ? `Se conservaron las escenas y personajes de Gemini, pero ${out.qualityIssues?.join("; ") || "el guion necesita revisión"}. Recréalo con la IA antes de producir.` : "Este episodio se creó con una versión anterior. Recréalo para tener el elenco y las escenas de producción."}</p>
+      <p className="mt-1 text-xs leading-5">{fromAI ? "Orden de trabajo: aprueba las fichas maestras → genera imágenes con esas referencias → anima y revisa cada escena → monta el vídeo." : isTemplate ? "Elenco de frutas, escenas, prompts y montaje completos, pero el diálogo es de estructura genérica: revísalo antes de producir o recréalo con la IA cuando esté disponible." : isAIDraft ? `Se conservaron las escenas y personajes de Gemini, pero ${out.qualityIssues?.join("; ") || "el guion necesita revisión"}. Revísalo antes de producir o recréalo con la IA.` : "Este episodio se creó con una versión anterior. Recréalo para tener el elenco y las escenas de producción."}</p>
       {!fromAI && <button onClick={onRecreate} className="mt-3 rounded-lg bg-amber-500 px-3 py-2 text-xs font-bold text-slate-950 hover:bg-amber-400">Recrear con la IA</button>}
       {out.shortForLongPlatforms && <p className="mt-2 text-xs">{out.shortForLongPlatforms}</p>}
     </div>
-    {fromAI && !referencesReady && <div className="mt-3 rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 text-xs text-amber-100">Faltan fichas maestras aprobadas: {missingMasters.join(", ")}. Súbelas y apruébalas en «1 · Biblia» antes de producir.</div>}
-    {fromAI && referencesReady && !snapshotValid && <div className="mt-3 rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 text-xs text-amber-100">La ficha maestra cambió desde que se creó este guion, o el episodio es anterior al control de versiones. Regenera el episodio para alinear prompts y personajes.</div>}
+    {scenes.length > 0 && cast.length >= 2 && !referencesReady && <div className="mt-3 rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 text-xs text-amber-100">Faltan fichas maestras aprobadas: {missingMasters.join(", ")}. Súbelas y apruébalas en «1 · Biblia» antes de producir.</div>}
+    {scenes.length > 0 && cast.length >= 2 && referencesReady && !snapshotValid && <div className="mt-3 rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 text-xs text-amber-100">La ficha maestra cambió desde que se creó este guion, o el episodio es anterior al control de versiones. Regenera el episodio para alinear prompts y personajes.</div>}
     <div className="tabs mt-5">{tabs.map(([k, l]) => <button key={k} onClick={() => setTab(k)} disabled={(k === "imagenes" || k === "animacion" || k === "mesa") && !productionReady} className={`${tab === k ? "tab-active" : ""} disabled:cursor-not-allowed disabled:opacity-40`}>{l}</button>)}</div>
     <div className="mt-4">
       {tab === "guion" && <div className="space-y-3">

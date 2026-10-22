@@ -1,8 +1,9 @@
 // Modelos de respaldo si el principal está saturado (503) o sin cuota (429).
 // Se pueden cambiar con LLM_FALLBACK_MODELS="modelo1,modelo2".
 const GEMINI_FALLBACKS = "gemini-3.6-flash,gemini-3.5-flash-lite";
-// Si el modelo principal está saturado, pasar pronto a uno de respaldo operativo.
-const RETRY_WAITS_MS = [1500];
+// Esperas antes de cada reintento del modelo principal cuando está saturado (429/503):
+// hasta 3 reintentos (2 s, 5 s, 10 s); después se prueban los modelos de respaldo.
+const RETRY_WAITS_MS = [2000, 5000, 10000];
 // Las rutas de IA tienen maxDuration = 180 s en Vercel: no se empieza otro intento
 // pasado BUDGET y ninguna llamada sigue abierta pasado HARD_LIMIT.
 export const LLM_BUDGET_MS = 140000;
@@ -21,8 +22,9 @@ async function callGemini(key:string, model:string, system:string, user:string, 
   const budget = Math.min(LLM_BUDGET_MS, timeoutMs || LLM_BUDGET_MS);
   const hardLimit = Math.min(LLM_HARD_LIMIT_MS, timeoutMs || LLM_HARD_LIMIT_MS);
   for (const m of models) {
-    // Un reintento corto por modelo evita bloquear la creación durante minutos.
-    const waits = m === model ? RETRY_WAITS_MS : [1500];
+    // Principal: 1 intento + 3 reintentos (2/5/10 s). Respaldo: 1 intento + 1 reintento de 2 s.
+    // El tope total (budget) impide que la suma pase del límite de la ruta en Vercel.
+    const waits = m === model ? RETRY_WAITS_MS : [2000];
     for (let attempt = 0; attempt <= waits.length; attempt++) {
       if (Date.now() - start >= budget) throw new LLMUnavailableError(`Gemini no respondió a tiempo (${last || "sin respuesta"}).`);
       const ctrl = new AbortController();

@@ -5,7 +5,7 @@ import { callLLM } from "./llm";
 import { jsonrepair } from "jsonrepair";
 import { CHRISTIAN_RULES, FRUIT_CAST_RULES, MANUAL_VIRAL, STYLES, type StyleKey } from "./knowledge";
 import { templateHookVariants, type HookVariant } from "./hooks";
-import { isFruitStyle, norm, normalizeCast, templateCast, type CastMember } from "./cast";
+import { castNeedsRepair, isFruitStyle, norm, normalizeCast, templateCast, type CastMember } from "./cast";
 import { buildProduction, NARRATOR, sceneCountFor, templateScenes } from "./production";
 
 export const styleKey = (s?: string): StyleKey => ((s as StyleKey) in STYLES ? (s as StyleKey) : "frutinovela");
@@ -95,6 +95,21 @@ function renameSpeakers(episode: any, before: unknown, after: CastMember[]) {
 
 // Si Gemini olvidó la voz final, se pide solo ese remate y se añade después de
 // su última escena. buildProduction recorta del medio, conservando ambas escenas finales.
+// Segunda llamada corta, solo para el elenco, cuando el primero vino sin fruta o con nombres
+// genéricos («Protagonista», «Antagonista»). Si falla o no da tiempo, normalizeCast asigna la
+// fruta en el código según el rol, así que nunca queda un personaje sin fruta.
+export async function repairCast(characters: unknown, style: StyleKey, idea: string, timeoutMs = 25000) {
+  if (timeoutMs < 5000) return characters;
+  try {
+    const raw = await callLLM(`${FRUIT_CAST_RULES}
+
+TAREA: asigna una fruta a cada personaje según las reglas, dale un nombre dominicano con su fruta y completa su ficha. Conserva el orden y el rol de cada uno. Responde SOLO JSON: {"characters":[${CAST_FIELDS(style)}]}`,
+      JSON.stringify({ idea, characters }), { json: true, timeoutMs });
+    const fixed = parseJson(raw).characters;
+    return Array.isArray(fixed) && fixed.length ? fixed : characters;
+  } catch { return characters; }
+}
+
 async function ensureNarratorEnding(raw: any, idea: string, style: StyleKey, timeoutMs = 25000) {
   const scenes = Array.isArray(raw?.scenes) ? raw.scenes : [];
   const last = scenes[scenes.length - 1];
@@ -147,9 +162,11 @@ export async function generateSeries(input: any) {
     const system = `${styleRules(style)}${extraContext(input)}\n\n${sceneBrief(style, count)}\n\n${miPedido(input, style, duration, count, type)}\n\nTAREA: crea una SERIE NUEVA a partir del pedido y escribe su EPISODIO 1 (Parte 1). Elenco de 3 a 6 personajes.
 Responde SOLO JSON: {"series":{"title":"","logline":"","world":"","tone":""},"characters":[${CAST_FIELDS(style)}],"episode":{"title":"","summary":"3-4 frases con el cliffhanger final","hook":["línea 1","línea 2"],"coverText":"","description":"","hashtags":[],${FICHA_SCHEMA},${PUBLISH_SCHEMA},${SCENES_SCHEMA}}}`;
     const parsed = await askJson(system, JSON.stringify({ idea, duracionSegundos: duration, cuentaPrincipal: input.account?.name, notas: input.notes }));
-    // Normalizar aquí evita una segunda llamada larga: el modelo define los
-    // roles y rasgos; el código asegura fruta, nombre y ficha coherentes.
-    const characters = normalizeCast(parsed.characters, style).slice(0, 6);
+    // Elenco sin fruta o con nombres genéricos: primero se le pide a la IA solo el elenco
+    // (llamada corta); lo que siga faltando lo completa el código en normalizeCast.
+    let chars = parsed.characters;
+    if (isFruitStyle(style) && castNeedsRepair(chars, style)) chars = await repairCast(chars, style, idea, Math.min(25000, 120000 - (Date.now() - startedAt)));
+    const characters = normalizeCast(chars, style).slice(0, 6);
     const episodeRaw = await ensureNarratorEnding(renameSpeakers(parsed.episode || parsed, parsed.characters, characters), idea, style, Math.min(25000, 150000 - (Date.now() - startedAt)));
     const title = String(parsed.series?.title || idea).trim().slice(0, 100);
     const episode = buildProduction(episodeRaw, { style, duration, characters, idea, chosenHook: input.chosenHook, seriesTitle: title, partNumber: 1 });
