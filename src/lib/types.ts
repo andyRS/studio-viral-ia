@@ -4,9 +4,18 @@ export type { PlatformAdaptation } from "./platforms";
 export type Niche = "frutinovelas"|"cine90"|"cristiano"|"dropshipping";
 export interface Account { id:string; name:string; platform:Platform; niche:Niche; audience:string; idealDuration:string }
 export interface Series { id:string; title:string; description:string; accountId?:string }
-export interface Character { id:string; seriesId:string; name:string; imageUrl?:string; visualES:string; visualEN:string; clothing:string; subtitleColor:string; speechStyle:string; pronunciations:string[] }
+export interface Character { id:string; seriesId:string; name:string; imageUrl?:string; visualES:string; visualEN:string; clothing:string; subtitleColor:string; speechStyle:string; pronunciations:string[];
+  fruit?:string;        // "plátano", "aguacate"… (obligatorio en frutinovela/cristiana)
+  fruitEmoji?:string;   // 🍌 🥑 🥥 …
+  role?:string;         // protagonista, rival, madre…
+  headES?:string;       // descripción fija de la cabeza de fruta
+  voice?:string;        // "mujer mayor, voz cálida y temblorosa"
+  flowPrompt?:string;   // prompt de ficha para Flow
+}
+// Una escena = una imagen de Flow + un clip de 8 s con un solo personaje hablando.
+export interface Scene { n:number; durationSec:8; setting:string; imagePromptFlow:string; animationPrompt:string; speaker:string; line:string; emotion:string }
 export interface Formula { id:string; name:string; category:string; content:string; structure:string[] }
-export interface Episode { id:string; title:string; theme:string; duration:number; status:string; createdAt:string; previousSummary?:string; accountId?:string; seriesId?:string; formulaId?:string; versions:any[]; output?:any; baseFormula?:any; platformAdaptations?:PlatformAdaptation[]; platform_adaptations?:PlatformAdaptation[] }
+export interface Episode { id:string; title:string; theme:string; duration:number; status:string; createdAt:string; previousSummary?:string; accountId?:string; seriesId?:string; formulaId?:string; versions:any[]; output?:any; baseFormula?:any; platformAdaptations?:PlatformAdaptation[]; platform_adaptations?:PlatformAdaptation[]; scenes?:Scene[] }
 export interface ProductionCard { id:string; episodeId:string; title:string; stage:"Idea"|"Guion"|"Clips generados"|"Montaje"|"Publicado" }
 export interface ClipCheck { id:string; episodeId:string; clipIndex:number; facesConsistent:boolean; fullPhrases:boolean; pronunciationOk:boolean; noWatermark:boolean; fruitHeads:boolean; notes?:string }
 export interface Cost { id:string; episodeId:string; tool:"Higgsfield"|"Dola"|"Otro"; credits:number; costUsd:number }

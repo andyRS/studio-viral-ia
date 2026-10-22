@@ -23,7 +23,7 @@ function buildClaudePack(ep: any, chars: any[], metrics: any[], checks: any[]) {
     "```json", JSON.stringify(o.guionJson || {}, null, 2), "```",
     "",
     "## Prompts usados",
-    "### Dola 60s", o.dolaPrompt || "—",
+    `### Dola ${o.dolaDuration || 60}s${o.dolaIsAdaptation ? ` (adaptación del guion de ${o.duration}s)` : ""}`, o.dolaPrompt || "—",
     ...(o.prompts || []).map((p: string, i: number) => `### Bloque ${i + 1}\n${p}`),
     "",
     "## Versiones por plataforma",
@@ -49,6 +49,9 @@ export default function DolaStudioModule() {
   const [mobileTab, setMobileTab] = useState<"prompts" | "dola">("prompts");
   const ep: any = episodes.find(e => e.id === epId) || episodes[0];
   const out = ep?.output || {};
+  const verified = !!out.mode && out.mode !== "plantilla-local" && Array.isArray(out.cast) && out.cast.length >= 2;
+  const sec = Array.isArray(out.scenes) && out.scenes.length ? 8 : 15;
+  const dolaDuration = out.dolaDuration || 60;
   const chars = (data.characters || []).filter((c: any) => !ep?.seriesId || c.seriesId === ep.seriesId);
 
   const promptsPanel = (
@@ -79,14 +82,16 @@ export default function DolaStudioModule() {
       {ep && (
         <div className="rounded-xl bg-[#121826] p-4">
           <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">2 · Pega el prompt</p>
-          <details className="prompt-box" open><summary><span>Prompt Dola 60s</span></summary><div className="flex justify-end px-3 pb-1"><CopyButton text={out.dolaPrompt || ""} /></div><p className="prompt-text">{out.dolaPrompt || "Este episodio no tiene prompt de Dola."}</p></details>
-          {(out.prompts || []).map((p: string, i: number) => (
-            <details key={i} className="prompt-box"><summary><span>Bloque {i + 1} · {i * 15}-{(i + 1) * 15}s</span></summary><div className="flex justify-end px-3 pb-1"><CopyButton text={p} /></div><p className="prompt-text">{p}</p></details>
+          {!verified && <p className="mt-3 rounded-lg border border-amber-400/30 bg-amber-400/10 p-3 text-xs leading-5 text-amber-100">Este episodio es un borrador anterior sin validación de Gemini. Recréalo desde Generador antes de llevarlo a video.</p>}
+          {verified && out.dolaIsAdaptation && <p className="mt-3 rounded-lg border border-sky-400/20 bg-sky-400/[.06] p-3 text-xs text-sky-100">El prompt Dola de {dolaDuration} s resume el guion completo de {out.duration} s. Para producir todos los acontecimientos, utiliza los bloques originales.</p>}
+          {verified && <details className="prompt-box" open><summary><span>Prompt Dola {dolaDuration} s{out.dolaIsAdaptation ? " · adaptación" : ""}</span></summary><div className="flex justify-end px-3 pb-1"><CopyButton text={out.dolaPrompt || ""} /></div><p className="prompt-text">{out.dolaPrompt || "Este episodio no tiene prompt de Dola."}</p></details>}
+          {verified && (out.prompts || []).map((p: string, i: number) => (
+            <details key={i} className="prompt-box"><summary><span>{sec === 8 ? "Escena" : "Bloque"} {i + 1} · {i * sec}-{(i + 1) * sec}s</span></summary><div className="flex justify-end px-3 pb-1"><CopyButton text={p} /></div><p className="prompt-text">{p}</p></details>
           ))}
           <p className="mt-3 text-xs text-slate-400">Si Dola entrega solo 30 s, escríbele «continúa». Descarga los clips.</p>
         </div>
       )}
-      {ep && (
+      {ep && verified && (
         <div className="rounded-xl bg-[#121826] p-4">
           <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">3 · Envíalo a Claude</p>
           <p className="mt-2 text-sm text-slate-300">Descarga el paquete y adjúntalo en tu chat con Claude junto con los clips de Dola. Solicita allí la revisión, el montaje y las cuatro versiones; comprueba cada entrega antes de publicarla.</p>

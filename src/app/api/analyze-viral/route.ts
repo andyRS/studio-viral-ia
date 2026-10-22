@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { callLLM, templateViralAnalysis } from "@/lib/llm";
-export const maxDuration = 60;
+export const maxDuration = 180;
 import { requireUser } from "@/lib/auth-guard";
 // POST /api/analyze-viral — PROTEGIDA: requiere sesión Supabase (401 sin login).
 export async function POST(req: NextRequest){

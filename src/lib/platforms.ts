@@ -55,10 +55,10 @@ export function formatAdaptationForCopy(a: PlatformAdaptation): string {
 }
 
 export function buildPlatformAdaptations(input: any): PlatformAdaptation[] {
-  const theme: string = input?.theme || "Manguito descubre la verdad que Doña Aguacate le ocultaba";
-  const seriesTitle: string = input?.seriesTitle || input?.series?.title || "Manguito y Doña Aguacate";
+  const theme: string = input?.theme || input?.idea || "Historia por definir";
+  const seriesTitle: string = input?.seriesTitle || input?.series?.title || "Serie";
   const part: number = Number(input?.partNumber || input?.episodeNumber || 1);
-  const hook1: string = input?.hook?.[0] || "¡Ella le escondió la carta!";
+  const hook1: string = input?.hook?.[0] || "El conflicto comienza aquí";
   const isContinuation = Boolean(input?.previousSummary);
   const slug = seriesTitle.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
@@ -96,7 +96,7 @@ export function buildPlatformAdaptations(input: any): PlatformAdaptation[] {
     ],
     coverText: `¿Quién tiene la culpa? — ${hook1}`,
     title: `${seriesTitle} — Parte ${part}: ${theme}`,
-    description: `Esto partió la familia en dos… 💔 ${theme}. ¿Quién tiene la culpa: él por no escuchar o ella por ocultarlo? Comenta tu opinión, te leo. Continuará...`,
+    description: `${theme}. ${hook1} ¿Qué habrías hecho tú? Comenta tu opinión. Continuará...`,
     hashtags: ["#Frutinovelas", "#Dominicanos", "#Novelas"],
     bestTime: "19:00-22:00 (7-10 pm, hora RD)",
     frequency: "1 publicación al día",

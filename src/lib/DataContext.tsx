@@ -236,7 +236,7 @@ export function SessionBar({ compact = false }: { compact?: boolean } = {}) {
     </div>
   );
   return (
-    <div className="session-pill" title="Sin sesión: los datos se guardan solo en este navegador y la IA usa plantillas locales.">
+    <div className="session-pill" title="Sin sesión: los datos se guardan solo en este navegador. Inicia sesión para crear guiones y personajes con Gemini.">
       <span className="dot bg-amber-400" />
       {!compact && <span className="truncate">Modo local · sin sesión</span>}
       <a href="/login" className="ml-auto text-[11px] font-semibold text-amber-300 hover:text-amber-200">Entrar</a>

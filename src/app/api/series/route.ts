@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-export const maxDuration = 60;
+export const maxDuration = 180;
 import { requireUser } from "@/lib/auth-guard";
 import { generateSeries } from "@/lib/story";
 // POST /api/series — crea una serie nueva (personajes + episodio 1). Protegida con sesión.

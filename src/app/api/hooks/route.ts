@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-export const maxDuration = 60;
+export const maxDuration = 180;
 import { requireUser } from "@/lib/auth-guard";
 import { generateHookVariants } from "@/lib/story";
 // POST /api/hooks — propone 5 ganchos para elegir antes de generar. Protegida con sesión.
