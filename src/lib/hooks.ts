@@ -18,6 +18,7 @@ export function buildHookBank(episodes: any[], metrics: Metric[]): BankHook[] {
   };
   const byEpisode = new Map<string, BankHook>();
   for (const e of episodes || []) {
+    if (e.status === "Borrador" || e.output?.mode === "plantilla-local") continue;
     const h = add(hookText(e.output?.hook), e.title || "Episodio");
     if (!h) continue;
     h.uses += 1;
