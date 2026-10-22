@@ -40,9 +40,15 @@ interface DataCtx {
   insert: (collection: CollectionName, item: any) => Promise<any>;
   update: (collection: CollectionName, id: string, patch: any) => Promise<any>;
   remove: (collection: CollectionName, id: string) => Promise<void>;
+  removeMany: (collection: CollectionName, ids: string[]) => Promise<void>;
+  seriesFootprint: (seriesId: string) => SeriesFootprint;
+  removeSeries: (seriesId: string) => Promise<SeriesFootprint>;
   refresh: () => Promise<void>;
   signOut: () => Promise<void>;
 }
+
+// Lo que se borra al eliminar una serie completa (las métricas se conservan como historial).
+export interface SeriesFootprint { episodes: string[]; characters: string[]; productionCards: string[]; clipChecks: string[]; costs: string[]; calendarEntries: string[] }
 
 const Ctx = createContext<DataCtx | null>(null);
 export function useData(): DataCtx {
@@ -208,6 +214,47 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     });
   }, [userId]);
 
+  // Borrado en bloque: una sola petición a Supabase (o un solo guardado local).
+  const removeMany = useCallback(async (collection: CollectionName, ids: string[]) => {
+    const set = new Set(ids.filter(Boolean));
+    if (!set.size) return;
+    if (modeRef.current === "supabase" && supabaseRef.current && userId) {
+      const { error: delErr } = await supabaseRef.current.from(TABLE_OF[collection]).delete().in("id", Array.from(set)).eq("user_id", userId);
+      if (delErr) { setError("Error borrando en Supabase: " + delErr.message); throw delErr; }
+      setData((prev) => ({ ...prev, [collection]: (prev as any)[collection].filter((x: any) => !set.has(x.id)) }));
+      return;
+    }
+    setData((prev) => {
+      const next = { ...prev, [collection]: (prev as any)[collection].filter((x: any) => !set.has(x.id)) } as DataState;
+      saveLocalCollection(collection, (next as any)[collection]);
+      return next;
+    });
+  }, [userId]);
+
+  const seriesFootprint = useCallback((seriesId: string): SeriesFootprint => {
+    const d = dataRef.current;
+    const episodes = d.episodes.filter((e: any) => e.seriesId === seriesId).map((e: any) => e.id);
+    const eps = new Set(episodes);
+    const of = (list: any[]) => list.filter((x: any) => x.episodeId && eps.has(x.episodeId)).map((x: any) => x.id);
+    return {
+      episodes, characters: d.characters.filter((c: any) => c.seriesId === seriesId).map((c: any) => c.id),
+      productionCards: of(d.productionCards), clipChecks: of(d.clipChecks), costs: of(d.costs), calendarEntries: of(d.calendarEntries),
+    };
+  }, []);
+
+  // Serie completa: primero lo que cuelga de sus episodios, después episodios, personajes y la serie.
+  const removeSeries = useCallback(async (seriesId: string) => {
+    const f = seriesFootprint(seriesId);
+    await removeMany("clipChecks", f.clipChecks);
+    await removeMany("productionCards", f.productionCards);
+    await removeMany("costs", f.costs);
+    await removeMany("calendarEntries", f.calendarEntries);
+    await removeMany("episodes", f.episodes);
+    await removeMany("characters", f.characters);
+    await removeMany("series", [seriesId]);
+    return f;
+  }, [removeMany, seriesFootprint]);
+
   const refresh = useCallback(async () => {
     if (modeRef.current === "supabase" && supabaseRef.current) {
       const { data: { user } } = await supabaseRef.current.auth.getUser();
@@ -220,7 +267,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     applyLocal();
   }, [applyLocal]);
 
-  const value: DataCtx = { mode, userEmail, userId, error, data, insert, update, remove, refresh, signOut };
+  const value: DataCtx = { mode, userEmail, userId, error, data, insert, update, remove, removeMany, seriesFootprint, removeSeries, refresh, signOut };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 

@@ -141,7 +141,8 @@ function ReelCard({ m, rank, refAvg, onDelete, onOpenEpisode }: { m: Metric & { 
 }
 
 export default function MetricsModule({ focusMetricId }: { focusMetricId?: string }) {
-  const { data, insert, update, remove, mode } = useData();
+  const { data, insert, update, remove, removeMany, mode } = useData();
+  const [deleting, setDeleting] = useState(false);
   const items = data.metrics;
   const [recs, setRecs] = useState<string[]>([]);
   const [authError, setAuthError] = useState(false);
@@ -332,7 +333,12 @@ export default function MetricsModule({ focusMetricId }: { focusMetricId?: strin
 
 
     <div>
-      <div className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[.2em] text-[#598BFF]">Explorar contenido</p><h3 className="mt-1 text-lg font-bold text-white">Biblioteca de publicaciones</h3><p className="mt-1 text-xs text-slate-300">Miniaturas y resultados de cada video medido. Las vistas son acumuladas.</p></div><span className="rounded-full border border-white/10 bg-[#151C2B] px-3 py-1 text-xs text-slate-300">{reels.length} {reels.length === 1 ? "resultado" : "resultados"}</span></div>
+      <div className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[.2em] text-[#598BFF]">Explorar contenido</p><h3 className="mt-1 text-lg font-bold text-white">Biblioteca de publicaciones</h3><p className="mt-1 text-xs text-slate-300">Miniaturas y resultados de cada video medido. Las vistas son acumuladas.</p></div><span className="rounded-full border border-white/10 bg-[#151C2B] px-3 py-1 text-xs text-slate-300">{reels.length} {reels.length === 1 ? "resultado" : "resultados"}</span>
+        {reels.length > 0 && <button type="button" disabled={deleting} onClick={async () => {
+          const filtered = reels.length < items.length;
+          if (!window.confirm(`¿Eliminar ${reels.length} ${reels.length === 1 ? "métrica" : "métricas"}${filtered ? " (las que muestran los filtros actuales)" : " (todas)"}? Esta acción no se puede deshacer.${filtered ? "" : "\n\nLas métricas importadas de Facebook e Instagram volverán si importas otra vez."}`)) return;
+          setDeleting(true); try { await removeMany("metrics", reels.map((m: any) => m.id)); } finally { setDeleting(false); }
+        }} className="rounded-full border border-red-400/30 px-3 py-1 text-xs text-red-200 hover:bg-red-500/10">{deleting ? "Eliminando…" : `Eliminar ${reels.length === items.length ? "todas" : "estas " + reels.length}`}</button>}</div>
       <div className="mt-3 flex flex-wrap items-end gap-3">
         <label className="min-w-52 flex-1 text-xs font-semibold text-slate-300">Buscar episodio o cuenta<input className="mt-1" type="search" value={query} onChange={e => { setQuery(e.target.value); setShown(12); }} placeholder="Buscar publicaciones…" /></label>
         <label className="min-w-44 text-xs font-semibold text-slate-300">Ordenar<select className="mt-1" value={sort} onChange={e => setSort(e.target.value as any)}><option value="views">Más vistas</option><option value="avgWatch">Más tiempo visto</option><option value="interactions">Más interacciones</option><option value="date">Más recientes</option></select></label>

@@ -9,7 +9,7 @@ type AssetMap = Record<number, File>;
 const sceneNumber = (name: string) => /(?:^|[^a-z0-9])s(?:cene|cena)?[ _-]*0*(\d{1,2})(?=[^0-9]|$)/i.exec(name)?.[1];
 
 export default function SceneDesk({ episodeId, scenes, guion, title, referencesReady, referenceSignature }: { episodeId: string; scenes: Scene[]; guion: any; title: string; referencesReady: boolean; referenceSignature: string }) {
-  const { data, insert, update } = useData();
+  const { data, insert, update, remove } = useData();
   const [images, setImages] = useState<AssetMap>({});
   const [clips, setClips] = useState<AssetMap>({});
   const [reasons, setReasons] = useState<Record<number, string>>({});
@@ -34,6 +34,17 @@ export default function SceneDesk({ episodeId, scenes, guion, title, referencesR
     if (kind === "image") { setImages(prev => ({ ...prev, ...mapped })); setDirtyClips(prev => Array.from(new Set([...prev, ...Object.keys(mapped).map(Number)]))); }
     else { setClips(prev => ({ ...prev, ...mapped })); setDirtyClips(prev => Array.from(new Set([...prev, ...Object.keys(mapped).map(Number)]))); }
     setMessage(issues.length ? `No se asignaron: ${issues.join(", ")}. Usa s01, s02… en el nombre y evita números duplicados.` : `${Object.keys(mapped).length} ${kind === "clip" ? "clips" : "imágenes"} asignados por número de escena.`);
+  }
+
+  // Quitar lo que no sirve: el archivo subido por error (imagen o clip) o la revisión guardada.
+  function dropFile(n: number, kind: "image" | "clip") {
+    const strip = (prev: AssetMap) => { const next = { ...prev }; delete next[n]; return next; };
+    if (kind === "image") setImages(strip); else setClips(strip);
+  }
+  async function deleteReview(n: number) {
+    const old = checks.find(c => c.clipIndex === n - 1);
+    if (!old || !window.confirm(`¿Borrar la revisión de la escena s${String(n).padStart(2, "0")}? Tendrás que revisarla de nuevo.`)) return;
+    try { await remove("clipChecks", old.id); } catch (error: any) { setMessage(`No se pudo borrar la revisión: ${error?.message || String(error)}`); }
   }
 
   async function mark(n: number, approved: boolean) {
@@ -76,6 +87,11 @@ export default function SceneDesk({ episodeId, scenes, guion, title, referencesR
             <p className="mt-1 text-xs text-slate-300">{scene.speaker}: «{scene.line}»</p>
             <div className="mt-2 flex flex-wrap gap-2"><CopyButton text={scene.animationPrompt} label="Copiar prompt" /><CopyButton text={scene.imagePromptFlow} label="Copiar imagen" /></div>
             <p className="mt-2 text-[11px] text-slate-400">Referencias: {(scene.references || []).join(", ") || "—"}</p>
+            <div className="mt-1 flex flex-wrap gap-3 text-[11px]">
+              {images[scene.n] && <button type="button" onClick={() => dropFile(scene.n, "image")} className="text-slate-400 hover:text-red-300">Quitar imagen</button>}
+              {clips[scene.n] && <button type="button" onClick={() => dropFile(scene.n, "clip")} className="text-slate-400 hover:text-red-300">Quitar clip</button>}
+              {check && <button type="button" onClick={() => { void deleteReview(scene.n); }} className="text-slate-400 hover:text-red-300">Borrar revisión</button>}
+            </div>
           </div>
           <div className="min-w-0 w-full sm:w-52">{clipUrls[scene.n] ? <video src={clipUrls[scene.n]} controls preload="metadata" className="w-full rounded-lg bg-black" /> : <p className="rounded-lg border border-dashed border-white/15 p-3 text-xs text-slate-400">Falta clip s{String(scene.n).padStart(2, "0")}</p>}
             <div className="mt-2 flex gap-2"><button type="button" disabled={busy === scene.n || !referencesReady || !clips[scene.n]} onClick={() => mark(scene.n, true)} className="rounded-lg bg-emerald-400 px-2 py-1.5 text-xs font-bold text-slate-950 disabled:opacity-40">✓ Aprobado</button><button type="button" disabled={busy === scene.n} onClick={() => mark(scene.n, false)} className="rounded-lg border border-white/15 px-2 py-1.5 text-xs text-slate-100">↻ Rehacer</button></div>

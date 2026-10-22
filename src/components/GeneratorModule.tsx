@@ -7,6 +7,7 @@ import { useData } from "@/lib/DataContext";
 import { postApi, isAuthError } from "@/lib/api-client";
 import { learnFromMetrics } from "@/lib/learning";
 import { buildHookBank } from "@/lib/hooks";
+import { useDeleteSeries, confirmDelete } from "@/lib/useDelete";
 import HookPicker from "./HookPicker";
 import SceneDesk from "./SceneDesk";
 import { STYLES, type StyleKey } from "@/lib/knowledge";
@@ -39,6 +40,12 @@ const IDEAS: Record<StyleKey, string[]> = {
 
 export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpisodeId?: string; focusTab?: "mesa" } = {}) {
   const { data, insert, remove, mode } = useData();
+  const deleteSeries = useDeleteSeries();
+  // Ganchos ocultados del banco (se guardan en este navegador).
+  const [hiddenHooks, setHiddenHooks] = useState<string[]>([]);
+  useEffect(() => { try { setHiddenHooks(JSON.parse(localStorage.getItem("estudio-viral:hiddenHooks") || "[]")); } catch {} }, []);
+  const saveHidden = (list: string[]) => { setHiddenHooks(list); try { localStorage.setItem("estudio-viral:hiddenHooks", JSON.stringify(list)); } catch {} };
+  const hookKey = (h: string) => h.toLowerCase().replace(/\s+/g, " ").trim();
   const focusedEpisodeRef = useRef<string | null>(null);
   const [view, setView] = useState<View>("inicio");
   const [loading, setLoading] = useState(false);
@@ -84,7 +91,8 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
     (current.style !== "cine90" && !c.fruit && !/cabeza/i.test(c.visualES || ""))
   ));
   const learnings = useMemo(() => learnFromMetrics(data.metrics)?.text, [data.metrics]);
-  const bank = useMemo(() => buildHookBank(data.episodes, data.metrics), [data.episodes, data.metrics]);
+  const bankAll = useMemo(() => buildHookBank(data.episodes, data.metrics), [data.episodes, data.metrics]);
+  const bank = useMemo(() => bankAll.filter(h => !hiddenHooks.includes(hookKey(h.hook))), [bankAll, hiddenHooks]);
   const bankTop = bank.slice(0, 10).map(h => ({ gancho: h.hook, vistas: h.views, plataformas: h.platforms }));
   const account = data.accounts.find((a: any) => a.id === accountId) || data.accounts[0];
 
@@ -181,9 +189,9 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
         </div>
         {!!bank.length && <>
           <h3 className="mt-8 text-sm font-semibold uppercase tracking-wider text-slate-400">🎣 Banco de ganchos</h3>
-          <div className="mt-3 overflow-x-auto rounded-xl bg-[#121826]"><table className="w-full text-sm"><thead><tr className="text-left text-xs text-slate-400"><th className="p-2">Gancho</th><th className="p-2">Episodio</th><th className="p-2">Vistas</th><th className="p-2">Plataformas</th></tr></thead>
-            <tbody>{bank.slice(0, 12).map((h, i) => <tr key={i} className="border-t border-slate-800"><td className="p-2 font-medium">{h.hook}</td><td className="p-2 text-slate-400">{h.source}</td><td className="p-2">{h.views ? h.views.toLocaleString() : <span className="text-slate-500">sin métricas</span>}</td><td className="p-2 text-xs text-slate-400">{h.platforms.join(", ") || "—"}</td></tr>)}</tbody></table></div>
-          <p className="mt-1 text-xs text-slate-500">Registra las vistas en Métricas con el mismo título del episodio para revisar qué ganchos rindieron más.</p>
+          <div className="mt-3 overflow-x-auto rounded-xl bg-[#121826]"><table className="w-full text-sm"><thead><tr className="text-left text-xs text-slate-400"><th className="p-2">Gancho</th><th className="p-2">Episodio</th><th className="p-2">Vistas</th><th className="p-2">Plataformas</th><th className="p-2"></th></tr></thead>
+            <tbody>{bank.slice(0, 12).map((h, i) => <tr key={i} className="border-t border-slate-800"><td className="p-2 font-medium">{h.hook}</td><td className="p-2 text-slate-400">{h.source}</td><td className="p-2">{h.views ? h.views.toLocaleString() : <span className="text-slate-500">sin métricas</span>}</td><td className="p-2 text-xs text-slate-400">{h.platforms.join(", ") || "—"}</td><td className="p-2 text-right"><button type="button" onClick={() => saveHidden([...hiddenHooks, hookKey(h.hook)])} className="text-xs text-slate-400 hover:text-red-300" title="Ocultar este gancho del banco y de las sugerencias">Ocultar</button></td></tr>)}</tbody></table></div>
+          <p className="mt-1 text-xs text-slate-500">Registra las vistas en Métricas con el mismo título del episodio para revisar qué ganchos rindieron más.{hiddenHooks.length > 0 && <> · <button type="button" onClick={() => saveHidden([])} className="text-sky-300 hover:text-sky-200">Mostrar {hiddenHooks.length} oculto(s)</button></>}</p>
         </>}
         {!!seriesList.length && <>
           <h3 className="mt-8 text-sm font-semibold uppercase tracking-wider text-slate-400">Tus series</h3>
@@ -195,7 +203,8 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
                 <p className="mt-1 line-clamp-2 text-sm text-slate-400">{s.last?.output?.summary || s.description}</p>
                 <div className="mt-3 flex items-center gap-2">
                   <span className="text-xs text-slate-500">{s.eps.length} episodio(s)</span>
-                  <button onClick={() => { setSeriesId(s.id); setView("continuar"); }} className="ml-auto rounded bg-amber-500 px-3 py-1.5 text-xs font-bold">Continuar</button>
+                  <button type="button" onClick={() => { void deleteSeries(s); }} className="ml-auto text-xs text-slate-400 hover:text-red-300">Eliminar serie</button>
+                  <button onClick={() => { setSeriesId(s.id); setView("continuar"); }} className="rounded bg-amber-500 px-3 py-1.5 text-xs font-bold">Continuar</button>
                 </div>
               </div>
             ))}
@@ -258,7 +267,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
                 <button onClick={() => { setIdea(current.description || current.title); setStyle(current.style); setView("nueva"); setNotice(""); }} className="mt-3 rounded-lg bg-amber-500 px-3 py-2 text-xs font-bold text-slate-950">Recrear serie con Gemini</button>
               </div>}
               <div className="rounded-xl bg-[#121826] p-4">
-                <div className="flex items-center gap-2"><p className="font-bold">{current.title}</p>{seriesList.length > 1 && <button onClick={() => setSeriesId("")} className="ml-auto text-xs text-slate-400 hover:text-white">Cambiar serie</button>}</div>
+                <div className="flex items-center gap-2"><p className="font-bold">{current.title}</p><span className="ml-auto flex gap-3">{seriesList.length > 1 && <button onClick={() => setSeriesId("")} className="text-xs text-slate-400 hover:text-white">Cambiar serie</button>}<button type="button" onClick={async () => { if (await deleteSeries(current)) { setSeriesId(""); setView("inicio"); } }} className="text-xs text-slate-400 hover:text-red-300">Eliminar serie</button></span></div>
                 <p className="mt-1 text-sm text-slate-400">{current.description}</p>
                 <ol className="timeline mt-4">
                   {current.eps.map((e: any, i: number) => (
@@ -305,6 +314,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
       {view === "resultado" && result && <Result
         episode={result.episode} episodeId={result.episodeId} seriesId={result.seriesId} part={result.part} seriesTitle={data.series.find((s: any) => s.id === result.seriesId)?.title} initialTab={focusTab}
         onBack={() => setView("inicio")} onNext={() => { setSeriesId(result.seriesId); setView("continuar"); }}
+        onDelete={async () => { if (!result.episodeId || !confirmDelete(`el episodio «${result.episode?.title || "sin título"}»`)) return; await remove("episodes", result.episodeId); setResult(null); setView("inicio"); }}
         onRecreate={() => {
           const oldSeries = data.series.find((s: any) => s.id === result.seriesId);
           const oldEpisode = data.episodes.find((e: any) => e.seriesId === result.seriesId && (e.output === result.episode || e.output?.title === result.episode?.title));
@@ -356,7 +366,7 @@ function DownloadText({ text, filename, label }: { text: string; filename: strin
 const Field = ({ label, value }: { label: string; value?: string }) => value ? <div><dt className="inline font-semibold text-slate-200">{label}: </dt><dd className="inline text-slate-300">{value}</dd></div> : null;
 const RefChips = ({ refs }: { refs?: string[] }) => <p className="mt-2 text-[11px] text-sky-200">Referencias a seleccionar (fuera del prompt): {(refs || []).length ? (refs || []).map(r => <span key={r} className="ml-1 rounded-full bg-sky-400/15 px-2 py-0.5">{r}</span>) : <span className="text-slate-400">ninguna</span>}</p>;
 
-function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialTab, onBack, onNext, onRecreate }: any) {
+function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialTab, onBack, onNext, onRecreate, onDelete }: any) {
   type Tab = "guion" | "elenco" | "imagenes" | "animacion" | "mesa" | "redes" | "plataformas" | "archivos";
   const { data, update } = useData();
   const cast: any[] = Array.isArray(out.cast) ? out.cast : [];
@@ -396,7 +406,8 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
         <h2 className="text-xl font-bold">{out.title || `Episodio ${part}`}</h2>
         {out.summary && <p className="mt-1 text-sm text-slate-400">{out.summary}</p>}
       </div>
-      <button onClick={onNext} className="rounded bg-amber-500 px-4 py-2 text-sm font-bold">Crear episodio {part + 1} →</button>
+      <span className="flex items-center gap-3">{episodeId && <button type="button" onClick={onDelete} className="text-xs text-slate-400 hover:text-red-300">Eliminar episodio</button>}
+      <button onClick={onNext} className="rounded bg-amber-500 px-4 py-2 text-sm font-bold">Crear episodio {part + 1} →</button></span>
     </div>
     <div className={`mt-4 rounded-xl border p-4 text-sm ${fromAI ? "border-emerald-400/25 bg-emerald-400/[.07] text-emerald-100" : "border-amber-400/30 bg-amber-400/[.08] text-amber-100"}`}>
       <p className="font-bold">{fromAI ? `Guion escrito por la IA · ${cast.length} personajes · ${scenes.length || (out.scriptBlocks || []).length} escenas · ${fullDuration} s` : isTemplate ? "Borrador de la plantilla local (sin IA)" : isAIDraft ? "Borrador de Gemini · pendiente de corregir" : "Borrador anterior sin elenco de producción"}</p>

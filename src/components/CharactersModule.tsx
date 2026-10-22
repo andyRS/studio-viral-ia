@@ -1,11 +1,13 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { useData } from "@/lib/DataContext";
+import { useDeleteSeries } from "@/lib/useDelete";
 
 const EMPTY = { name:"", seriesId:"", visualES:"", visualEN:"", clothing:"", subtitleColor:"#ffffff", speechStyle:"", pronunciations:"" };
 
 export default function CharactersModule({ focusCharacterId }: { focusCharacterId?: string } = {}){
   const { data, insert, update, remove, mode } = useData();
+  const deleteSeries = useDeleteSeries();
   const focusedCharacterRef = useRef<string | null>(null);
   const items = data.characters;
   const series = data.series;
@@ -64,7 +66,7 @@ export default function CharactersModule({ focusCharacterId }: { focusCharacterI
     <p className="text-xs text-slate-400 mt-1">{mode === "supabase" ? "Los cambios se guardan en tu cuenta." : "Modo local: los cambios se guardan en este navegador."}</p>
 
     {series.map((s: any) => <div key={s.id} className="mt-4">
-      <h3 className="font-semibold text-amber-400">{s.title}</h3>
+      <div className="flex items-center gap-2"><h3 className="font-semibold text-amber-400">{s.title}</h3><button type="button" onClick={() => { void deleteSeries(s); }} className="ml-auto text-xs text-slate-400 hover:text-red-300">Eliminar serie</button></div>
       {s.description && <p className="text-xs text-slate-400">{s.description}</p>}
       <div className="grid gap-3 md:grid-cols-3 mt-2">
         {items.filter(c => c.seriesId === s.id).map(c => <article key={c.id} id={"character-" + c.id} tabIndex={-1} aria-label={"Personaje " + c.name} className={"rounded-xl bg-[#121826] p-4 border border-slate-800 " + (focusCharacterId === c.id ? "ring-2 ring-[#598BFF]" : "")}>
