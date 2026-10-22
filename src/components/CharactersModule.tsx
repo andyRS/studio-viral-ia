@@ -45,9 +45,18 @@ export default function CharactersModule({ focusCharacterId }: { focusCharacterI
   }
   function onImage(c: any, file: File | undefined){
     if (!file) return;
+    if (file.size > 2 * 1024 * 1024) { window.alert("La ficha debe pesar menos de 2 MB para guardarla en tu cuenta. Exporta una copia comprimida desde Flow."); return; }
+    if (c.referenceApprovedAt && !window.confirm(`La ficha aprobada de ${c.name} quedará pendiente de nueva aprobación. ¿Crear versión ${Number(c.referenceVersion || 0) + 1}?`)) return;
     const r = new FileReader();
-    r.onload = () => update("characters", c.id, { imageUrl: r.result as string });
+    r.onload = () => { const history = [...(c.referenceHistory || [])]; if (c.referenceApprovedAt && c.imageUrl) history.push({ version: c.referenceVersion || 1, imageUrl: c.imageUrl, approvedAt: c.referenceApprovedAt }); void update("characters", c.id, { imageUrl: r.result as string, referenceApprovedAt: undefined, referenceVersion: Number(c.referenceVersion || 0) + 1, referenceHistory: history }); };
     r.readAsDataURL(file);
+  }
+  function restoreReference(c: any) {
+    const history = [...(c.referenceHistory || [])];
+    const previous = history.pop(); if (!previous) return;
+    if (!window.confirm(`Restaurar la ficha aprobada v${previous.version} de ${c.name}? Los episodios deberán revisarse con la nueva versión.`)) return;
+    if (c.referenceApprovedAt && c.imageUrl) history.push({ version: c.referenceVersion || 1, imageUrl: c.imageUrl, approvedAt: c.referenceApprovedAt });
+    void update("characters", c.id, { imageUrl: previous.imageUrl, referenceApprovedAt: new Date().toISOString(), referenceVersion: Number(c.referenceVersion || 0) + 1, referenceHistory: history });
   }
 
   return <section>
@@ -62,7 +71,13 @@ export default function CharactersModule({ focusCharacterId }: { focusCharacterI
           <div className="flex justify-between"><b>{c.name}</b><span style={{ background: c.subtitleColor }} className="h-4 w-4 rounded-full inline-block"/></div>
           <p className="text-xs text-slate-300 mt-2"><b>ES:</b> {c.visualES}<br/><b>EN:</b> {c.visualEN}<br/><b>Ropa:</b> {c.clothing}<br/><b>Habla:</b> {c.speechStyle}<br/><b>Subtítulo:</b> {c.subtitleColor}</p>
           <ul className="text-xs text-amber-200 mt-2">{(c.pronunciations || []).map((p: string, i: number) => <li key={i}>• {p}</li>)}</ul>
-          {c.imageUrl && <img src={c.imageUrl} alt={"Referencia visual de " + c.name} className="mt-2 rounded"/>}
+          {c.imageUrl && <img src={c.imageUrl} alt={"Referencia visual de " + c.name} className="mt-3 aspect-[9/16] max-h-64 rounded-lg border border-white/10 object-contain bg-black/30"/>}
+          <p className="mt-2 text-xs font-semibold text-amber-200">{c.referenceApprovedAt ? `✓ Ficha maestra aprobada · v${c.referenceVersion || 1}` : c.imageUrl ? `Ficha v${c.referenceVersion || 1} pendiente de aprobación` : "Sin ficha visual aprobada"}</p>
+          {c.imageUrl && <div className="mt-2 flex flex-wrap gap-2">
+            <button type="button" onClick={() => { void update("characters", c.id, { referenceApprovedAt: new Date().toISOString() }); }} className="rounded-lg bg-emerald-400 px-3 py-1.5 text-xs font-bold text-slate-950">{c.referenceApprovedAt ? "Reafirmar aprobación" : "Aprobar ficha maestra"}</button>
+            <a href={c.imageUrl} download={`${c.name.replace(/[^a-z0-9áéíóúñ]+/gi, "-")}-ficha-v${c.referenceVersion || 1}.png`} className="rounded-lg border border-white/15 px-3 py-1.5 text-xs text-slate-200">Descargar copia</a>
+          </div>}
+          {!!c.referenceHistory?.length && <button type="button" onClick={() => restoreReference(c)} className="mt-2 text-xs text-sky-300 hover:text-sky-200">Restaurar última ficha aprobada (v{c.referenceHistory[c.referenceHistory.length - 1].version})</button>}
           <label htmlFor={"character-image-" + c.id} className="mt-2 block text-xs text-slate-300">Imagen de referencia de {c.name}</label>
           <input id={"character-image-" + c.id} type="file" accept="image/*" className="mt-1 text-xs" onChange={e => onImage(c, e.target.files?.[0])}/>
           <div className="flex items-center gap-2 mt-2">

@@ -12,7 +12,7 @@ Aplicación web para un creador de contenido de República Dominicana que produc
 La capa de datos vive en `src/lib/DataContext.tsx` (contexto + `useData()`), con los mapeos cliente↔tabla en `src/lib/db.ts`. **Ningún módulo toca `localStorage` directamente**: todos usan `insert / update / remove` de `useData()`.
 
 - **Con sesión (modo Supabase):** al montar, la app obtiene la sesión con el cliente de navegador de `@supabase/ssr`. Todo se lee con `.eq("user_id", auth.uid())` y todo insert lleva `user_id`; update/delete filtran por `id` **y** `user_id`. La RLS de `supabase/schema.sql` impone lo mismo en la base de datos (política `own rows`: `auth.uid() = user_id`), así un usuario jamás ve datos de otro aunque manipule el cliente. Colecciones conectadas: `accounts`, `series`, `characters`, `formulas`, `episodes` (el Generador guarda el episodio con `platform_adaptations` y `versions`), `production_cards`, `clip_checks`, `costs`, `calendar_entries`, `metrics` (las métricas específicas de cada plataforma 4B van en la columna `extra jsonb`), `viral_analyses`, `products` y `product_tests`. Las mutaciones refrescan el estado al instante y hay suscripción Realtime (si está activa en tu proyecto) que recarga ante cambios externos.
-- **Primer login (seed por usuario):** si las tablas **de ese usuario** están vacías, se siembran una sola vez en su cuenta las fórmulas base y la serie «Manguito y Doña Aguacate» con sus 6 personajes. En logins siguientes las tablas ya tienen filas, así que no se duplica nada. Las cuentas **no** se siembran en Supabase: cada usuario crea las suyas.
+- **Primer login (seed por usuario):** se guardan las fórmulas base si faltan. Las series, personajes, cuentas y métricas empiezan vacíos.
 - **Sin sesión (modo sin login):** mismos módulos y mismas operaciones, pero contra `localStorage` con los datos de ejemplo. Ideal para probar sin configurar nada.
 - **Indicador de modo (siempre visible en el panel):** `🟢 Conectado: tu@correo (Supabase)` con botón **Salir**, o `🟡 Modo sin login (datos locales)`. La página principal es usable en ambos modos.
 
@@ -31,12 +31,12 @@ En el frontend, Generador, Métricas (Analizar), Analizador y Dropshipping detec
 ## Módulos
 
 1. **Cuentas** — nombre, plataforma (**Instagram, Facebook, TikTok, YouTube Shorts**), nicho, público y duración ideal.
-2. **Personajes** — ficha con imagen de referencia (subida), descripción visual fija en inglés y español, ropa, color de subtítulo (hex), forma de hablar y pronunciaciones obligatorias (ej.: «tíguere» se dice TÍ-gue-re, nunca «tigre»; «mi cualto» con L, nunca «cuartos»). Agrupados por serie. Datos de ejemplo: serie **«Manguito y Doña Aguacate»** con Manguito, Chinola, Doña Aguacate, Guayabita, Limón y Don Piña.
+2. **Personajes** — biblia por serie con fruta, cabeza, ropa, voz y prompt de Flow persistentes. La ficha visual se sube, se versiona y se aprueba antes de producir.
 3. **Fórmulas virales** — biblioteca editable, precargada con la Fórmula Base, el formato TikTok/Facebook 1-3 min y el formato cristiano.
-4. **Generador de episodios** — guion en bloques de 15 s, un prompt por bloque (y uno de 60 s para Dola AI) **completamente en español** que empieza con «Usa Seedance 2.5.», con descripciones fijas, «cabeza de fruta en cada toma, nunca cara humana», sección **PRONUNCIACIÓN OBLIGATORIA** y sección **VOCES**; reglas de diálogo dominicano sin contracciones cortadas; gancho, portada, descripción y hashtags; **`guion.json` descargable** (`{"colores": {...}, "gancho": [...], "cierre": "Continuará...", "clips": [...]}`); historial de versiones por episodio.
-5. **Producción** — Kanban Idea → Guion → Clips generados → Montaje → Publicado, checklist por clip y costos (Higgsfield, Dola).
+4. **Generador de episodios** — escenas de 8 s con imagen y clip por escena. Si Gemini falla, la plantilla se guarda como **Borrador** y no habilita producción. La versión corta de Dola conserva el gancho y el cierre. Cada episodio guarda la versión de las fichas maestras empleadas.
+5. **Producción** — mesa ligera en cada episodio con imagen, prompt, clip y revisión; carga por lote `s01`, `s02`…, motivo para rehacer y montaje al aprobar todas las escenas. El Kanban y costos siguen disponibles.
 6. **Calendario** — semanal por cuenta, meta de 1-2 publicaciones diarias, aviso de días sin contenido.
-7. **Métricas** — vistas, reproducción promedio, interacciones y seguidores por video; rankings de fórmula/gancho/duración; botón **Analizar** (3 recomendaciones del LLM); **tablero de comparación 4B** (ver abajo).
+7. **Métricas** — vistas, reproducción promedio, interacciones y seguidores por video; comparación 4B. «Continuar una serie» muestra las vistas registradas por parte y plataforma y solo sugiere una Parte 1 nueva con caídas y ventanas de observación comparables.
 8. **Analizador de virales** — pega una transcripción y el LLM devuelve la estructura y la guarda como fórmula nueva.
 9. **Dropshipping orgánico** — ficha de producto con margen calculado, 5 ángulos, 3 guiones de 15-30 s, prompt Seedance 2.5 y landing completa; registro de probados y ganadores.
 
@@ -73,7 +73,7 @@ El generador (`src/lib/llm.ts` + `src/lib/platforms.ts`, API `POST /api/generate
 ### 1. Supabase
 
 1. Crea un proyecto en [supabase.com](https://supabase.com).
-2. En **SQL Editor**, pega y ejecuta todo `supabase/schema.sql` (crea las tablas `accounts`, `series`, `characters`, `formulas`, `episodes` —con `versions` y `platform_adaptations` jsonb—, `production_cards`, `clip_checks`, `costs`, `calendar_entries`, `metrics`, `viral_analyses`, `products`, `product_tests`, con **RLS por `auth.uid()`** y sus políticas). Si ya habías creado las tablas, el mismo archivo incluye la migración 4B segura (`alter table ... add column if not exists`).
+2. En **SQL Editor**, ejecuta `supabase/schema.sql` para un proyecto nuevo. Para un proyecto ya desplegado, ejecuta `supabase/migrations/20261022_character_bible_scene_review.sql` antes de publicar esta versión; añade las columnas nuevas sin borrar filas existentes.
 3. En **Authentication → Providers → Email** deja activo el login por correo. La pantalla está en `/login`.
 4. Copia la URL del proyecto y las claves desde **Project Settings → API**.
 

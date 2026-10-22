@@ -49,10 +49,16 @@ export default function DolaStudioModule() {
   const [mobileTab, setMobileTab] = useState<"prompts" | "dola">("prompts");
   const ep: any = episodes.find(e => e.id === epId) || episodes[0];
   const out = ep?.output || {};
-  const verified = !!out.mode && out.mode !== "plantilla-local" && Array.isArray(out.cast) && out.cast.length >= 2;
+  const chars = (data.characters || []).filter((c: any) => !ep?.seriesId || c.seriesId === ep.seriesId);
+  const missingMasters = (out.cast || []).filter((castMember: any) => !chars.some(c => c.name.toLowerCase() === String(castMember.name).toLowerCase() && c.imageUrl && c.referenceApprovedAt));
+  const versionsMatch = !!out.referenceVersions && (out.cast || []).every((castMember: any) => {
+    const saved = chars.find(c => c.name.toLowerCase() === String(castMember.name).toLowerCase());
+    return saved && Number(saved.referenceVersion || 1) === Number(out.referenceVersions[String(castMember.name).toLowerCase()]);
+  });
+  const endingProtected = !out.dolaIsAdaptation || (Array.isArray(out.dolaSceneNumbers) && out.dolaSceneNumbers.includes(out.scenes?.length));
+  const verified = !!out.mode && out.mode !== "plantilla-local" && Array.isArray(out.cast) && out.cast.length >= 2 && !missingMasters.length && versionsMatch && endingProtected;
   const sec = Array.isArray(out.scenes) && out.scenes.length ? 8 : 15;
   const dolaDuration = out.dolaDuration || 60;
-  const chars = (data.characters || []).filter((c: any) => !ep?.seriesId || c.seriesId === ep.seriesId);
 
   const promptsPanel = (
     <div className="space-y-3">
@@ -60,7 +66,7 @@ export default function DolaStudioModule() {
         <p className="rounded-xl border border-white/10 bg-white/[.03] p-4 text-sm text-slate-300">Todavía no hay episodios. Genera uno en el <b>Generador</b> y vuelve aquí para trabajarlo con Dola.</p>
       ) : (
         <select value={ep?.id} onChange={e => setEpId(e.target.value)}>
-          {episodes.map(e => <option key={e.id} value={e.id}>{e.title || e.theme}</option>)}
+          {episodes.map(e => <option key={e.id} value={e.id}>{e.title || e.theme}{e.status === "Borrador" || e.output?.mode === "plantilla-local" ? " · Borrador" : ""}</option>)}
         </select>
       )}
       <div className="rounded-xl bg-[#121826] p-4">
@@ -82,8 +88,8 @@ export default function DolaStudioModule() {
       {ep && (
         <div className="rounded-xl bg-[#121826] p-4">
           <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">2 · Pega el prompt</p>
-          {!verified && <p className="mt-3 rounded-lg border border-amber-400/30 bg-amber-400/10 p-3 text-xs leading-5 text-amber-100">Este episodio es un borrador anterior sin validación de Gemini. Recréalo desde Generador antes de llevarlo a video.</p>}
-          {verified && out.dolaIsAdaptation && <p className="mt-3 rounded-lg border border-sky-400/20 bg-sky-400/[.06] p-3 text-xs text-sky-100">El prompt Dola de {dolaDuration} s resume el guion completo de {out.duration} s. Para producir todos los acontecimientos, utiliza los bloques originales.</p>}
+          {!verified && <p className="mt-3 rounded-lg border border-amber-400/30 bg-amber-400/10 p-3 text-xs leading-5 text-amber-100">{out.mode === "plantilla-local" ? "Este episodio es un borrador de plantilla. Recréalo con Gemini antes de producir." : missingMasters.length ? `Faltan fichas maestras aprobadas: ${missingMasters.map((c: any) => c.name).join(", ")}. Apruébalas en Generador → Biblia.` : !versionsMatch ? "El guion usa fichas anteriores o no tiene versión registrada. Regenera el episodio con la biblia actual." : !endingProtected ? "Este prompt es anterior a la corrección de duración y puede cortar el cierre. Regenera el episodio antes de usar Dola." : "Este episodio necesita revisión en Generador antes de producir."}</p>}
+          {verified && out.dolaIsAdaptation && <p className="mt-3 rounded-lg border border-sky-400/20 bg-sky-400/[.06] p-3 text-xs text-sky-100">Versión de {dolaDuration} s: mantiene el inicio y el cierre. Escenas originales incluidas: {(out.dolaSceneNumbers || []).join(", ")}.</p>}
           {verified && <details className="prompt-box" open><summary><span>Prompt Dola {dolaDuration} s{out.dolaIsAdaptation ? " · adaptación" : ""}</span></summary><div className="flex justify-end px-3 pb-1"><CopyButton text={out.dolaPrompt || ""} /></div><p className="prompt-text">{out.dolaPrompt || "Este episodio no tiene prompt de Dola."}</p></details>}
           {verified && (out.prompts || []).map((p: string, i: number) => (
             <details key={i} className="prompt-box"><summary><span>{sec === 8 ? "Escena" : "Bloque"} {i + 1} · {i * sec}-{(i + 1) * sec}s</span></summary><div className="flex justify-end px-3 pb-1"><CopyButton text={p} /></div><p className="prompt-text">{p}</p></details>

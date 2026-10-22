@@ -62,16 +62,16 @@ const ALL_IDS = Object.keys(MODULES);
 const workspaceOf = (id: string) => WORKSPACES.find(w => w.id === "inicio" && id === "inicio" || w.modules.includes(id))?.id || "dropshipping";
 const normalize = (value: string) => value.toLocaleLowerCase("es").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
 const formatNumber = (value: number) => new Intl.NumberFormat("es-DO").format(value);
-type SearchResult = { key: string; id: string; kind: string; title: string; detail: string; module: string };
+type SearchResult = { key: string; id: string; kind: string; title: string; detail: string; module: string; preferredTab?: "mesa" };
 
-function ModuleView({ id, focus }: { id: string; focus: SearchResult | null }) {
+function ModuleView({ id, focus, onOpenEpisode }: { id: string; focus: SearchResult | null; onOpenEpisode: (episodeId: string) => void }) {
   switch (id) {
     case "inicio": return <HomeModule />;
     case "cuentas": return <AccountsModule />;
     case "personajes": return <CharactersModule focusCharacterId={focus?.kind === "Personaje" ? focus.id : undefined} />;
     case "formulas": return <FormulasModule />;
-    case "generador": return <GeneratorModule focusEpisodeId={focus?.kind === "Episodio" ? focus.id : undefined} />;
-    case "produccion": return <ProductionModule />;
+    case "generador": return <GeneratorModule focusEpisodeId={focus?.kind === "Episodio" ? focus.id : undefined} focusTab={focus?.preferredTab} />;
+    case "produccion": return <ProductionModule onOpenEpisode={onOpenEpisode} />;
     case "calendario": return <CalendarModule focusEntryId={focus?.kind === "Publicación programada" ? focus.id : undefined} />;
     case "metricas": return <MetricsModule focusMetricId={focus?.kind === "Publicación medida" ? focus.id : undefined} />;
     case "virales": return <ViralAnalyzerModule />;
@@ -246,6 +246,10 @@ function DashboardInner() {
     setSelectedResult(result);
     setFocusVersion(version => version + 1);
   };
+  const openProductionEpisode = (episodeId: string) => {
+    const episode = data.episodes.find(item => item.id === episodeId);
+    if (episode) chooseResult({ key: `scene-${episode.id}`, id: episode.id, kind: "Episodio", title: episode.title, detail: "Mesa de escenas", module: "generador", preferredTab: "mesa" });
+  };
   const current = MODULES[active] || MODULES.inicio;
   const workspaceId = workspaceOf(active);
   const workspace = WORKSPACES.find(w => w.id === workspaceId);
@@ -325,7 +329,7 @@ function DashboardInner() {
             <button onClick={() => setSelectedResult(null)} aria-label="Cerrar resultado de búsqueda" className="rounded-md px-2 text-[#c3d0e2] hover:text-white">✕</button>
           </div>}
           {error && <p className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">{error}</p>}
-          <div key={`${active}-${focusVersion}`} className="module-enter"><ModuleView id={active} focus={selectedResult} /></div>
+          <div key={`${active}-${focusVersion}`} className="module-enter"><ModuleView id={active} focus={selectedResult} onOpenEpisode={openProductionEpisode} /></div>
         </div>
       </main>
     </div>

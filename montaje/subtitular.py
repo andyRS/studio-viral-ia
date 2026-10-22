@@ -176,7 +176,9 @@ inputs, fc, cat = [], "", ""
 for ci, c in enumerate(clips):
     inputs += ["-i", c]
     dl = ""
-    if G.get("delogo"):   # p.ej. "x=603:y=1232:w=104:h=36" (marca Dola AI en 720x1280)
+    if G.get("delogo"):   # p.ej. "x=603:y=1232:w=104:h=36" (marca fija)
+        if not re.fullmatch(r"x=\d{1,4}:y=\d{1,4}:w=\d{1,4}:h=\d{1,4}", str(G["delogo"])):
+            raise ValueError("delogo debe indicar x, y, w y h en píxeles")
         dl = f"delogo={G['delogo']},"
     fc += (f"[{ci}:v]{dl}scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,fps=24[v{ci}];"
            f"[{ci}:a]aresample=48000,aformat=channel_layouts=stereo[a{ci}];")

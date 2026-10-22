@@ -5,3 +5,7 @@ node_modules
 *.log
 .claude
 tsconfig.tsbuildinfo
+__pycache__/
+*.pyc
+
+.vercel

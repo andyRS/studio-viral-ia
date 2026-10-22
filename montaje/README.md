@@ -28,7 +28,7 @@ pone el gancho los primeros 3 s, las tarjetas y el cierre, y quita la marca de a
 - `[]` = clip sin diálogo (por ejemplo una tarjeta "Un año después...").
 - Los nombres de `colores` deben coincidir exactamente con los hablantes.
 - Colores en hex **sin** `#`.
-- `delogo` es opcional: solo para clips de Dola de 720x1280.
+- `delogo` es opcional: Dola tiene un área predefinida para 720x1280; para una marca fija de Pavo u otra fuente hay que indicar su rectángulo en píxeles y revisar el resultado.
 
 ## Uso por línea de comandos
 ```
@@ -38,7 +38,7 @@ python3 -I subtitular.py guion.json salida.mp4 clip1.mp4 clip2.mp4 ...
 ## API
 - `GET /salud` → `{"ok": true}`
 - `POST /montar` (multipart): campo `guion` (archivo) y uno o varios campos `clips` (en orden).
-  Autorización (si se configuró `MONTAJE_TOKEN`), una de dos:
+  Autorización obligatoria con `MONTAJE_TOKEN`, de una de estas dos formas:
   - `Authorization: Bearer <MONTAJE_TOKEN>` — para curl o scripts propios.
   - `Authorization: Ticket <exp>.<firma>` — pase temporal (15 min) que firma la app en
     `/api/montaje` con HMAC-SHA256 de `montaje:<exp>` usando el mismo `MONTAJE_TOKEN`.
@@ -68,8 +68,7 @@ En Vercel → Settings → Environment Variables:
 - `MONTAJE_TOKEN` — el mismo valor que en el servidor.
 
 En el servidor, `ALLOWED_ORIGINS=https://studio-viral-ia.vercel.app`.
-La app sube los clips directamente desde el navegador a este servidor (pestaña **Montaje** del resultado del episodio),
-ajusta el `guion.json` al número de clips y añade `delogo` si los clips vienen de Dola.
+La app asigna clips `s01`, `s02`… en la mesa de escenas y los sube directamente a este servidor cuando todos están aprobados. Los archivos viven en la sesión del navegador: si se cierra la página, se deben seleccionar de nuevo.
 
 ## Probado
 Con 3 clips de 15 s de Seedance 2.5 y su guion.json: HTTP 200, vídeo de 48 s con gancho, subtítulos sincronizados y cierre.

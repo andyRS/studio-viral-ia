@@ -8,13 +8,16 @@ import { postApi, isAuthError } from "@/lib/api-client";
 import { learnFromMetrics } from "@/lib/learning";
 import { buildHookBank } from "@/lib/hooks";
 import HookPicker from "./HookPicker";
-import MontajePanel from "./MontajePanel";
+import SceneDesk from "./SceneDesk";
 import { STYLES, type StyleKey } from "@/lib/knowledge";
 import { templateSeries, templateNext } from "@/lib/story";
 import { isGenericName } from "@/lib/cast";
 import { buildFlowBatch } from "@/lib/production";
+import { seriesSignals } from "@/lib/seriesSignals";
 
 type View = "inicio" | "nueva" | "continuar" | "resultado";
+// Duración del máster (prompt maestro): 8 a 16 escenas de 8 s; 64-128 s.
+const DURATIONS = [64, 72, 80, 88, 96, 104, 128];
 
 const IDEAS: Record<StyleKey, string[]> = {
   frutinovela: [
@@ -34,14 +37,14 @@ const IDEAS: Record<StyleKey, string[]> = {
   ],
 };
 
-export default function GeneratorModule({ focusEpisodeId }: { focusEpisodeId?: string } = {}) {
+export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpisodeId?: string; focusTab?: "mesa" } = {}) {
   const { data, insert, remove, mode } = useData();
   const focusedEpisodeRef = useRef<string | null>(null);
   const [view, setView] = useState<View>("inicio");
   const [loading, setLoading] = useState(false);
   const [authError, setAuthError] = useState(false);
   const [notice, setNotice] = useState("");
-  const [result, setResult] = useState<{ episode: any; seriesId: string; part: number } | null>(null);
+  const [result, setResult] = useState<{ episode: any; episodeId: string; seriesId: string; part: number } | null>(null);
 
   // Historia nueva
   const [idea, setIdea] = useState("");
@@ -50,8 +53,11 @@ export default function GeneratorModule({ focusEpisodeId }: { focusEpisodeId?: s
   const [styleChosen, setStyleChosen] = useState(false);
   const setStyle = (k: StyleKey) => { setStyleRaw(k); setStyleChosen(true); };
   const [accountId, setAccountId] = useState("");
-  const [duration, setDuration] = useState(90);
+  const [duration, setDuration] = useState(88);
   const [notes, setNotes] = useState("");
+  // Tipo de pedido: historia nueva o réplica de un viral ajeno (se copia estructura y emoción).
+  const [kind, setKind] = useState<"nueva" | "replica">("nueva");
+  const [replica, setReplica] = useState("");
   // Continuar
   const [seriesId, setSeriesId] = useState("");
   const [wish, setWish] = useState("");
@@ -64,15 +70,16 @@ export default function GeneratorModule({ focusEpisodeId }: { focusEpisodeId?: s
   }).sort((a: any, b: any) => String(b.last?.createdAt || "").localeCompare(String(a.last?.createdAt || ""))), [data.series, data.episodes]);
   const current = seriesList.find((s: any) => s.id === seriesId);
   const currentChars = data.characters.filter((c: any) => c.seriesId === seriesId);
-  // Elenco completo de la serie: la ficha más reciente de cada personaje (con fruta, cabeza y voz)
-  // sale de los episodios guardados; los que solo están en Personajes se añaden tal cual.
+  const currentSignals = current ? seriesSignals(current.eps, data.metrics) : [];
+  // La biblia en Personajes prevalece sobre copias antiguas dentro de episodios.
   const currentCast = useMemo(() => {
     const byName = new Map<string, any>();
-    for (const c of currentChars) byName.set(String(c.name).toLowerCase(), { ...c });
     for (const e of current?.eps || []) for (const c of e.output?.cast || []) byName.set(String(c.name).toLowerCase(), { ...byName.get(String(c.name).toLowerCase()), ...c });
+    for (const c of currentChars) byName.set(String(c.name).toLowerCase(), { ...byName.get(String(c.name).toLowerCase()), ...c });
     return Array.from(byName.values());
   }, [currentChars, current]);
-  const currentNeedsRepair = !!current && (currentCast.length < 2 || currentCast.some((c: any) =>
+  const missingCurrentMasters = currentCast.filter(c => !currentChars.some(saved => saved.name.toLowerCase() === String(c.name).toLowerCase() && saved.imageUrl && saved.referenceApprovedAt));
+  const currentNeedsRepair = !!current && (current.eps.some((e: any) => e.status === "Borrador" || e.output?.mode === "plantilla-local") || currentCast.length < 2 || currentCast.some((c: any) =>
     isGenericName(c.name) || /edita su descripción|ropa característica/i.test(`${c.visualES || ""} ${c.clothing || ""}`) ||
     (current.style !== "cine90" && !c.fruit && !/cabeza/i.test(c.visualES || ""))
   ));
@@ -92,35 +99,37 @@ export default function GeneratorModule({ focusEpisodeId }: { focusEpisodeId?: s
   }
 
   async function saveEpisode(sid: string, part: number, ep: any, bible?: any) {
-    const output = { ...ep, partNumber: part, seriesBible: bible ?? ep.seriesBible };
-    await insert("episodes", {
-      title: ep.title || `Episodio ${part}`, theme: ep.summary || ep.title || "", duration: ep.duration || duration, status: "Guion",
+    const referenceVersions = Object.fromEntries((ep.cast || []).map((c: any) => [String(c.name).toLowerCase(), data.characters.find(x => x.seriesId === sid && x.name.toLowerCase() === String(c.name).toLowerCase())?.referenceVersion || 1]));
+    const output = { ...ep, partNumber: part, seriesBible: bible ?? ep.seriesBible, referenceVersions };
+    const saved = await insert("episodes", {
+      title: ep.title || `Episodio ${part}`, theme: ep.summary || ep.title || "", duration: ep.duration || duration, status: ep.mode === "plantilla-local" ? "Borrador" : "Guion",
       previousSummary: "", accountId: account?.id, seriesId: sid, createdAt: new Date().toISOString(),
       versions: [output], output, platformAdaptations: ep.platformAdaptations || [], platform_adaptations: ep.platformAdaptations || [],
     });
-    return output;
+    return { output, episodeId: saved.id as string };
   }
 
   async function createStory() {
     if (!styleChosen) { setNotice("Elige primero el estilo de la historia."); return; }
-    if (!idea.trim()) { setNotice("Escribe la idea de la historia o elige una de las sugerencias."); return; }
+    if (!idea.trim() && !(kind === "replica" && replica.trim())) { setNotice(kind === "replica" ? "Describe el viral que quieres replicar." : "Escribe la idea de la historia o elige una de las sugerencias."); return; }
     setLoading(true); setNotice(""); setAuthError(false);
     try {
-      const body = { idea, style, duration, account, notes, learnings, chosenHook };
+      const body = { idea, style, duration, account, notes, learnings, chosenHook, replica: kind === "replica" ? replica : "" };
       const res = await call("/api/series", body, () => templateSeries(body)); if (!res) return;
       const d = res.data;
       const s = await insert("series", { title: d.series?.title || idea.slice(0, 60), description: d.series?.logline || idea, accountId: account?.id });
       for (const c of d.characters || []) await insert("characters", { ...c, seriesId: s.id });
       const bible = { style, logline: d.series?.logline, world: d.series?.world, tone: d.series?.tone };
-      const out = await saveEpisode(s.id, 1, d.episode, bible);
-      setSeriesId(s.id); setResult({ episode: out, seriesId: s.id, part: 1 }); setView("resultado"); setNotice(res.note); setChosenHook(null);
+      const saved = await saveEpisode(s.id, 1, d.episode, bible);
+      setSeriesId(s.id); setResult({ episode: saved.output, episodeId: saved.episodeId, seriesId: s.id, part: 1 }); setView("resultado"); setNotice(res.note); setChosenHook(null);
     } catch (error: any) { setNotice(`No se pudo guardar la historia: ${error?.message || String(error)}`); }
     finally { setLoading(false); }
   }
 
   async function continueStory() {
     if (!current) return;
-    if (currentNeedsRepair) { setNotice("Esta serie conserva personajes de plantilla. Recréala con Gemini antes de continuar para no gastar una generación en un guion inutilizable."); return; }
+    if (currentNeedsRepair) { setNotice("Esta serie contiene un borrador de plantilla o personajes incompletos. Recréala con Gemini antes de continuar."); return; }
+    if (missingCurrentMasters.length) { setNotice(`Aprueba las fichas maestras antes de continuar: ${missingCurrentMasters.map(c => c.name).join(", ")}.`); return; }
     setLoading(true); setNotice(""); setAuthError(false);
     try {
       const eps = current.eps; const part = eps.length + 1;
@@ -132,14 +141,14 @@ export default function GeneratorModule({ focusEpisodeId }: { focusEpisodeId?: s
       };
       const res = await call("/api/next-episode", body, () => templateNext(body)); if (!res) return;
       for (const c of res.data.newCharacters || []) await insert("characters", { ...c, seriesId: current.id });
-      const out = await saveEpisode(current.id, part, res.data.episode, bible);
-      setResult({ episode: out, seriesId: current.id, part }); setView("resultado"); setWish(""); setChosenHook(null);
+      const saved = await saveEpisode(current.id, part, res.data.episode, bible);
+      setResult({ episode: saved.output, episodeId: saved.episodeId, seriesId: current.id, part }); setView("resultado"); setWish(""); setChosenHook(null);
       setNotice([res.note, (res.data.newCharacters || []).length ? `Personajes nuevos añadidos: ${res.data.newCharacters.map((c: any) => c.name).join(", ")}.` : ""].filter(Boolean).join(" "));
     } catch (error: any) { setNotice(`No se pudo guardar el episodio: ${error?.message || String(error)}`); }
     finally { setLoading(false); }
   }
 
-  function openEpisode(sid: string, ep: any, part: number) { setSeriesId(sid); setResult({ episode: ep.output || {}, seriesId: sid, part }); setView("resultado"); setNotice(""); }
+  function openEpisode(sid: string, ep: any, part: number) { setSeriesId(sid); setResult({ episode: ep.output || {}, episodeId: ep.id, seriesId: sid, part }); setView("resultado"); setNotice(""); }
   useEffect(() => {
     if (!focusEpisodeId) { focusedEpisodeRef.current = null; return; }
     if (focusedEpisodeRef.current === focusEpisodeId) return;
@@ -207,7 +216,14 @@ export default function GeneratorModule({ focusEpisodeId }: { focusEpisodeId?: s
             </div>
           </fieldset>
           <div>
-            <label htmlFor="generator-idea" className="field-label block">Idea de la historia</label>
+            <fieldset className="mb-3">
+              <legend className="field-label">Tipo</legend>
+              <div className="flex flex-wrap gap-2">{([["nueva", "Historia nueva (Parte 1)"], ["replica", "Réplica de un viral"]] as const).map(([k, l]) =>
+                <button key={k} type="button" aria-pressed={kind === k} onClick={() => setKind(k)} className={`rounded-full border px-3 py-1.5 text-xs ${kind === k ? "border-amber-400/60 bg-amber-400/10 text-amber-100" : "border-white/10 bg-white/[.03] text-slate-300"}`}>{l}</button>)}</div>
+            </fieldset>
+            {kind === "replica" && <div className="mb-3"><label htmlFor="generator-replica" className="field-label block">Describe el viral</label>
+              <textarea id="generator-replica" value={replica} onChange={e => setReplica(e.target.value)} placeholder="Qué pasa en el vídeo, su gancho, quién humilla a quién, qué objeto revela el giro… Se copia la estructura y la emoción, nunca los personajes ni el diálogo." /></div>}
+            <label htmlFor="generator-idea" className="field-label block">{kind === "replica" ? "Idea para adaptarlo a RD" : "Idea de la historia"}</label>
             <textarea id="generator-idea" value={idea} onChange={e => setIdea(e.target.value)} placeholder="Ej.: Una madre humilde descubre que su hijo rico la niega delante de sus amigos…" />
             <div className="mt-2 flex flex-wrap gap-2">
               {IDEAS[style].map(t => <button key={t} onClick={() => setIdea(t)} className="rounded-full border border-white/10 bg-white/[.03] px-3 py-1.5 text-left text-xs text-slate-300 hover:bg-white/10">💡 {t}</button>)}
@@ -216,8 +232,8 @@ export default function GeneratorModule({ focusEpisodeId }: { focusEpisodeId?: s
           <div className="grid gap-3 sm:grid-cols-2">
             <div><label htmlFor="generator-account" className="field-label block">Cuenta principal</label>
               <select id="generator-account" value={account?.id || ""} onChange={e => setAccountId(e.target.value)}>{data.accounts.map((a: any) => <option key={a.id} value={a.id}>{a.name} · {a.platform}</option>)}</select></div>
-            <div><label htmlFor="generator-duration" className="field-label block">Duración</label>
-              <select id="generator-duration" value={duration} onChange={e => setDuration(Number(e.target.value))}><option value={45}>45 s</option><option value={60}>1 min</option><option value={90}>1 min 30</option><option value={120}>2 min</option><option value={180}>3 min</option></select></div>
+            <div><label htmlFor="generator-duration" className="field-label block">Duración del máster</label>
+              <select id="generator-duration" value={duration} onChange={e => setDuration(Number(e.target.value))}>{DURATIONS.map(d => <option key={d} value={d}>{d} s · {d / 8} escenas</option>)}</select></div>
           </div>
           <div><label htmlFor="generator-notes" className="field-label block">Notas opcionales</label>
             <input id="generator-notes" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Ej.: que la abuela se llame Doña Guanábana, que pase en Navidad…" /></div>
@@ -237,7 +253,7 @@ export default function GeneratorModule({ focusEpisodeId }: { focusEpisodeId?: s
           <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_360px]">
             <div className="space-y-4">
               {currentNeedsRepair && <div className="rounded-xl border border-amber-400/30 bg-amber-400/10 p-4 text-sm text-amber-100">
-                <p className="font-bold">Esta serie necesita personajes reales de fruta antes de continuar.</p>
+                <p className="font-bold">Esta serie necesita un guion y personajes validados antes de continuar.</p>
                 <p className="mt-1 text-xs leading-5">El borrador anterior se conserva. Gemini puede crear una serie nueva desde la misma idea, con apariencia y vestuario consistentes.</p>
                 <button onClick={() => { setIdea(current.description || current.title); setStyle(current.style); setView("nueva"); setNotice(""); }} className="mt-3 rounded-lg bg-amber-500 px-3 py-2 text-xs font-bold text-slate-950">Recrear serie con Gemini</button>
               </div>}
@@ -249,7 +265,7 @@ export default function GeneratorModule({ focusEpisodeId }: { focusEpisodeId?: s
                     <li key={e.id}>
                       <button onClick={() => openEpisode(current.id, e, i + 1)} className="text-left">
                         <span className="text-xs font-semibold text-amber-300">Episodio {i + 1}</span>
-                        <span className="block text-sm font-medium">{e.title}</span>
+                        <span className="block text-sm font-medium">{e.title}{e.status === "Borrador" || e.output?.mode === "plantilla-local" ? " · Borrador" : ""}</span>
                         <span className="block text-xs text-slate-400">{e.output?.summary || e.theme}</span>
                       </button>
                     </li>
@@ -257,13 +273,15 @@ export default function GeneratorModule({ focusEpisodeId }: { focusEpisodeId?: s
                   {!current.eps.length && <li><span className="text-sm text-slate-400">Esta serie aún no tiene episodios.</span></li>}
                 </ol>
               </div>
+              {!!currentSignals.length && <div className="rounded-xl border border-white/10 bg-[#151C2B] p-4"><h3 className="text-sm font-bold">Rendimiento de las partes</h3><p className="mt-1 text-xs text-slate-400">Vistas registradas de episodios vinculados, separadas por plataforma.</p><div className="mt-3 space-y-3">{currentSignals.map(signal => <div key={signal.platform} className="rounded-lg bg-black/20 p-3 text-xs"><b>{signal.platform}</b><p className="mt-1 text-slate-200">{signal.parts.map(p => `Parte ${p.part}: ${p.views.toLocaleString("es")} vistas`).join(" → ")}</p><p className={`mt-2 ${signal.suggestFreshStart ? "text-amber-200" : "text-slate-400"}`}>{signal.suggestFreshStart ? "Tres partes caen con ventanas comparables. Considera cerrar esta historia y probar una Parte 1 nueva." : signal.comparable ? "Sin señal suficiente para recomendar cerrar la serie." : "Las fechas de captura no permiten comparar las partes a la misma edad; no se recomienda cerrar la serie con estos datos."}</p></div>)}</div></div>}
+              {!!missingCurrentMasters.length && !currentNeedsRepair && <p className="rounded-xl border border-amber-400/25 bg-amber-400/10 p-3 text-xs text-amber-100">Antes de continuar, aprueba la ficha maestra de: {missingCurrentMasters.map(c => c.name).join(", ")}. Abre un episodio de la serie y entra en «1 · Biblia».</p>}
               <div className="rounded-xl bg-[#121826] p-4">
                 <label htmlFor="generator-next-wish" className="field-label block">¿Qué quieres que pase en el episodio {current.eps.length + 1}? (opcional)</label>
                 <textarea id="generator-next-wish" value={wish} onChange={e => setWish(e.target.value)} placeholder="Déjalo vacío para proponer un giro." />
                 <div className="mt-3"><HookPicker online={mode === "supabase"} chosen={chosenHook} onChoose={setChosenHook} body={() => ({ wish, style: current.style, series: { title: current.title, logline: current.description }, characters: currentChars.map((c: any) => ({ name: c.name })), history: current.eps.map((e: any, i: number) => ({ part: i + 1, summary: e.output?.summary || e.theme })), learnings, bank: bankTop })} /></div>
                 <div className="mt-3 flex flex-wrap items-center gap-3">
                   <label htmlFor="generator-next-duration" className="sr-only">Duración del próximo episodio</label>
-                  <select id="generator-next-duration" value={duration} onChange={e => setDuration(Number(e.target.value))} className="w-auto"><option value={45}>45 s</option><option value={60}>1 min</option><option value={90}>1 min 30</option><option value={120}>2 min</option><option value={180}>3 min</option></select>
+                  <select id="generator-next-duration" value={duration} onChange={e => setDuration(Number(e.target.value))} className="w-auto">{DURATIONS.map(d => <option key={d} value={d}>{d} s · {d / 8} escenas</option>)}</select>
                   <button disabled={loading} onClick={continueStory} className="rounded bg-amber-500 px-5 py-2.5 font-bold">{loading ? "Escribiendo…" : `Crear episodio ${current.eps.length + 1}`}</button>
                 </div>
               </div>
@@ -285,7 +303,7 @@ export default function GeneratorModule({ focusEpisodeId }: { focusEpisodeId?: s
       </>}
 
       {view === "resultado" && result && <Result
-        episode={result.episode} part={result.part} seriesTitle={data.series.find((s: any) => s.id === result.seriesId)?.title}
+        episode={result.episode} episodeId={result.episodeId} seriesId={result.seriesId} part={result.part} seriesTitle={data.series.find((s: any) => s.id === result.seriesId)?.title} initialTab={focusTab}
         onBack={() => setView("inicio")} onNext={() => { setSeriesId(result.seriesId); setView("continuar"); }}
         onRecreate={() => {
           const oldSeries = data.series.find((s: any) => s.id === result.seriesId);
@@ -320,7 +338,7 @@ function episodeMarkdown(out: any, seriesTitle: string, part: number) {
     ...scenes.flatMap((s: any) => [`### Escena ${s.n} — ${s.title || ""} (${(s.n - 1) * 8}-${s.n * 8} s)`, `- Objetivo: ${s.goal || "—"}`, `- Personajes: ${(s.characters || []).join(", ") || "—"}`, `- Emoción: ${s.emotion}`, `- Plano: ${s.shot || "—"}`, `- Acción visual: ${s.setting}`, `- ${s.speaker}: «${s.line}»`, `- Efectos: ${s.sfx || "—"}`, `- Música: ${s.music || "—"}`, `- Transición: ${s.transition || "—"}`, `- Conexión: ${s.nextLink || "—"}`, ""]),
     "## Fase 1 · Elenco", "",
     ...cast.flatMap((c: any) => [`### ${c.fruitEmoji ? c.fruitEmoji + " " : ""}${c.name}${c.fruit ? ` — ${c.fruit}` : ""}`, `- Rol: ${c.role || "—"}`, c.headES ? `- Cabeza: ${c.headES}` : `- Apariencia: ${c.visualES || "—"}`, `- Ropa fija: ${c.clothing || "—"}`, `- Voz: ${c.voice || c.speechStyle || "—"}`, `- Pronunciaciones: ${(c.pronunciations || []).join("; ") || "—"}`, `- Color de subtítulo: ${String(c.subtitleColor || "").replace("#", "")}`, "", "Prompt de ficha para Flow:", "```", c.flowPrompt || "", "```", ""]),
-    "## Fase 2 · Imágenes (lote para Flow)", "", "```", lote.full, "```", "",
+    "## Fase 2 · Imágenes (adjunta las fichas maestras aprobadas)", "", "```", lote.full, "```", "",
     "## Fase 3 · Animación", "",
     ...scenes.flatMap((s: any) => [`### Escena ${s.n} — primer fotograma: imagen [${String(s.n).padStart(3, "0")}]`, `Referencias a seleccionar: ${(s.references || []).join(", ") || "ninguna"}`, "```", s.animationPrompt, "```", ""]),
     "## Redes", "", `- Título: ${so.title || ""}`, ...(so.hooks || []).map((h: string, i: number) => `- Gancho ${i + 1}: ${h}`), `- Texto del fotograma cero: ${so.frameZeroText || ""}`, `- Descripción TikTok: ${so.tiktokDescription || ""}`, `- Pregunta final: ${so.question || ""}`, `- Portada: ${so.coverIdea || ""}`, `- Música: ${so.music || ""}`, so.biblicalPassage ? `- Pasaje bíblico: ${so.biblicalPassage}` : "",
@@ -337,21 +355,36 @@ function DownloadText({ text, filename, label }: { text: string; filename: strin
 const Field = ({ label, value }: { label: string; value?: string }) => value ? <div><dt className="inline font-semibold text-slate-200">{label}: </dt><dd className="inline text-slate-300">{value}</dd></div> : null;
 const RefChips = ({ refs }: { refs?: string[] }) => <p className="mt-2 text-[11px] text-sky-200">Referencias a seleccionar (fuera del prompt): {(refs || []).length ? (refs || []).map(r => <span key={r} className="ml-1 rounded-full bg-sky-400/15 px-2 py-0.5">{r}</span>) : <span className="text-slate-400">ninguna</span>}</p>;
 
-function Result({ episode: out, part, seriesTitle, onBack, onNext, onRecreate }: any) {
-  type Tab = "guion" | "elenco" | "imagenes" | "animacion" | "redes" | "plataformas" | "archivos" | "montaje";
+function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialTab, onBack, onNext, onRecreate }: any) {
+  type Tab = "guion" | "elenco" | "imagenes" | "animacion" | "mesa" | "redes" | "plataformas" | "archivos";
+  const { data, update } = useData();
   const cast: any[] = Array.isArray(out.cast) ? out.cast : [];
   const scenes: any[] = Array.isArray(out.scenes) ? out.scenes : [];
   const ficha = out.ficha || null; const social = out.social || null;
   const [tab, setTab] = useState<Tab>("guion");
   const [reviewed, setReviewed] = useState(false);
-  useEffect(() => { setReviewed(false); setTab("guion"); }, [out]);
+  useEffect(() => { setReviewed(false); setTab(initialTab && out.mode !== "plantilla-local" ? initialTab : "guion"); }, [out, initialTab]);
   const fromAI = !!out.mode && out.mode !== "plantilla-local" && cast.length >= 2;
   const isTemplate = out.mode === "plantilla-local";
+  const master = cast.map(c => data.characters.find(x => x.seriesId === seriesId && x.name.toLowerCase() === String(c.name).toLowerCase()));
+  const referencesReady = !!cast.length && master.every(c => !!c?.imageUrl && !!c?.referenceApprovedAt);
+  const snapshotValid = !!out.referenceVersions && master.every((c, i) => Number(c?.referenceVersion || 1) === Number(out.referenceVersions[String(cast[i].name).toLowerCase()]));
+  const productionReady = referencesReady && snapshotValid;
+  const referenceSignature = master.map(c => `${c?.id || "missing"}:${c?.referenceVersion || 0}`).join("|");
+  const missingMasters = cast.filter((_, i) => !master[i]?.imageUrl || !master[i]?.referenceApprovedAt).map(c => c.name);
   const fullDuration = out.duration || scenes.length * 8 || (out.scriptBlocks || []).length * 15;
   const dolaDuration = out.dolaDuration || 60;
   const sec = scenes.length ? 8 : 15;
   const lote = useMemo(() => buildFlowBatch(out), [out]);
-  const tabs: [Tab, string][] = [["guion", "Guion"], ...(cast.length ? [["elenco", "1 · Elenco"]] as [Tab, string][] : []), ...(scenes.length ? [["imagenes", "2 · Imágenes"]] as [Tab, string][] : []), ["animacion", scenes.length ? "3 · Animación" : "Prompts"], ...(social ? [["redes", "Redes"]] as [Tab, string][] : []), ["plataformas", "Plataformas"], ["archivos", "Archivos"], ["montaje", "Montaje"]];
+  const tabs: [Tab, string][] = [["guion", "Guion"], ...(cast.length ? [["elenco", "1 · Biblia"]] as [Tab, string][] : []), ...(fromAI && scenes.length ? [["imagenes", "2 · Imágenes"], ["animacion", "3 · Animación"], ["mesa", "4 · Mesa y montaje"]] as [Tab, string][] : []), ...(social ? [["redes", "Redes"]] as [Tab, string][] : []), ["plataformas", "Plataformas"], ...(!isTemplate ? [["archivos", "Archivos"]] as [Tab, string][] : [])];
+  async function uploadMaster(c: any, file: File | undefined) {
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) { window.alert("Exporta la ficha en menos de 2 MB para guardarla en tu cuenta."); return; }
+    if (c.referenceApprovedAt && !window.confirm(`Se creará una nueva versión pendiente de aprobación para ${c.name}. ¿Continuar?`)) return;
+    const reader = new FileReader();
+    reader.onload = () => { const history = [...(c.referenceHistory || [])]; if (c.referenceApprovedAt && c.imageUrl) history.push({ version: c.referenceVersion || 1, imageUrl: c.imageUrl, approvedAt: c.referenceApprovedAt }); void update("characters", c.id, { imageUrl: reader.result as string, referenceApprovedAt: undefined, referenceVersion: Number(c.referenceVersion || 0) + 1, referenceHistory: history }); };
+    reader.readAsDataURL(file);
+  }
   const sceneId = (n: number) => `[${String(n).padStart(3, "0")}]`;
   return <>
     <button onClick={onBack} className="mb-4 text-sm text-slate-400 hover:text-white">← Inicio</button>
@@ -365,11 +398,13 @@ function Result({ episode: out, part, seriesTitle, onBack, onNext, onRecreate }:
     </div>
     <div className={`mt-4 rounded-xl border p-4 text-sm ${fromAI ? "border-emerald-400/25 bg-emerald-400/[.07] text-emerald-100" : "border-amber-400/30 bg-amber-400/[.08] text-amber-100"}`}>
       <p className="font-bold">{fromAI ? `Guion escrito por la IA · ${cast.length} personajes · ${scenes.length || (out.scriptBlocks || []).length} escenas · ${fullDuration} s` : isTemplate ? "Borrador de la plantilla local (sin IA)" : "Borrador anterior sin elenco de producción"}</p>
-      <p className="mt-1 text-xs leading-5">{fromAI ? "Orden de trabajo: revisa el guion → Fase 1 genera las fichas → Fase 2 las imágenes → Fase 3 las animaciones con cada imagen aprobada." : isTemplate ? "Tiene elenco de frutas y escenas completas, pero el diálogo es de estructura genérica. Vuelve a crearla con la IA cuando esté disponible." : "Este episodio se creó con una versión anterior. Recréalo para tener el elenco y las escenas de producción."}</p>
+      <p className="mt-1 text-xs leading-5">{fromAI ? "Orden de trabajo: aprueba las fichas maestras → genera imágenes con esas referencias → anima y revisa cada escena → monta el vídeo." : isTemplate ? "El diálogo es genérico. Este borrador no ofrece prompts de producción ni montaje; vuelve a crear el guion con Gemini." : "Este episodio se creó con una versión anterior. Recréalo para tener el elenco y las escenas de producción."}</p>
       {!fromAI && <button onClick={onRecreate} className="mt-3 rounded-lg bg-amber-500 px-3 py-2 text-xs font-bold text-slate-950 hover:bg-amber-400">Recrear con la IA</button>}
       {out.shortForLongPlatforms && <p className="mt-2 text-xs">{out.shortForLongPlatforms}</p>}
     </div>
-    <div className="tabs mt-5">{tabs.map(([k, l]) => <button key={k} onClick={() => setTab(k)} className={tab === k ? "tab-active" : ""}>{l}</button>)}</div>
+    {fromAI && !referencesReady && <div className="mt-3 rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 text-xs text-amber-100">Faltan fichas maestras aprobadas: {missingMasters.join(", ")}. Súbelas y apruébalas en «1 · Biblia» antes de producir.</div>}
+    {fromAI && referencesReady && !snapshotValid && <div className="mt-3 rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 text-xs text-amber-100">La ficha maestra cambió desde que se creó este guion, o el episodio es anterior al control de versiones. Regenera el episodio para alinear prompts y personajes.</div>}
+    <div className="tabs mt-5">{tabs.map(([k, l]) => <button key={k} onClick={() => setTab(k)} disabled={(k === "imagenes" || k === "animacion" || k === "mesa") && !productionReady} className={`${tab === k ? "tab-active" : ""} disabled:cursor-not-allowed disabled:opacity-40`}>{l}</button>)}</div>
     <div className="mt-4">
       {tab === "guion" && <div className="space-y-3">
         {ficha && <section className="rounded-2xl border border-amber-400/20 bg-gradient-to-br from-amber-400/10 to-transparent p-4">
@@ -385,6 +420,8 @@ function Result({ episode: out, part, seriesTitle, onBack, onNext, onRecreate }:
             <Field label="Resolución" value={ficha.resolution} />
             <Field label="Cierre" value={ficha.closing} />
           </dl>
+          {out.selfScore && <div className="mt-3 flex flex-wrap gap-2 text-xs">{([["Gancho 0-1 s", out.selfScore.hook], ["Claridad sin contexto", out.selfScore.clarity], ["Escalada", out.selfScore.escalation], ["Giro final", out.selfScore.twist], ["Ganas de comentar", out.selfScore.comments]] as [string, number | null][]).filter(([, v]) => v).map(([k, v]) =>
+            <span key={k} className={`rounded-full px-2.5 py-1 font-semibold ${v! >= 8 ? "bg-emerald-500/15 text-emerald-200" : "bg-rose-500/15 text-rose-200"}`}>{k}: {v}/10</span>)}<span className="self-center text-slate-500">Autoevaluación de la IA</span></div>}
         </section>}
         {!ficha && !!(out.hook || []).length && <div className="rounded-xl border border-amber-400/20 bg-amber-400/10 p-4"><p className="text-[11px] font-semibold uppercase tracking-wider text-amber-300">Gancho de los primeros 3 s</p><p className="mt-1 text-lg font-bold">{(out.hook || []).join(" / ")}</p></div>}
         {scenes.length ? scenes.map((s: any) => { const c = cast.find((x: any) => x.name === s.speaker); return <article key={s.n} className="rounded-xl bg-[#121826] p-4">
@@ -406,8 +443,8 @@ function Result({ episode: out, part, seriesTitle, onBack, onNext, onRecreate }:
         {out.dialogueRules && <p className="text-xs text-slate-500">{out.dialogueRules}</p>}
       </div>}
       {tab === "elenco" && <div>
-        <p className="mb-3 text-sm text-slate-300">Fase 1: genera en Flow la ficha de cada personaje y apruébala antes de crear las escenas. Esas fichas son las referencias que seleccionarás en las fases 2 y 3.</p>
-        <div className="grid gap-3 md:grid-cols-2">{cast.map((c: any, i: number) => <article key={c.name} className="rounded-2xl border border-white/10 bg-[#151C2B] p-4">
+        <p className="mb-3 text-sm text-slate-300">Genera la ficha una vez en Flow, guárdala aquí y apruébala. En todos los episodios siguientes se usa esta referencia maestra, no una ficha inventada de nuevo.</p>
+        <div className="grid gap-3 md:grid-cols-2">{cast.map((generated: any, i: number) => { const c = master[i] || generated; return <article key={c.name} className="rounded-2xl border border-white/10 bg-[#151C2B] p-4">
           <div className="flex items-start gap-3">
             {c.fruitEmoji && <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/5 text-3xl" aria-hidden="true">{c.fruitEmoji}</span>}
             <div className="min-w-0 flex-1">
@@ -422,24 +459,27 @@ function Result({ episode: out, part, seriesTitle, onBack, onNext, onRecreate }:
             <Field label="Ropa fija" value={c.clothing} /><Field label="Voz" value={c.voice || c.speechStyle} />
             {!!(c.pronunciations || []).length && <Field label="Pronunciación" value={c.pronunciations.join("; ")} />}
           </dl>
+          <div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3">
+            {c.imageUrl && <img src={c.imageUrl} alt={`Ficha maestra de ${c.name}`} className="mb-2 aspect-[9/16] max-h-56 w-full rounded-lg object-contain" />}
+            <p className={`text-xs font-semibold ${c.referenceApprovedAt ? "text-emerald-300" : "text-amber-200"}`}>{c.referenceApprovedAt ? `✓ Ficha aprobada · versión ${c.referenceVersion || 1}` : c.imageUrl ? "Ficha pendiente de aprobación" : "Falta subir la ficha de Flow"}</p>
+            {c.id && <div className="mt-2 flex flex-wrap gap-2 text-xs"><label className="cursor-pointer rounded-lg border border-white/15 px-3 py-1.5">{c.imageUrl ? "Nueva versión" : "Subir ficha"}<input type="file" accept="image/*" className="sr-only" onChange={e => uploadMaster(c, e.target.files?.[0])} /></label>{c.imageUrl && <><button type="button" onClick={() => { void update("characters", c.id, { referenceApprovedAt: new Date().toISOString() }); }} className="rounded-lg bg-emerald-400 px-3 py-1.5 font-bold text-slate-950">Aprobar</button><a href={c.imageUrl} download={`${c.name}-ficha-v${c.referenceVersion || 1}.png`} className="rounded-lg border border-white/15 px-3 py-1.5">Descargar copia</a></>}</div>}
+          </div>
           {c.flowPrompt && <details className="prompt-box mt-3"><summary><span>Prompt de ficha para Flow</span></summary><div className="px-3 pb-1"><CopyButton text={c.flowPrompt} /></div><p className="prompt-text">{c.flowPrompt}</p></details>}
-        </article>)}</div>
+        </article>; })}</div>
       </div>}
-      {tab === "imagenes" && <div>
+      {tab === "imagenes" && productionReady && <div>
         <section className="mb-4 rounded-2xl border border-sky-400/25 bg-sky-400/[.06] p-4" aria-label="Lote para Flow">
-          <div className="flex flex-wrap items-center gap-2"><h3 className="font-bold text-white">⚡ Lote para Flow</h3><span className="text-xs text-slate-300">{lote.count.fichas} fichas + {lote.count.escenas} escenas en un solo pegado</span>
+          <div className="flex flex-wrap items-center gap-2"><h3 className="font-bold text-white">Lote de escenas para Flow</h3><span className="text-xs text-slate-300">{lote.count.escenas} escenas con fichas maestras aprobadas</span>
             <a href="https://flow.google.com/" target="_blank" rel="noreferrer" className="ml-auto text-xs font-semibold text-sky-300 hover:text-sky-200">Abrir Flow ↗</a></div>
           <ol className="mt-2 list-decimal space-y-0.5 pl-5 text-xs leading-5 text-slate-300">
-            <li>Copia el lote completo y pégalo una sola vez en Flow.</li>
-            <li>Flow crea primero las fichas <b>[P01]</b>, <b>[P02]</b>… y las usa como referencia en las escenas <b>[001]</b>, <b>[002]</b>…</li>
+            <li>Adjunta las fichas aprobadas del elenco como referencia en Flow.</li>
+            <li>Copia las escenas <b>[001]</b>, <b>[002]</b>… conservando los personajes de esas fichas.</li>
             <li>Cada imagen queda nombrada con su identificador. Aprueba las imágenes antes de pasar a la Fase 3.</li>
           </ol>
           <div className="mt-3 flex flex-wrap gap-2">
-            <CopyButton text={lote.full} label={`Copiar lote completo (${lote.count.fichas + lote.count.escenas} imágenes)`} />
-            <CopyButton text={lote.fichas} label="Solo fichas" />
-            <CopyButton text={lote.escenas} label="Solo escenas" />
+            <CopyButton text={lote.full} label={`Copiar ${lote.count.escenas} escenas`} />
           </div>
-          <p className="mt-2 text-[11px] text-slate-400">Si Flow corta un lote largo, pega primero «Solo fichas» y luego «Solo escenas». Para una sola imagen, usa el prompt de su escena abajo.</p>
+          <p className="mt-2 text-[11px] text-slate-400">Si Flow corta un lote largo, copia los prompts de escena por separado. No regeneres las fichas maestras de la serie.</p>
         </section>
         <ol className="space-y-3">{scenes.map((s: any) => <li key={s.n} className="rounded-2xl border border-white/10 bg-[#151C2B] p-4">
           <div className="flex flex-wrap items-center gap-2"><span className="rounded-lg bg-amber-400 px-2 py-0.5 text-xs font-black text-black">{sceneId(s.n)}</span><span className="text-sm font-semibold">{s.title}</span><span className="text-xs text-slate-400">· {s.shot}</span></div>
@@ -447,8 +487,8 @@ function Result({ episode: out, part, seriesTitle, onBack, onNext, onRecreate }:
           <details className="prompt-box mt-2"><summary><span>Prompt para imagen (Flow)</span></summary><div className="px-3 pb-1"><CopyButton text={s.imagePromptFlow} /></div><p className="prompt-text">{s.imagePromptFlow}</p></details>
         </li>)}</ol>
       </div>}
-      {tab === "animacion" && <div>
-        <div className="mb-3 rounded-xl border border-white/10 bg-[#151C2B] p-3 text-xs text-slate-300">{scenes.length ? "Fase 3: usa cada imagen aprobada como primer fotograma y pega su prompt en Pavo IA / Seedance. " : ""}{out.dolaIsAdaptation ? `La versión Dola condensa el episodio de ${fullDuration} s a ${dolaDuration} s.` : `La versión Dola cubre el episodio completo de ${fullDuration} s.`}</div>
+      {tab === "animacion" && productionReady && <div>
+        <div className="mb-3 rounded-xl border border-white/10 bg-[#151C2B] p-3 text-xs text-slate-300">{scenes.length ? "Fase 3: usa cada imagen aprobada como primer fotograma y pega su prompt en Pavo IA / Seedance. " : ""}{out.dolaIsAdaptation ? `La versión Dola dura ${dolaDuration} s y conserva el inicio y el cierre. Escenas: ${(out.dolaSceneNumbers || []).join(", ")}.` : `La versión Dola cubre el episodio completo de ${fullDuration} s.`}</div>
         {fromAI && <label className="mb-3 flex items-start gap-2 rounded-xl border border-white/10 bg-white/[.03] p-3 text-xs text-slate-200"><input type="checkbox" className="mt-0.5" checked={reviewed} onChange={event => setReviewed(event.target.checked)} />He revisado el guion, los personajes y la duración antes de abrir Dola.</label>}
         <details className="prompt-box"><summary><span>Prompt Dola {dolaDuration} s{out.dolaIsAdaptation ? " · adaptación" : ""}</span></summary><div className="flex flex-wrap gap-2 px-3 pb-1"><CopyButton text={out.dolaPrompt || ""} />{fromAI && reviewed && <DolaButton text={out.dolaPrompt || ""} />}</div><p className="prompt-text">{out.dolaPrompt}</p></details>
         {scenes.length ? <>
@@ -461,6 +501,13 @@ function Result({ episode: out, part, seriesTitle, onBack, onNext, onRecreate }:
         </> : (out.prompts || []).map((p: string, i: number) => <details key={i} className="prompt-box mt-2"><summary><span>Bloque {i + 1} · {i * sec}-{(i + 1) * sec}s</span></summary><div className="px-3 pb-1"><CopyButton text={p} /></div><p className="prompt-text whitespace-pre-line">{p}</p></details>)}
       </div>}
       {tab === "redes" && social && <div className="space-y-2">
+        {out.cover && <div className="rounded-2xl border border-amber-400/25 bg-amber-400/[.06] p-4">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-amber-300">Portada</p>
+          <p className="mt-1 text-sm"><b>Fotograma:</b> {out.cover.frame}</p>
+          <p className="mt-2 text-lg font-black leading-tight">{(out.cover.lines || []).join(" / ")}</p>
+          <p className="mt-1 inline-block rounded bg-amber-400 px-2 py-0.5 text-xs font-black text-black">{out.cover.part}</p>
+          <div className="mt-2"><CopyButton text={`${(out.cover.lines || []).join("\n")}\n${out.cover.part}`} label="Copiar texto de portada" /></div>
+        </div>}
         {([["Título", social.title], ...(social.hooks || []).map((h: string, i: number) => [`Gancho ${i + 1}`, h]), ["Texto del fotograma cero", social.frameZeroText], ["Descripción para TikTok", social.tiktokDescription], ["Pregunta final", social.question], ["Idea de portada 9:16", social.coverIdea], ["Música recomendada", social.music], ["Pasaje bíblico", social.biblicalPassage]] as [string, string][]).filter(([, v]) => v).map(([k, v]) =>
           <div key={k} className="flex flex-wrap items-start gap-2 rounded-xl bg-[#121826] p-3"><div className="min-w-0 flex-1"><p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">{k}</p><p className="mt-0.5 text-sm">{v}</p></div><CopyButton text={v} /></div>)}
         <p className="text-xs text-slate-500">Los textos se añaden en la edición: nunca van dentro de los prompts de imagen o video.</p>
@@ -472,12 +519,13 @@ function Result({ episode: out, part, seriesTitle, onBack, onNext, onRecreate }:
         <div className="flex flex-wrap gap-2">
           <DownloadJson data={out.guionJson || {}} filename="guion.json" />
           {cast.length > 0 && <DownloadText text={episodeMarkdown(out, seriesTitle, part)} filename={`produccion-ep${part}.md`} label="Descargar producción completa (.md)" />}
-          {scenes.length > 0 && <DownloadText text={lote.full} filename={`lote-flow-ep${part}.txt`} label="Descargar lote para Flow (.txt)" />}
+          {scenes.length > 0 && <DownloadText text={lote.full} filename={`lote-flow-ep${part}.txt`} label="Descargar escenas para Flow (.txt)" />}
           <DownloadJson data={out.platformAdaptations || []} filename="adaptaciones-plataformas.json" />
         </div>
         <p className="text-xs text-slate-500">guion.json es el archivo para el montaje con subtitular.py. El .md trae la ficha del episodio, el guion por escenas, las 3 fases y el paquete de redes.</p>
       </div>}
-      {tab === "montaje" && <MontajePanel guion={out.guionJson || {}} title={`${seriesTitle || "serie"} ${part}`} />}
+      {tab === "mesa" && productionReady && <SceneDesk key={episodeId} episodeId={episodeId} scenes={scenes} guion={out.guionJson || {}} title={`${seriesTitle || "serie"} ${part}`} referencesReady={referencesReady} referenceSignature={referenceSignature} />}
+      {(tab === "imagenes" || tab === "animacion" || tab === "mesa") && !productionReady && <p className="rounded-xl border border-amber-400/25 bg-amber-400/10 p-4 text-sm text-amber-100">Revisa la biblia y la versión de las fichas maestras antes de continuar.</p>}
     </div>
   </>;
 }
@@ -490,7 +538,7 @@ function EpisodeArchive({ episodes, series, onOpen, onDelete }: any) {
       {[...episodes].reverse().map((ep: any) => {
         const s = series.find((x: any) => x.id === ep.seriesId);
         return <div key={ep.id} className="flex flex-wrap items-center gap-2 rounded-xl bg-[#121826] p-3 text-sm">
-          <span className="flex-1 min-w-[200px]"><b>{ep.title}</b> <span className="text-xs text-slate-500">· {s?.title || "Sin serie"}</span></span>
+          <span className="flex-1 min-w-[200px]"><b>{ep.title}</b> <span className="text-xs text-slate-500">· {s?.title || "Sin serie"}</span>{ep.status === "Borrador" || ep.output?.mode === "plantilla-local" ? <span className="ml-2 rounded-full bg-amber-400/15 px-2 py-0.5 text-[11px] text-amber-200">Borrador</span> : null}</span>
           <button className="rounded bg-slate-700 px-3 py-1 text-xs" onClick={() => onOpen(ep.seriesId, ep, ep.output?.partNumber || 1)}>Ver</button>
           <button className="text-xs text-slate-400 hover:text-red-300" onClick={() => { if (window.confirm("¿Eliminar el episodio «" + ep.title + "»? Esta acción no se puede deshacer.")) onDelete(ep.id); }}>Eliminar episodio</button>
         </div>;

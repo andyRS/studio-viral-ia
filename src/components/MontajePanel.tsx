@@ -9,7 +9,7 @@ const EST_SECONDS_PER_CLIP = 60; // ~3 min por 3 clips de 15 s en una CPU modest
 // El servidor espera un bloque de diálogo por clip. Si hay menos clips que bloques
 // (p. ej. un solo clip de Dola de 60 s), se juntan bloques consecutivos; si hay más,
 // los clips sobrantes van sin diálogo (tarjetas).
-export function adaptGuion(guion: any, nClips: number, fromDola: boolean) {
+export function adaptGuion(guion: any, nClips: number, delogo: string = "") {
   const blocks: any[][] = Array.isArray(guion?.clips) ? guion.clips : [];
   let clips: any[][];
   if (nClips >= blocks.length) clips = [...blocks, ...Array.from({ length: nClips - blocks.length }, () => [])];
@@ -17,13 +17,15 @@ export function adaptGuion(guion: any, nClips: number, fromDola: boolean) {
   const colores: Record<string, string> = {};
   for (const [k, v] of Object.entries(guion?.colores || {})) colores[k] = String(v).replace("#", "").toUpperCase();
   const out: any = { ...guion, colores, clips };
-  if (fromDola) out.delogo = DOLA_DELOGO; else delete out.delogo;
+  if (delogo) out.delogo = delogo; else delete out.delogo;
   return out;
 }
 
-export default function MontajePanel({ guion, title }: { guion: any; title: string }) {
-  const [files, setFiles] = useState<File[]>([]);
-  const [fromDola, setFromDola] = useState(true);
+export default function MontajePanel({ guion, title, filesOverride }: { guion: any; title: string; filesOverride?: File[] }) {
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const files = filesOverride ?? selectedFiles;
+  const [watermark, setWatermark] = useState<"none" | "dola" | "custom">("none");
+  const [rect, setRect] = useState({ x: "", y: "", w: "", h: "" });
   const [busy, setBusy] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState("");
@@ -36,15 +38,18 @@ export default function MontajePanel({ guion, title }: { guion: any; title: stri
 
   function pick(list: FileList | null) {
     const arr = Array.from(list || []).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-    setFiles(arr); setError("");
+    setSelectedFiles(arr); setError("");
   }
   function move(i: number, d: number) {
     const j = i + d; if (j < 0 || j >= files.length) return;
-    const arr = [...files]; [arr[i], arr[j]] = [arr[j], arr[i]]; setFiles(arr);
+    const arr = [...files]; [arr[i], arr[j]] = [arr[j], arr[i]]; setSelectedFiles(arr);
   }
 
   async function montar() {
     if (!files.length) { setError("Elige los clips primero."); return; }
+    const custom = `x=${rect.x}:y=${rect.y}:w=${rect.w}:h=${rect.h}`;
+    if (watermark === "custom" && (!/^x=\d{1,4}:y=\d{1,4}:w=\d{1,4}:h=\d{1,4}$/.test(custom) || Number(rect.w) < 1 || Number(rect.h) < 1)) { setError("Indica x, y, ancho y alto positivos en píxeles para el área de la marca."); return; }
+    const delogo = watermark === "dola" ? DOLA_DELOGO : watermark === "custom" ? custom : "";
     setBusy(true); setError(""); setElapsed(0);
     if (video) { URL.revokeObjectURL(video); setVideo(""); }
     const t0 = Date.now(); timer.current = setInterval(() => setElapsed(Math.round((Date.now() - t0) / 1000)), 1000);
@@ -53,7 +58,7 @@ export default function MontajePanel({ guion, title }: { guion: any; title: stri
       if (isAuthError(t)) { setError("Inicia sesión para usar el montaje automático."); return; }
       if (!t.json?.ok) { setError(t.json?.error || "No se pudo contactar con el servidor de montaje."); return; }
       const fd = new FormData();
-      fd.append("guion", new Blob([JSON.stringify(adaptGuion(guion, files.length, fromDola))], { type: "application/json" }), "guion.json");
+      fd.append("guion", new Blob([JSON.stringify(adaptGuion(guion, files.length, delogo))], { type: "application/json" }), "guion.json");
       for (const f of files) fd.append("clips", f, f.name);
       const r = await fetch(`${t.json.url}/montar`, { method: "POST", headers: { Authorization: `Ticket ${t.json.ticket}` }, body: fd });
       if (!r.ok) { let msg = `HTTP ${r.status}`; try { msg = (await r.json()).detail || msg; } catch {} setError("El montaje falló: " + msg); return; }
@@ -68,19 +73,19 @@ export default function MontajePanel({ guion, title }: { guion: any; title: stri
 
   return <div className="rounded-xl bg-[#121826] p-4 space-y-3">
     <p className="text-sm text-slate-300">Sube los clips del episodio <b>en orden</b> y el servidor devuelve el vídeo final con gancho, subtítulos de colores, tarjetas y cierre.</p>
-    <input type="file" accept="video/mp4,video/*" multiple onChange={e => pick(e.target.files)} disabled={busy} />
+    {!filesOverride && <input type="file" accept="video/mp4,video/*" multiple onChange={e => pick(e.target.files)} disabled={busy} />}
     {!!files.length && <ol className="space-y-1 text-sm">
       {files.map((f, i) => <li key={f.name + i} className="flex items-center gap-2 rounded bg-white/[.03] px-2 py-1">
         <span className="w-6 text-slate-500">{i + 1}.</span><span className="flex-1 truncate">{f.name}</span>
         <span className="text-xs text-slate-500">{(f.size / 1048576).toFixed(1)} MB</span>
-        <button type="button" disabled={busy} onClick={() => move(i, -1)} className="px-1 text-slate-400">↑</button>
-        <button type="button" disabled={busy} onClick={() => move(i, 1)} className="px-1 text-slate-400">↓</button>
+        {!filesOverride && <><button type="button" disabled={busy} onClick={() => move(i, -1)} className="px-1 text-slate-400">↑</button>
+        <button type="button" disabled={busy} onClick={() => move(i, 1)} className="px-1 text-slate-400">↓</button></>}
       </li>)}
     </ol>}
-    {!!files.length && files.length !== blocks && <p className="text-xs text-amber-200/80">
+    {!filesOverride && !!files.length && files.length !== blocks && <p className="text-xs text-amber-200/80">
       El guion tiene {blocks} bloque(s) y subiste {files.length} clip(s). {files.length < blocks ? "Se juntarán bloques seguidos para que cada clip lleve su diálogo." : "Los clips sobrantes irán sin diálogo (como tarjetas)."}
     </p>}
-    <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="w-auto" checked={fromDola} onChange={e => setFromDola(e.target.checked)} disabled={busy} /> Los clips vienen de Dola (quitar la marca de agua)</label>
+    <div className="space-y-2"><label htmlFor="watermark-mode" className="block text-xs text-slate-300">Marca fija en los clips</label><select id="watermark-mode" value={watermark} onChange={e => setWatermark(e.target.value as "none" | "dola" | "custom")} disabled={busy} className="max-w-sm"><option value="none">Sin corrección</option><option value="dola">Dola · 720 × 1280</option><option value="custom">Pavo u otra · indicar área</option></select>{watermark === "custom" && <div className="flex flex-wrap gap-2">{(["x", "y", "w", "h"] as const).map(key => <label key={key} className="text-xs text-slate-300">{key === "w" ? "Ancho" : key === "h" ? "Alto" : key}<input type="number" min="0" max="9999" value={rect[key]} onChange={e => setRect(prev => ({ ...prev, [key]: e.target.value }))} className="mt-1 w-20" /></label>)}<p className="w-full text-xs text-slate-400">Coordenadas en píxeles del clip original. Funciona con marcas fijas; revisa el resultado antes de publicar.</p></div>}</div>
     <button type="button" disabled={busy || !files.length} onClick={montar} className="rounded bg-amber-500 px-5 py-2.5 font-bold disabled:opacity-50">{busy ? "Montando…" : "Montar vídeo final"}</button>
     {busy && <div>
       <div className="h-2 overflow-hidden rounded bg-white/10"><div className="h-full bg-amber-400 transition-all" style={{ width: `${pct}%` }} /></div>

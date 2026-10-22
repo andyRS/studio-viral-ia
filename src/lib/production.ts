@@ -276,7 +276,7 @@ export function templateScenes(idea: string, cast: CastMember[], style: StyleKey
 }
 
 // ---------- LOTE PARA FLOW (adaptado del flujo «SEPARA») ----------
-// Un solo bloque para pegar en Flow: instrucción + fichas [P01..] + escenas [001..].
+// Las fichas se crean una vez y se aprueban en la biblia. Este lote solo genera escenas.
 // Se calcula desde el episodio guardado, así también funciona con episodios anteriores.
 export function buildFlowBatch(out: any) {
   const cast: any[] = Array.isArray(out?.cast) ? out.cast : [];
@@ -286,8 +286,8 @@ export function buildFlowBatch(out: any) {
   const fichas = cast.filter(c => c.flowPrompt).map((c, i) => `${sheetId(i + 1)}\n${stripId(c.flowPrompt)}`);
   const escenas = scenes.map((sc, i) => `${sceneId(sc.n || i + 1)}\n${stripId(sc.imagePromptFlow)}`);
   const legend = cast.filter(c => c.flowPrompt).map((c, i) => `${sheetId(i + 1)} = ${c.name}`).join(", ");
-  const instruction = `Crea todas las imágenes según los prompts de abajo, una imagen por prompt, en formato ${vertical ? "vertical 9:16" : "16:9"}. Antes de cada prompt hay un identificador entre corchetes en su propia línea: no es parte de la imagen, úsalo solo como nombre del archivo (por ejemplo [001]). Genera primero las fichas de personaje [P01], [P02]… y úsalas como referencia en cada escena donde aparece ese personaje, para que su cabeza, ropa y colores sean idénticos en todas las imágenes${legend ? ` (${legend})` : ""}. No añadas texto ni marcas de agua.`;
-  const full = [instruction, "", ...fichas.flatMap(f => [f, ""]), ...escenas.flatMap(e => [e, ""])].join("\n").trim();
+  const instruction = `Adjunta en Flow las fichas maestras ya aprobadas${legend ? ` (${legend})` : ""} y úsalas como referencia obligatoria. Crea solo las imágenes de escena de abajo, una imagen por prompt, en formato ${vertical ? "vertical 9:16" : "16:9"}. El identificador entre corchetes va en su propia línea: úsalo como nombre del archivo, nunca como texto de la imagen. Conserva idénticas cabeza, cara, ropa y colores de cada ficha. No añadas texto ni marcas de agua.`;
+  const full = [instruction, "", ...escenas.flatMap(e => [e, ""])].join("\n").trim();
   const dialogos = scenes.map(sc => `${sc.speaker}: ${sc.line}`).join("\n");
   const animaciones = scenes.map((sc, i) => `${sceneId(sc.n || i + 1)}\n${sc.animationPrompt}`).join("\n\n");
   return { full, fichas: fichas.join("\n\n"), escenas: escenas.join("\n\n"), dialogos, animaciones, count: { fichas: fichas.length, escenas: escenas.length } };

@@ -3,9 +3,8 @@ import { useState, type FormEvent } from "react";
 import { useData } from "@/lib/DataContext";
 
 const stages = ["Idea", "Guion", "Clips generados", "Montaje", "Publicado"];
-const checks: [string, string][] = [["facesConsistent", "Caras consistentes"], ["fullPhrases", "Frases completas"], ["pronunciationOk", "Pronunciación correcta"], ["noWatermark", "Sin marca de agua"], ["fruitHeads", "Cabezas de fruta en todas las tomas"]];
 
-export default function ProductionModule() {
+export default function ProductionModule({ onOpenEpisode }: { onOpenEpisode?: (episodeId: string) => void } = {}) {
   const { data, insert, update, remove, mode } = useData();
   const { productionCards: cards, costs, clipChecks, episodes } = data;
   const [newTitle, setNewTitle] = useState("");
@@ -15,17 +14,14 @@ export default function ProductionModule() {
   const [costForm, setCostForm] = useState({ tool: "Higgsfield", credits: 10, costUsd: 2.5, episodeId: "" });
   const total = costs.reduce((sum, cost) => sum + Number(cost.costUsd || 0), 0);
   const selectedCard = cards.find(card => card.id === selectedCardId) || cards[0];
-  // clip_checks.episode_id referencia episodes.id; nunca se usa el ID de la tarjeta.
   const selectedEpisodeId = selectedCard && episodes.some(episode => episode.id === selectedCard.episodeId) ? selectedCard.episodeId : "";
-  const checkRow = selectedEpisodeId ? clipChecks.find(check => check.episodeId === selectedEpisodeId && (check.clipIndex ?? 0) === 0) : undefined;
-  const checkState: any = checkRow || { facesConsistent: false, fullPhrases: false, pronunciationOk: false, noWatermark: false, fruitHeads: false };
+  const selectedEpisode = episodes.find(episode => episode.id === selectedEpisodeId);
+  const sceneCount = selectedEpisode?.output?.scenes?.length || 0;
+  const cast = selectedEpisode?.output?.cast || [];
+  const signature = cast.map((member: any) => { const saved = data.characters.find(character => character.seriesId === selectedEpisode?.seriesId && character.name.toLowerCase() === String(member.name).toLowerCase()); return `${saved?.id || "missing"}:${saved?.referenceVersion || 0}`; }).join("|");
+  const approvedCount = clipChecks.filter(check => check.episodeId === selectedEpisodeId && check.approved && check.referenceSignature === signature).length;
   const episodeTitle = (id?: string) => episodes.find(episode => episode.id === id)?.title || cards.find(card => card.id === id)?.title || "";
 
-  async function toggleCheck(key: string, value: boolean) {
-    if (!selectedEpisodeId) return;
-    if (checkRow) await update("clipChecks", checkRow.id, { [key]: value });
-    else await insert("clipChecks", { episodeId: selectedEpisodeId, clipIndex: 0, facesConsistent: false, fullPhrases: false, pronunciationOk: false, noWatermark: false, fruitHeads: false, [key]: value });
-  }
   async function addCard(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const title = newTitle.trim();
@@ -64,7 +60,8 @@ export default function ProductionModule() {
             {stageCards.map(card => <article key={card.id} className={`min-w-0 rounded-lg border p-2.5 text-sm ${selectedCard?.id === card.id ? "border-amber-500/60 bg-amber-500/10" : "border-white/10 bg-slate-800/60"}`}>
               <button type="button" onClick={() => setSelectedCardId(card.id)} aria-pressed={selectedCard?.id === card.id} className="min-h-11 w-full break-words rounded-md px-1 py-2 text-left font-semibold text-white hover:text-amber-200">{card.title}<span className="mt-1 block text-xs font-normal text-slate-400">{selectedCard?.id === card.id ? "Seleccionado para revisión" : "Seleccionar para revisar"}</span></button>
               <label htmlFor={`production-stage-${card.id}`} className="mt-2 block text-xs text-slate-300">Etapa</label>
-              <select id={`production-stage-${card.id}`} value={card.stage} onChange={event => update("productionCards", card.id, { stage: event.target.value })} className="mt-1 min-h-11 text-sm">{stages.map(nextStage => <option key={nextStage} value={nextStage}>{nextStage}</option>)}</select>
+              <select id={`production-stage-${card.id}`} value={card.stage} disabled={episodes.some(episode => episode.id === card.episodeId && (episode.status === "Borrador" || episode.output?.mode === "plantilla-local"))} onChange={event => update("productionCards", card.id, { stage: event.target.value })} className="mt-1 min-h-11 text-sm disabled:opacity-50">{stages.map(nextStage => <option key={nextStage} value={nextStage}>{nextStage}</option>)}</select>
+              {episodes.some(episode => episode.id === card.episodeId && (episode.status === "Borrador" || episode.output?.mode === "plantilla-local")) && <p className="mt-1 text-xs text-amber-200">Borrador de plantilla: recrea el guion con Gemini antes de avanzar.</p>}
               <label htmlFor={`production-episode-${card.id}`} className="mt-2 block text-xs text-slate-300">Episodio vinculado</label>
               <select id={`production-episode-${card.id}`} value={episodes.some(episode => episode.id === card.episodeId) ? card.episodeId : ""} onChange={event => update("productionCards", card.id, { episodeId: event.target.value })} className="mt-1 min-h-11 text-sm">
                 <option value="">Sin vincular</option>
@@ -90,8 +87,7 @@ export default function ProductionModule() {
     <div className="rounded-xl bg-[#121826] p-4">
       <h3 className="font-bold">Revisión general{selectedCard ? ` · ${selectedCard.title}` : ""}</h3>
       {selectedCard ? <>
-        {selectedEpisodeId ? <p className="mt-1 text-xs text-slate-400">Revisión de {episodes.find(episode => episode.id === selectedEpisodeId)?.title}. Si varias tarjetas usan este episodio, comparten esta ficha.</p> : <p className="mt-2 rounded-lg border border-amber-400/20 bg-amber-400/5 p-3 text-sm text-amber-100">{episodes.length ? "Vincula esta tarjeta a un episodio guardado para activar la revisión." : "Todavía no hay episodios guardados. Crea uno en Generador y luego vincúlalo para activar la revisión."}</p>}
-        <fieldset disabled={!selectedEpisodeId} className="mt-3 grid gap-1 sm:grid-cols-2 disabled:opacity-50"><legend className="sr-only">Puntos de revisión</legend>{checks.map(([key, label]) => <label key={key} className="flex min-h-11 items-center gap-3 rounded-lg px-2 text-sm hover:bg-white/5"><input type="checkbox" checked={!!checkState[key]} onChange={event => toggleCheck(key, event.target.checked)} />{label}</label>)}</fieldset>
+        {selectedEpisodeId ? <div className="mt-2"><p className="text-sm text-slate-300">{selectedEpisode?.title}: {sceneCount ? `${approvedCount}/${sceneCount} escenas aprobadas` : "sin mesa de escenas"}.</p><p className="mt-1 text-xs text-slate-400">Imagen, prompt, clip y motivo de rehacer se revisan juntos en el episodio.</p>{onOpenEpisode && <button type="button" onClick={() => onOpenEpisode(selectedEpisodeId)} className="mt-3 rounded-lg bg-amber-500 px-3 py-2 text-xs font-bold text-slate-950">Abrir mesa de escenas</button>}</div> : <p className="mt-2 rounded-lg border border-amber-400/20 bg-amber-400/5 p-3 text-sm text-amber-100">{episodes.length ? "Vincula esta tarjeta a un episodio guardado para activar la revisión." : "Todavía no hay episodios guardados. Crea uno en Generador y luego vincúlalo para activar la revisión."}</p>}
       </> : <p className="mt-2 text-sm text-slate-400">Crea una tarjeta para empezar la revisión.</p>}
     </div>
 
