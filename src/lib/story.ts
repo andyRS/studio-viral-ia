@@ -10,10 +10,25 @@ import { buildProduction, sceneCountFor, templateScenes } from "./production";
 export const styleKey = (s?: string): StyleKey => ((s as StyleKey) in STYLES ? (s as StyleKey) : "frutinovela");
 const providerMode = () => ((process.env.LLM_PROVIDER || "").toLowerCase() === "gemini" ? "gemini" : "llm");
 
-function parseJson(raw: string): any {
+export function parseJson(raw: string): any {
   const clean = raw.replace(/```json|```/g, "").trim();
   const a = clean.indexOf("{"), b = clean.lastIndexOf("}");
-  return JSON.parse(a >= 0 && b > a ? clean.slice(a, b + 1) : clean);
+  const body = a >= 0 && b > a ? clean.slice(a, b + 1) : clean;
+  try { return JSON.parse(body); }
+  catch {
+    // Reparaciones de los fallos típicos del modelo: comas sobrantes, comillas tipográficas y saltos de línea crudos.
+    const fixed = body.replace(/,\s*([}\]])/g, "$1").replace(/[“”]/g, '"').replace(/\r?\n(?=[^"]*"[^"]*(?:"[^"]*"[^"]*)*$)/g, " ");
+    return JSON.parse(fixed);
+  }
+}
+
+// Llama a la IA y lee el JSON; si la respuesta viene rota, la pide una vez más.
+async function askJson(system: string, user: string) {
+  try { return parseJson(await callLLM(system, user, { json: true })); }
+  catch (e) {
+    if (!(e instanceof SyntaxError)) throw e;
+    return parseJson(await callLLM(system + "\n\nIMPORTANTE: tu respuesta anterior no era JSON válido. Devuelve SOLO un objeto JSON válido, sin comas sobrantes.", user, { json: true }));
+  }
 }
 
 // Aprendizajes de métricas + gancho elegido del banco: contexto extra para el modelo.
@@ -40,10 +55,13 @@ ESTILO VISUAL: ${st.visual}
 ESTILO DE VOZ: ${st.voice}
 ESCENAS: exactamente ${count} escenas de 8 segundos. En cada escena habla UN SOLO personaje, una frase de 6 a 14 palabras que quepa en 8 s. Escena 1 = conflicto visible desde el segundo 0. Cada escena avanza la historia con información nueva; nada de repetir frases ni escenas. La última frase es del Narrador: "Lo que X no sabe... es que..."${style === "cristiana" ? ' y después el Narrador pide "Escribe AMÉN"' : ""}.
 DIÁLOGO: palabras dominicanas escritas completas y con acentos (tíguere, yipeta, jevito, vaina, un chin, mi cualto / lo cualto mío); NUNCA contracciones (pa', vamo', e', ta').
+ESTRUCTURA: reparte las escenas como Gancho -> Contexto -> Desarrollo -> Clímax -> Consecuencia -> Resolución (la primera es el Gancho y la última la Resolución). Si la historia es bíblica, indica la base bíblica y no presentes diálogos inventados como citas literales.
 "setting" = lugar y acción visual concreta de la escena${isFruitStyle(style) ? "" : " (en inglés)"}; "emotion" = emoción con la que habla; "speaker" = nombre exacto del elenco o "Narrador".`;
 }
 
-const SCENES_SCHEMA = `"scenes":[{"setting":"","speaker":"","line":"","emotion":"","onScreen":["nombres presentes"]}]`;
+const SCENES_SCHEMA = `"scenes":[{"title":"título corto de la escena","goal":"objetivo narrativo","setting":"","speaker":"","line":"","emotion":"","onScreen":["nombres presentes"],"sfx":"efectos sonoros","music":"música","transition":"transición","link":"conexión con la siguiente escena"}]`;
+// Ficha del episodio y paquete para redes (estructura del prompt maestro).
+const FICHA_SCHEMA = `"ficha":{"biblicalBase":"libro capítulo:versículos si aplica, si no vacío","synopsis":"","hookImage":"primera imagen impactante","hookText":"frase del fotograma cero","conflict":"qué quiere el protagonista y qué se lo impide","development":"","climax":"","resolution":"","closing":"reflexión, pregunta o conexión con el siguiente episodio"},"social":{"title":"","hooks":["","",""],"frameZeroText":"","tiktokDescription":"","question":"","coverIdea":"portada vertical 9:16","music":"recomendación de música cinematográfica","biblicalPassage":""}`;
 
 // Segunda llamada corta: solo el elenco, cuando el primero vino sin frutas o con nombres genéricos.
 async function repairCast(characters: unknown, style: StyleKey, idea: string) {
@@ -80,9 +98,8 @@ export async function generateSeries(input: any) {
   try {
     const count = sceneCountFor(duration);
     const system = `${sceneBrief(style, count)}\n\n${styleRules(style)}${extraContext(input)}\n\nTAREA: crea una SERIE NUEVA a partir de la idea y escribe su EPISODIO 1. Elenco de 3 a 6 personajes.
-Responde SOLO JSON: {"series":{"title":"","logline":"","world":"","tone":""},"characters":[${CAST_FIELDS(style)}],"episode":{"title":"","summary":"3-4 frases con el cliffhanger final","hook":["línea 1","línea 2"],"coverText":"","description":"","hashtags":[],${SCENES_SCHEMA}}}`;
-    const raw = await callLLM(system, JSON.stringify({ idea, duracionSegundos: duration, cuentaPrincipal: input.account?.name, notas: input.notes }), { json: true });
-    const parsed = parseJson(raw);
+Responde SOLO JSON: {"series":{"title":"","logline":"","world":"","tone":""},"characters":[${CAST_FIELDS(style)}],"episode":{"title":"","summary":"3-4 frases con el cliffhanger final","hook":["línea 1","línea 2"],"coverText":"","description":"","hashtags":[],${FICHA_SCHEMA},${SCENES_SCHEMA}}}`;
+    const parsed = await askJson(system, JSON.stringify({ idea, duracionSegundos: duration, cuentaPrincipal: input.account?.name, notas: input.notes }));
     let chars = parsed.characters;
     if (castNeedsRepair(chars, style)) chars = await repairCast(chars, style, idea);
     const characters = normalizeCast(chars, style).slice(0, 6);
@@ -122,12 +139,11 @@ export async function generateNextEpisode(input: any) {
 ELENCO FIJO (reutilízalo SIN cambiar nombre, fruta ni ropa):
 ${castSheet}
 Si la historia necesita un personaje nuevo, créalo en newCharacters (máximo 2) con una fruta que no use nadie del elenco.
-Responde SOLO JSON: {"episode":{"title":"","summary":"","hook":["",""],"coverText":"","description":"","hashtags":[],${SCENES_SCHEMA}},"newCharacters":[${CAST_FIELDS(style)}]}`;
-    const raw = await callLLM(system, JSON.stringify({
+Responde SOLO JSON: {"episode":{"title":"","summary":"","hook":["",""],"coverText":"","description":"","hashtags":[],${FICHA_SCHEMA},${SCENES_SCHEMA}},"newCharacters":[${CAST_FIELDS(style)}]}`;
+    const parsed = await askJson(system, JSON.stringify({
       serie: input.series, mundo: input.bible, episodiosAnteriores: input.history,
       deseoDelUsuario: input.wish || "Decide tú lo que pasa para que enganche más", duracionSegundos: duration,
-    }), { json: true });
-    const parsed = parseJson(raw);
+    }));
     const known = new Set(existing.map(c => norm(c.name)));
     const newRows = (Array.isArray(parsed.newCharacters) ? parsed.newCharacters : []).filter((c: any) => c?.name && !known.has(norm(c.name))).slice(0, 2);
     const newCharacters = normalizeCast(newRows, style, { taken: existing });

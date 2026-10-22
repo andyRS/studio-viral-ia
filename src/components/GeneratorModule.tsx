@@ -307,14 +307,24 @@ export default function GeneratorModule({ focusEpisodeId }: { focusEpisodeId?: s
 function episodeMarkdown(out: any, seriesTitle: string, part: number) {
   const cast = Array.isArray(out.cast) ? out.cast : [];
   const scenes = Array.isArray(out.scenes) ? out.scenes : [];
+  const f = out.ficha || {}; const so = out.social || {};
+  const lote = buildFlowBatch(out);
   return [
-    `# ${seriesTitle || "Serie"} · Episodio ${part}: ${out.title || ""}`, "", out.summary || "", "",
-    `**Gancho:** ${(out.hook || []).join(" / ")}`, "",
-    "## Elenco", "",
+    `# ${seriesTitle || "Serie"} · Episodio ${part}: ${out.title || ""}`, "",
+    f.biblicalBase ? `**Base bíblica:** ${f.biblicalBase}` : "",
+    `**Sinopsis:** ${f.synopsis || out.summary || ""}`,
+    `**Gancho:** ${f.hookImage || ""} — «${f.hookText || (out.hook || []).join(" / ")}»`,
+    f.conflict ? `**Conflicto:** ${f.conflict}` : "", f.development ? `**Desarrollo:** ${f.development}` : "",
+    f.climax ? `**Clímax:** ${f.climax}` : "", f.resolution ? `**Resolución:** ${f.resolution}` : "", f.closing ? `**Cierre:** ${f.closing}` : "", "",
+    "## Guion por escenas", "",
+    ...scenes.flatMap((s: any) => [`### Escena ${s.n} — ${s.title || ""} (${(s.n - 1) * 8}-${s.n * 8} s)`, `- Objetivo: ${s.goal || "—"}`, `- Personajes: ${(s.characters || []).join(", ") || "—"}`, `- Emoción: ${s.emotion}`, `- Plano: ${s.shot || "—"}`, `- Acción visual: ${s.setting}`, `- ${s.speaker}: «${s.line}»`, `- Efectos: ${s.sfx || "—"}`, `- Música: ${s.music || "—"}`, `- Transición: ${s.transition || "—"}`, `- Conexión: ${s.nextLink || "—"}`, ""]),
+    "## Fase 1 · Elenco", "",
     ...cast.flatMap((c: any) => [`### ${c.fruitEmoji ? c.fruitEmoji + " " : ""}${c.name}${c.fruit ? ` — ${c.fruit}` : ""}`, `- Rol: ${c.role || "—"}`, c.headES ? `- Cabeza: ${c.headES}` : `- Apariencia: ${c.visualES || "—"}`, `- Ropa fija: ${c.clothing || "—"}`, `- Voz: ${c.voice || c.speechStyle || "—"}`, `- Pronunciaciones: ${(c.pronunciations || []).join("; ") || "—"}`, `- Color de subtítulo: ${String(c.subtitleColor || "").replace("#", "")}`, "", "Prompt de ficha para Flow:", "```", c.flowPrompt || "", "```", ""]),
-    "## Escenas", "",
-    ...scenes.flatMap((s: any) => [`### Escena ${s.n} · ${(s.n - 1) * 8}-${s.n * 8} s · ${s.speaker}`, `> ${s.line}`, "", "Imagen para Flow:", "```", s.imagePromptFlow, "```", "Animación (Seedance):", "```", s.animationPrompt, "```", ""]),
-  ].join("\n");
+    "## Fase 2 · Imágenes (lote para Flow)", "", "```", lote.full, "```", "",
+    "## Fase 3 · Animación", "",
+    ...scenes.flatMap((s: any) => [`### Escena ${s.n} — primer fotograma: imagen [${String(s.n).padStart(3, "0")}]`, `Referencias a seleccionar: ${(s.references || []).join(", ") || "ninguna"}`, "```", s.animationPrompt, "```", ""]),
+    "## Redes", "", `- Título: ${so.title || ""}`, ...(so.hooks || []).map((h: string, i: number) => `- Gancho ${i + 1}: ${h}`), `- Texto del fotograma cero: ${so.frameZeroText || ""}`, `- Descripción TikTok: ${so.tiktokDescription || ""}`, `- Pregunta final: ${so.question || ""}`, `- Portada: ${so.coverIdea || ""}`, `- Música: ${so.music || ""}`, so.biblicalPassage ? `- Pasaje bíblico: ${so.biblicalPassage}` : "",
+  ].filter(l => l !== "").join("\n");
 }
 
 function DownloadText({ text, filename, label }: { text: string; filename: string; label: string }) {
@@ -324,21 +334,25 @@ function DownloadText({ text, filename, label }: { text: string; filename: strin
   }}>{label}</button>;
 }
 
+const Field = ({ label, value }: { label: string; value?: string }) => value ? <div><dt className="inline font-semibold text-slate-200">{label}: </dt><dd className="inline text-slate-300">{value}</dd></div> : null;
+const RefChips = ({ refs }: { refs?: string[] }) => <p className="mt-2 text-[11px] text-sky-200">Referencias a seleccionar (fuera del prompt): {(refs || []).length ? (refs || []).map(r => <span key={r} className="ml-1 rounded-full bg-sky-400/15 px-2 py-0.5">{r}</span>) : <span className="text-slate-400">ninguna</span>}</p>;
+
 function Result({ episode: out, part, seriesTitle, onBack, onNext, onRecreate }: any) {
-  type Tab = "elenco" | "escenas" | "guion" | "prompts" | "plataformas" | "archivos" | "montaje";
+  type Tab = "guion" | "elenco" | "imagenes" | "animacion" | "redes" | "plataformas" | "archivos" | "montaje";
   const cast: any[] = Array.isArray(out.cast) ? out.cast : [];
   const scenes: any[] = Array.isArray(out.scenes) ? out.scenes : [];
-  const [tab, setTab] = useState<Tab>(cast.length ? "elenco" : "guion");
+  const ficha = out.ficha || null; const social = out.social || null;
+  const [tab, setTab] = useState<Tab>("guion");
   const [reviewed, setReviewed] = useState(false);
-  useEffect(() => { setReviewed(false); setTab(cast.length ? "elenco" : "guion"); }, [out]);
+  useEffect(() => { setReviewed(false); setTab("guion"); }, [out]);
   const fromAI = !!out.mode && out.mode !== "plantilla-local" && cast.length >= 2;
   const isTemplate = out.mode === "plantilla-local";
   const fullDuration = out.duration || scenes.length * 8 || (out.scriptBlocks || []).length * 15;
   const dolaDuration = out.dolaDuration || 60;
   const sec = scenes.length ? 8 : 15;
-  const tabs: [Tab, string][] = [...(cast.length ? [["elenco", "Elenco"], ["escenas", "Escenas"]] as [Tab, string][] : []), ["guion", "Guion"], ["prompts", "Prompts"], ["plataformas", "Plataformas"], ["archivos", "Archivos"], ["montaje", "Montaje"]];
   const lote = useMemo(() => buildFlowBatch(out), [out]);
-  const allScenes = scenes.map((s: any) => `ESCENA ${s.n} (${s.speaker})\n\nIMAGEN PARA FLOW:\n${s.imagePromptFlow}\n\nANIMACIÓN:\n${s.animationPrompt}`).join("\n\n----------\n\n");
+  const tabs: [Tab, string][] = [["guion", "Guion"], ...(cast.length ? [["elenco", "1 · Elenco"]] as [Tab, string][] : []), ...(scenes.length ? [["imagenes", "2 · Imágenes"]] as [Tab, string][] : []), ["animacion", scenes.length ? "3 · Animación" : "Prompts"], ...(social ? [["redes", "Redes"]] as [Tab, string][] : []), ["plataformas", "Plataformas"], ["archivos", "Archivos"], ["montaje", "Montaje"]];
+  const sceneId = (n: number) => `[${String(n).padStart(3, "0")}]`;
   return <>
     <button onClick={onBack} className="mb-4 text-sm text-slate-400 hover:text-white">← Inicio</button>
     <div className="flex flex-wrap items-start gap-3">
@@ -351,76 +365,105 @@ function Result({ episode: out, part, seriesTitle, onBack, onNext, onRecreate }:
     </div>
     <div className={`mt-4 rounded-xl border p-4 text-sm ${fromAI ? "border-emerald-400/25 bg-emerald-400/[.07] text-emerald-100" : "border-amber-400/30 bg-amber-400/[.08] text-amber-100"}`}>
       <p className="font-bold">{fromAI ? `Guion escrito por la IA · ${cast.length} personajes · ${scenes.length || (out.scriptBlocks || []).length} escenas · ${fullDuration} s` : isTemplate ? "Borrador de la plantilla local (sin IA)" : "Borrador anterior sin elenco de producción"}</p>
-      <p className="mt-1 text-xs leading-5">{fromAI ? "Revisa el elenco y las escenas antes de producir. Cada escena es una imagen de Flow y un clip de 8 s." : isTemplate ? "Tiene elenco de frutas y escenas completas, pero el diálogo es de estructura genérica. Vuelve a crearla con la IA cuando esté disponible." : "Este episodio se creó con una versión anterior. Recréalo para tener el elenco y las escenas de producción."}</p>
+      <p className="mt-1 text-xs leading-5">{fromAI ? "Orden de trabajo: revisa el guion → Fase 1 genera las fichas → Fase 2 las imágenes → Fase 3 las animaciones con cada imagen aprobada." : isTemplate ? "Tiene elenco de frutas y escenas completas, pero el diálogo es de estructura genérica. Vuelve a crearla con la IA cuando esté disponible." : "Este episodio se creó con una versión anterior. Recréalo para tener el elenco y las escenas de producción."}</p>
       {!fromAI && <button onClick={onRecreate} className="mt-3 rounded-lg bg-amber-500 px-3 py-2 text-xs font-bold text-slate-950 hover:bg-amber-400">Recrear con la IA</button>}
       {out.shortForLongPlatforms && <p className="mt-2 text-xs">{out.shortForLongPlatforms}</p>}
     </div>
-    {!!(out.hook || []).length && <div className="mt-4 rounded-xl border border-amber-400/20 bg-gradient-to-br from-amber-400/10 to-transparent p-4">
-      <p className="text-[11px] font-semibold uppercase tracking-wider text-amber-300">Gancho de los primeros 3 s</p>
-      <p className="mt-1 text-lg font-bold">{(out.hook || []).join(" / ")}</p>
-    </div>}
     <div className="tabs mt-5">{tabs.map(([k, l]) => <button key={k} onClick={() => setTab(k)} className={tab === k ? "tab-active" : ""}>{l}</button>)}</div>
     <div className="mt-4">
-      {tab === "elenco" && <div className="grid gap-3 md:grid-cols-2">
-        {cast.map((c: any) => <article key={c.name} className="rounded-2xl border border-white/10 bg-[#151C2B] p-4">
-          <div className="flex items-start gap-3">
-            {c.fruitEmoji && <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/5 text-3xl" aria-hidden="true">{c.fruitEmoji}</span>}
-            <div className="min-w-0 flex-1">
-              <h3 className="font-bold text-white">{c.name}{c.fruit && <span className="font-normal text-slate-400"> — {c.fruit}</span>}</h3>
-              <p className="text-xs text-amber-200/90">{c.role}</p>
-            </div>
-            <span className="flex items-center gap-1.5 rounded-full bg-black/30 px-2 py-1 text-[11px] text-slate-300" title="Color de subtítulo"><span className="h-3 w-3 rounded-full ring-1 ring-white/30" style={{ backgroundColor: c.subtitleColor }} />{String(c.subtitleColor || "").replace("#", "")}</span>
-          </div>
-          <dl className="mt-3 space-y-1.5 text-xs leading-5">
-            {c.headES ? <div><dt className="inline font-semibold text-slate-200">Cabeza: </dt><dd className="inline text-slate-300">{c.headES}</dd></div> : <div><dt className="inline font-semibold text-slate-200">Apariencia: </dt><dd className="inline text-slate-300">{c.visualES}</dd></div>}
-            <div><dt className="inline font-semibold text-slate-200">Ropa fija: </dt><dd className="inline text-slate-300">{c.clothing}</dd></div>
-            <div><dt className="inline font-semibold text-slate-200">Voz: </dt><dd className="inline text-slate-300">{c.voice || c.speechStyle}</dd></div>
-            {!!(c.pronunciations || []).length && <div><dt className="inline font-semibold text-slate-200">Pronunciación: </dt><dd className="inline text-slate-300">{c.pronunciations.join("; ")}</dd></div>}
-          </dl>
-          {c.flowPrompt && <details className="prompt-box mt-3"><summary><span>Prompt de ficha para Flow</span></summary><div className="px-3 pb-1"><CopyButton text={c.flowPrompt} /></div><p className="prompt-text">{c.flowPrompt}</p></details>}
-        </article>)}
-      </div>}
-      {tab === "escenas" && <div>
-        <section className="mb-4 rounded-2xl border border-sky-400/25 bg-sky-400/[.06] p-4" aria-label="Lote para Flow">
-          <div className="flex flex-wrap items-center gap-2"><h3 className="font-bold text-white">⚡ Lote para Flow</h3><span className="text-xs text-slate-300">{lote.count.fichas} fichas + {lote.count.escenas} escenas en un solo pegado</span>
-            <a href="https://flow.google.com/" target="_blank" rel="noreferrer" className="ml-auto text-xs font-semibold text-sky-300 hover:text-sky-200">Abrir Flow ↗</a></div>
-          <ol className="mt-2 list-decimal space-y-0.5 pl-5 text-xs leading-5 text-slate-300">
-            <li>Copia el lote completo y pégalo una sola vez en Flow.</li>
-            <li>Flow crea primero las fichas <b>[P01]</b>, <b>[P02]</b>… y las usa como referencia en las escenas <b>[001]</b>, <b>[002]</b>…</li>
-            <li>Cada imagen queda nombrada con su identificador: así sabes a qué escena va sin revisarlas una por una.</li>
-          </ol>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <CopyButton text={lote.full} label={`Copiar lote completo (${lote.count.fichas + lote.count.escenas} imágenes)`} />
-            <CopyButton text={lote.fichas} label="Solo fichas" />
-            <CopyButton text={lote.escenas} label="Solo escenas" />
-            <CopyButton text={lote.animaciones} label="Todas las animaciones" />
-            <CopyButton text={lote.dialogos} label="Diálogos en limpio" />
-          </div>
-          <p className="mt-2 text-[11px] text-slate-400">Si Flow corta un lote largo, pega primero «Solo fichas» y luego «Solo escenas».</p>
-        </section>
-        <div className="mb-3 flex flex-wrap items-center gap-2"><p className="text-sm text-slate-300">{scenes.length} escenas de 8 s: una imagen de Flow y un clip por escena, un solo personaje hablando.</p><span className="ml-auto"><CopyButton text={allScenes} label="Copiar todas las escenas" /></span></div>
-        <ol className="space-y-3">{scenes.map((s: any) => { const c = cast.find((x: any) => x.name === s.speaker); return <li key={s.n} className="rounded-2xl border border-white/10 bg-[#151C2B] p-4">
-          <div className="flex flex-wrap items-center gap-2"><span className="rounded-lg bg-amber-400 px-2 py-0.5 text-xs font-black text-black">{s.n}</span><span className="text-xs text-slate-400">{(s.n - 1) * 8}-{s.n * 8} s · {s.setting}</span></div>
-          <p className="mt-2 text-sm"><span className="mr-1">{c?.fruitEmoji || "🎙️"}</span><b style={{ color: c?.subtitleColor || "#fff" }}>{s.speaker}</b> <span className="text-slate-400">({s.emotion})</span>: “{s.line}”</p>
-          <details className="prompt-box mt-2"><summary><span>Imagen para Flow</span></summary><div className="px-3 pb-1"><CopyButton text={s.imagePromptFlow} /></div><p className="prompt-text">{s.imagePromptFlow}</p></details>
-          <details className="prompt-box mt-2"><summary><span>Animación (Pavo IA / Seedance)</span></summary><div className="px-3 pb-1"><CopyButton text={s.animationPrompt} /></div><p className="prompt-text whitespace-pre-line">{s.animationPrompt}</p></details>
-        </li>; })}</ol>
-      </div>}
       {tab === "guion" && <div className="space-y-3">
-        {(out.scriptBlocks || []).map((b: any, i: number) => (
+        {ficha && <section className="rounded-2xl border border-amber-400/20 bg-gradient-to-br from-amber-400/10 to-transparent p-4">
+          <h3 className="font-bold text-white">Ficha del episodio</h3>
+          <dl className="mt-2 space-y-1.5 text-sm leading-6">
+            <Field label="Base bíblica" value={ficha.biblicalBase} />
+            <Field label="Sinopsis" value={ficha.synopsis} />
+            <Field label="Gancho (imagen)" value={ficha.hookImage} />
+            <Field label="Frase del fotograma cero" value={ficha.hookText} />
+            <Field label="Conflicto principal" value={ficha.conflict} />
+            <Field label="Desarrollo" value={ficha.development} />
+            <Field label="Clímax" value={ficha.climax} />
+            <Field label="Resolución" value={ficha.resolution} />
+            <Field label="Cierre" value={ficha.closing} />
+          </dl>
+        </section>}
+        {!ficha && !!(out.hook || []).length && <div className="rounded-xl border border-amber-400/20 bg-amber-400/10 p-4"><p className="text-[11px] font-semibold uppercase tracking-wider text-amber-300">Gancho de los primeros 3 s</p><p className="mt-1 text-lg font-bold">{(out.hook || []).join(" / ")}</p></div>}
+        {scenes.length ? scenes.map((s: any) => { const c = cast.find((x: any) => x.name === s.speaker); return <article key={s.n} className="rounded-xl bg-[#121826] p-4">
+          <p className="text-xs font-semibold text-amber-300">ESCENA {String(s.n).padStart(2, "0")} — {s.title || ""} · {(s.n - 1) * 8}-{s.n * 8} s</p>
+          <p className="mt-2 text-sm"><span className="mr-1">{c?.fruitEmoji || "🎙️"}</span><b style={{ color: c?.subtitleColor || "#fff" }}>{s.speaker}</b> <span className="text-slate-400">({s.emotion})</span>: “{s.line}”</p>
+          <dl className="mt-2 grid gap-x-4 gap-y-1 text-xs leading-5 sm:grid-cols-2">
+            <Field label="Objetivo" value={s.goal} /><Field label="Personajes" value={(s.characters || []).join(", ") || "—"} />
+            <Field label="Plano" value={s.shot} /><Field label="Acción visual" value={s.setting} />
+            <Field label="Efectos" value={s.sfx} /><Field label="Música" value={s.music} />
+            <Field label="Transición" value={s.transition} /><Field label="Conexión" value={s.nextLink} />
+          </dl>
+        </article>; }) : (out.scriptBlocks || []).map((b: any, i: number) => (
           <div key={i} className="rounded-xl bg-[#121826] p-4">
-            <p className="text-xs font-semibold text-amber-300">{scenes.length ? "Escena" : "Bloque"} {b.block ?? i + 1} · {b.time}</p>
+            <p className="text-xs font-semibold text-amber-300">Bloque {b.block ?? i + 1} · {b.time}</p>
             {b.scene && <p className="mt-1 text-sm text-slate-400">{b.scene}</p>}
             <div className="mt-2 space-y-1">{(b.dialogue || []).map((d: any, j: number) => <p key={j} className="text-sm"><b>{d.speaker}:</b> “{d.text}”</p>)}</div>
           </div>
         ))}
         {out.dialogueRules && <p className="text-xs text-slate-500">{out.dialogueRules}</p>}
       </div>}
-      {tab === "prompts" && <div>
-        <div className="mb-3 rounded-xl border border-white/10 bg-[#151C2B] p-3 text-xs text-slate-300">{out.dolaIsAdaptation ? `La versión Dola condensa el episodio de ${fullDuration} s a ${dolaDuration} s. Los prompts por escena siguen abajo.` : `La versión Dola cubre el episodio completo de ${fullDuration} s.`}</div>
+      {tab === "elenco" && <div>
+        <p className="mb-3 text-sm text-slate-300">Fase 1: genera en Flow la ficha de cada personaje y apruébala antes de crear las escenas. Esas fichas son las referencias que seleccionarás en las fases 2 y 3.</p>
+        <div className="grid gap-3 md:grid-cols-2">{cast.map((c: any, i: number) => <article key={c.name} className="rounded-2xl border border-white/10 bg-[#151C2B] p-4">
+          <div className="flex items-start gap-3">
+            {c.fruitEmoji && <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/5 text-3xl" aria-hidden="true">{c.fruitEmoji}</span>}
+            <div className="min-w-0 flex-1">
+              <h3 className="font-bold text-white">{c.name}{c.fruit && <span className="font-normal text-slate-400"> — {c.fruit}</span>}</h3>
+              <p className="text-xs text-amber-200/90">{c.role}</p>
+              <p className="text-[11px] text-slate-500">Archivo en Flow: [P{String(i + 1).padStart(2, "0")}]</p>
+            </div>
+            <span className="flex items-center gap-1.5 rounded-full bg-black/30 px-2 py-1 text-[11px] text-slate-300" title="Color de subtítulo"><span className="h-3 w-3 rounded-full ring-1 ring-white/30" style={{ backgroundColor: c.subtitleColor }} />{String(c.subtitleColor || "").replace("#", "")}</span>
+          </div>
+          <dl className="mt-3 space-y-1.5 text-xs leading-5">
+            {c.headES ? <Field label="Cabeza" value={c.headES} /> : <Field label="Apariencia" value={c.visualES} />}
+            <Field label="Ropa fija" value={c.clothing} /><Field label="Voz" value={c.voice || c.speechStyle} />
+            {!!(c.pronunciations || []).length && <Field label="Pronunciación" value={c.pronunciations.join("; ")} />}
+          </dl>
+          {c.flowPrompt && <details className="prompt-box mt-3"><summary><span>Prompt de ficha para Flow</span></summary><div className="px-3 pb-1"><CopyButton text={c.flowPrompt} /></div><p className="prompt-text">{c.flowPrompt}</p></details>}
+        </article>)}</div>
+      </div>}
+      {tab === "imagenes" && <div>
+        <section className="mb-4 rounded-2xl border border-sky-400/25 bg-sky-400/[.06] p-4" aria-label="Lote para Flow">
+          <div className="flex flex-wrap items-center gap-2"><h3 className="font-bold text-white">⚡ Lote para Flow</h3><span className="text-xs text-slate-300">{lote.count.fichas} fichas + {lote.count.escenas} escenas en un solo pegado</span>
+            <a href="https://flow.google.com/" target="_blank" rel="noreferrer" className="ml-auto text-xs font-semibold text-sky-300 hover:text-sky-200">Abrir Flow ↗</a></div>
+          <ol className="mt-2 list-decimal space-y-0.5 pl-5 text-xs leading-5 text-slate-300">
+            <li>Copia el lote completo y pégalo una sola vez en Flow.</li>
+            <li>Flow crea primero las fichas <b>[P01]</b>, <b>[P02]</b>… y las usa como referencia en las escenas <b>[001]</b>, <b>[002]</b>…</li>
+            <li>Cada imagen queda nombrada con su identificador. Aprueba las imágenes antes de pasar a la Fase 3.</li>
+          </ol>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <CopyButton text={lote.full} label={`Copiar lote completo (${lote.count.fichas + lote.count.escenas} imágenes)`} />
+            <CopyButton text={lote.fichas} label="Solo fichas" />
+            <CopyButton text={lote.escenas} label="Solo escenas" />
+          </div>
+          <p className="mt-2 text-[11px] text-slate-400">Si Flow corta un lote largo, pega primero «Solo fichas» y luego «Solo escenas». Para una sola imagen, usa el prompt de su escena abajo.</p>
+        </section>
+        <ol className="space-y-3">{scenes.map((s: any) => <li key={s.n} className="rounded-2xl border border-white/10 bg-[#151C2B] p-4">
+          <div className="flex flex-wrap items-center gap-2"><span className="rounded-lg bg-amber-400 px-2 py-0.5 text-xs font-black text-black">{sceneId(s.n)}</span><span className="text-sm font-semibold">{s.title}</span><span className="text-xs text-slate-400">· {s.shot}</span></div>
+          <RefChips refs={s.references} />
+          <details className="prompt-box mt-2"><summary><span>Prompt para imagen (Flow)</span></summary><div className="px-3 pb-1"><CopyButton text={s.imagePromptFlow} /></div><p className="prompt-text">{s.imagePromptFlow}</p></details>
+        </li>)}</ol>
+      </div>}
+      {tab === "animacion" && <div>
+        <div className="mb-3 rounded-xl border border-white/10 bg-[#151C2B] p-3 text-xs text-slate-300">{scenes.length ? "Fase 3: usa cada imagen aprobada como primer fotograma y pega su prompt en Pavo IA / Seedance. " : ""}{out.dolaIsAdaptation ? `La versión Dola condensa el episodio de ${fullDuration} s a ${dolaDuration} s.` : `La versión Dola cubre el episodio completo de ${fullDuration} s.`}</div>
         {fromAI && <label className="mb-3 flex items-start gap-2 rounded-xl border border-white/10 bg-white/[.03] p-3 text-xs text-slate-200"><input type="checkbox" className="mt-0.5" checked={reviewed} onChange={event => setReviewed(event.target.checked)} />He revisado el guion, los personajes y la duración antes de abrir Dola.</label>}
-        <details className="prompt-box" open><summary><span>Prompt Dola {dolaDuration} s{out.dolaIsAdaptation ? " · adaptación" : ""}</span></summary><div className="flex flex-wrap gap-2 px-3 pb-1"><CopyButton text={out.dolaPrompt || ""} />{fromAI && reviewed && <DolaButton text={out.dolaPrompt || ""} />}</div><p className="prompt-text">{out.dolaPrompt}</p></details>
-        {(out.prompts || []).map((p: string, i: number) => <details key={i} className="prompt-box"><summary><span>{scenes.length ? "Escena" : "Bloque"} {i + 1} · {i * sec}-{(i + 1) * sec}s</span></summary><div className="px-3 pb-1"><CopyButton text={p} /></div><p className="prompt-text whitespace-pre-line">{p}</p></details>)}
+        <details className="prompt-box"><summary><span>Prompt Dola {dolaDuration} s{out.dolaIsAdaptation ? " · adaptación" : ""}</span></summary><div className="flex flex-wrap gap-2 px-3 pb-1"><CopyButton text={out.dolaPrompt || ""} />{fromAI && reviewed && <DolaButton text={out.dolaPrompt || ""} />}</div><p className="prompt-text">{out.dolaPrompt}</p></details>
+        {scenes.length ? <>
+          <div className="my-3 flex flex-wrap gap-2"><CopyButton text={lote.animaciones} label="Copiar todas las animaciones" /><CopyButton text={lote.dialogos} label="Diálogos en limpio" /></div>
+          <ol className="space-y-3">{scenes.map((s: any) => <li key={s.n} className="rounded-2xl border border-white/10 bg-[#151C2B] p-4">
+            <div className="flex flex-wrap items-center gap-2"><span className="rounded-lg bg-amber-400 px-2 py-0.5 text-xs font-black text-black">{String(s.n).padStart(2, "0")}</span><span className="text-sm font-semibold">{s.title}</span><span className="text-xs text-slate-400">· primer fotograma: imagen {sceneId(s.n)}</span></div>
+            <RefChips refs={s.references} />
+            <details className="prompt-box mt-2"><summary><span>Prompt para animación (Pavo IA / Seedance)</span></summary><div className="px-3 pb-1"><CopyButton text={s.animationPrompt} /></div><p className="prompt-text whitespace-pre-line">{s.animationPrompt}</p></details>
+          </li>)}</ol>
+        </> : (out.prompts || []).map((p: string, i: number) => <details key={i} className="prompt-box mt-2"><summary><span>Bloque {i + 1} · {i * sec}-{(i + 1) * sec}s</span></summary><div className="px-3 pb-1"><CopyButton text={p} /></div><p className="prompt-text whitespace-pre-line">{p}</p></details>)}
+      </div>}
+      {tab === "redes" && social && <div className="space-y-2">
+        {([["Título", social.title], ...(social.hooks || []).map((h: string, i: number) => [`Gancho ${i + 1}`, h]), ["Texto del fotograma cero", social.frameZeroText], ["Descripción para TikTok", social.tiktokDescription], ["Pregunta final", social.question], ["Idea de portada 9:16", social.coverIdea], ["Música recomendada", social.music], ["Pasaje bíblico", social.biblicalPassage]] as [string, string][]).filter(([, v]) => v).map(([k, v]) =>
+          <div key={k} className="flex flex-wrap items-start gap-2 rounded-xl bg-[#121826] p-3"><div className="min-w-0 flex-1"><p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">{k}</p><p className="mt-0.5 text-sm">{v}</p></div><CopyButton text={v} /></div>)}
+        <p className="text-xs text-slate-500">Los textos se añaden en la edición: nunca van dentro de los prompts de imagen o video.</p>
       </div>}
       {tab === "plataformas" && <PlatformAdaptations adaptations={out.platformAdaptations || out.platform_adaptations || []} />}
       {tab === "archivos" && <div className="rounded-xl bg-[#121826] p-4 space-y-3">
@@ -428,11 +471,11 @@ function Result({ episode: out, part, seriesTitle, onBack, onNext, onRecreate }:
         <p className="text-sm text-slate-400">{out.description} {(out.hashtags || []).join(" ")}</p>
         <div className="flex flex-wrap gap-2">
           <DownloadJson data={out.guionJson || {}} filename="guion.json" />
-          {cast.length > 0 && <DownloadText text={episodeMarkdown(out, seriesTitle, part)} filename={`elenco-escenas-ep${part}.md`} label="Descargar elenco y escenas (.md)" />}
+          {cast.length > 0 && <DownloadText text={episodeMarkdown(out, seriesTitle, part)} filename={`produccion-ep${part}.md`} label="Descargar producción completa (.md)" />}
           {scenes.length > 0 && <DownloadText text={lote.full} filename={`lote-flow-ep${part}.txt`} label="Descargar lote para Flow (.txt)" />}
           <DownloadJson data={out.platformAdaptations || []} filename="adaptaciones-plataformas.json" />
         </div>
-        <p className="text-xs text-slate-500">guion.json es el archivo para el montaje con subtitular.py: colores sin #, gancho de 2 líneas, cierre y un clip por escena.</p>
+        <p className="text-xs text-slate-500">guion.json es el archivo para el montaje con subtitular.py. El .md trae la ficha del episodio, el guion por escenas, las 3 fases y el paquete de redes.</p>
       </div>}
       {tab === "montaje" && <MontajePanel guion={out.guionJson || {}} title={`${seriesTitle || "serie"} ${part}`} />}
     </div>

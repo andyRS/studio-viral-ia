@@ -13,7 +13,11 @@ export interface Character { id:string; seriesId:string; name:string; imageUrl?:
   flowPrompt?:string;   // prompt de ficha para Flow
 }
 // Una escena = una imagen de Flow + un clip de 8 s con un solo personaje hablando.
-export interface Scene { n:number; durationSec:8; setting:string; imagePromptFlow:string; animationPrompt:string; speaker:string; line:string; emotion:string }
+export interface Scene { n:number; durationSec:8; setting:string; imagePromptFlow:string; animationPrompt:string; speaker:string; line:string; emotion:string;
+  // Ficha de escena (estructura del prompt maestro): todo opcional para episodios anteriores.
+  title?:string; goal?:string; shot?:string; characters?:string[]; sfx?:string; music?:string; transition?:string; nextLink?:string;
+  references?:string[];  // fichas que el usuario debe seleccionar en Flow/Pavo (fuera del prompt)
+}
 export interface Formula { id:string; name:string; category:string; content:string; structure:string[] }
 export interface Episode { id:string; title:string; theme:string; duration:number; status:string; createdAt:string; previousSummary?:string; accountId?:string; seriesId?:string; formulaId?:string; versions:any[]; output?:any; baseFormula?:any; platformAdaptations?:PlatformAdaptation[]; platform_adaptations?:PlatformAdaptation[]; scenes?:Scene[] }
 export interface ProductionCard { id:string; episodeId:string; title:string; stage:"Idea"|"Guion"|"Clips generados"|"Montaje"|"Publicado" }

@@ -64,14 +64,22 @@ function checkChristian(r, label) {
   checkChristian(t2, "plantilla cristiana");
   const t3 = templateSeries({ idea: "Una cantante reconoce al hombre que la dejó en el altar", style: "cine90", duration: 90 });
   assert.ok(t3.characters.every(c => !c.fruit), "cine90 sin frutas");
-  assert.ok(t3.episode.scenes[0].imagePromptFlow.startsWith("[001] Cinematic 1990s"), "cine90: imagen en inglés con identificador");
+  assert.ok(t3.episode.scenes[0].imagePromptFlow.startsWith("Cinematic 1990s"), "cine90: imagen en inglés");
   // Lote para Flow: instrucción + fichas [P01..] + escenas [001..], con identificadores de 5 caracteres.
   const { buildFlowBatch } = require("../src/lib/production.ts");
   const lote = buildFlowBatch(t1.episode);
   assert.ok(lote.full.startsWith("Crea todas las imágenes"), "lote sin instrucción");
   assert.equal(lote.count.fichas, t1.characters.length);
   assert.equal(lote.count.escenas, t1.episode.scenes.length);
-  assert.ok(lote.full.includes("[P01] ") && lote.full.includes("[001] ") && !lote.full.includes("[001] [001]"), "identificadores");
+  assert.ok(lote.full.includes("[P01]\n") && lote.full.includes("[001]\n"), "identificadores en su propia línea");
+  // Referencias fuera del prompt: ningún prompt individual lleva identificadores.
+  assert.ok(t1.episode.scenes.every(s => !/^\[/.test(s.imagePromptFlow) && !/\[(P\d\d|\d{3})\]/.test(s.animationPrompt)), "IDs dentro del prompt");
+  // Ficha de escena y de episodio.
+  const sc = t1.episode.scenes;
+  assert.equal(sc[0].title, "Gancho"); assert.equal(sc.at(-1).title, "Resolución");
+  assert.ok(sc.every(s => s.goal && s.shot && s.sfx && s.music && s.transition && s.nextLink && Array.isArray(s.references)), "ficha de escena incompleta");
+  assert.ok(t1.episode.ficha.synopsis && t1.episode.ficha.hookText, "ficha de episodio");
+  assert.equal(t1.episode.social.hooks.length >= 1, true); assert.ok(t1.episode.social.question && t1.episode.social.coverIdea, "paquete redes");
   const shots = t1.episode.scenes.map(s => s.imagePromptFlow.match(/Encuadre: ([^.]+)/)[1]);
   assert.ok(shots.every((s, i) => i === 0 || s !== shots[i - 1]), "encuadre repetido en escenas seguidas");
   assert.match(t1.episode.scenes[0].animationPrompt, /0–2 s: .*2–5 s: .*5–8 s: /s, "microescenas");
@@ -88,6 +96,9 @@ function checkChristian(r, label) {
   console.log("IA frutinovela:", report(g1, t0)); console.log("  elenco:", g1.characters.map(c => `${c.fruitEmoji} ${c.name} (${c.fruit}, ${c.role})`).join(" | "));
   checkFruitEpisode(g1, "IA frutinovela", ["plátano", "coco"]);
   console.log("  escena 1:", g1.episode.scenes[0].speaker, "→", g1.episode.scenes[0].line);
+  console.log("  ficha IA:", JSON.stringify({ conflicto: g1.episode.ficha.conflict, climax: g1.episode.ficha.climax }).slice(0, 220));
+  console.log("  escena 1 IA:", JSON.stringify({ t: g1.episode.scenes[0].title, sfx: g1.episode.scenes[0].sfx, musica: g1.episode.scenes[0].music }));
+  console.log("  redes IA:", JSON.stringify(g1.episode.social).slice(0, 260));
   t0 = Date.now();
   const g2 = await generateSeries({ idea: dulces, style: "cristiana", duration: 90 });
   console.log("IA cristiana:", report(g2, t0)); console.log("  elenco:", g2.characters.map(c => `${c.fruitEmoji} ${c.name} (${c.fruit})`).join(" | "));

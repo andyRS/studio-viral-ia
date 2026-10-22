@@ -132,6 +132,8 @@ export function buildProduction(raw: any, ctx: Ctx) {
       line: fixDialogue(r.line || r.text || r.dialogo || ""),
       emotion: clean(r.emotion || r.emocion) || "emoción contenida",
       present: Array.isArray(r.onScreen) ? r.onScreen : [],
+      title: clean(r.title || r.titulo), goal: clean(r.goal || r.objetivo), sfx: clean(r.sfx || r.efectos), music: clean(r.music || r.musica),
+      transition: clean(r.transition || r.transicion), link: clean(r.link || r.conexion),
     }))
     .filter(s => s.line.length >= 3);
   // Un solo hablante por escena: una frase que no cabe en 8 s se parte en dos escenas,
@@ -142,22 +144,34 @@ export function buildProduction(raw: any, ctx: Ctx) {
     if (parts.length < 2) return [s];
     const half = s.line.length / 2; let acc = 0, cut = 1;
     for (let i = 0; i < parts.length - 1; i++) { acc += parts[i].length; if (acc >= half) { cut = i + 1; break; } cut = i + 1; }
-    return [{ ...s, line: parts.slice(0, cut).join(" ") }, { ...s, line: parts.slice(cut).join(" ") }];
+    const a = parts.slice(0, cut).join(" "), b = parts.slice(cut).join(" ");
+    // Nunca dejar un trozo de menos de 5 palabras (p. ej. «Escribe AMÉN.» suelto): se queda en una escena.
+    if (a.split(" ").length < 5 || b.split(" ").length < 5) return [s];
+    return [{ ...s, line: a }, { ...s, line: b }];
   });
   if (style === "cristiana") base = base.map(s => ({ ...s, setting: stripForbidden(s.setting), line: stripForbidden(s.line) }));
   // Cristiana: el final pide "Escribe AMÉN" en boca del narrador.
   if (style === "cristiana" && !base.some(s => /escribe am[eé]n/i.test(s.line))) {
     if (base.length >= 16) base = base.slice(0, 15);
-    base.push({ setting: base[base.length - 1]?.setting || "iglesia evangélica sencilla", speaker: NARRATOR, line: "Si crees que Dios restaura lo que el orgullo rompe… Escribe AMÉN.", emotion: "esperanza", present: [] });
+    base.push({ setting: base[base.length - 1]?.setting || "iglesia evangélica sencilla", speaker: NARRATOR, line: "Si crees que Dios restaura lo que el orgullo rompe… Escribe AMÉN.", emotion: "esperanza", present: [], title: "Cierre", goal: "Invitar al público a responder", sfx: "Silencio y respiración suave", music: "Piano emotivo que se apaga", transition: "Fundido a negro", link: "" });
   }
   base = base.slice(0, 16);
 
   const scenes: Scene[] = base.map((s, i) => {
     const member = byName.get(s.speaker);
     const others = s.present.map((p: unknown) => byName.get(findSpeaker(p, cast))).filter((m: CastMember | undefined): m is CastMember => !!m && m !== member);
+    const role = sceneRole(i, base.length);
+    const present = [member, ...others].filter((m): m is CastMember => !!m).map(m => m.name);
     return {
       n: i + 1, durationSec: SCENE_SECONDS, setting: s.setting, speaker: s.speaker, line: s.line, emotion: s.emotion,
-      imagePromptFlow: `${sceneId(i + 1)} ${imagePrompt(s, member, others, style, i)}`,
+      // Ficha de escena (estructura del prompt maestro). Lo que la IA no rellena lo completa el código.
+      title: s.title || role.title, goal: s.goal || role.goal, shot: shotFor(i).es, characters: present,
+      sfx: s.sfx || role.sfx, music: s.music || role.music,
+      transition: s.transition || (i === base.length - 1 ? "Fundido a negro" : "Corte directo"),
+      nextLink: s.link || (i === base.length - 1 ? "Cierre del episodio" : `Lleva a la escena ${i + 2}`),
+      // Referencias canónicas: se muestran FUERA del prompt (el prompt va limpio para copiar).
+      references: present.map(n => `Ficha de ${n}`),
+      imagePromptFlow: imagePrompt(s, member, others, style, i),
       animationPrompt: animationPrompt(s, member, style, i),
     };
   });
@@ -176,8 +190,28 @@ export function buildProduction(raw: any, ctx: Ctx) {
   const castLine = cast.map(c => isFruitStyle(style) ? `${c.name}: cabeza entera de ${c.fruit} (${c.headES}); ${c.clothing}` : `${c.name}: ${c.visualEN || c.visualES}; ${c.clothing}`).join(". ");
   const dolaPrompt = `Usa Seedance 2.5. ${isFruitStyle(style) ? "Telenovela animada 3D premium estilo Pixar, vertical 9:16; cabeza de fruta en cada toma, nunca cara humana." : "Película romántica dominicana de los 90, 35 mm, vertical 9:16, personas reales."} ${total > dolaDuration ? `Adaptación de ${dolaDuration} s del episodio de ${total} s.` : `Episodio completo de ${total} s.`}${style === "cristiana" ? ` ${CHRISTIAN_SCENE_GUARD}.` : ""} PERSONAJES: ${castLine}. ${dolaScenes.map(s => `${(s.n - 1) * SCENE_SECONDS}-${s.n * SCENE_SECONDS}s: ${s.setting}. ${s.speaker === NARRATOR ? `Narrador en off: "${s.line}"` : `${s.speaker} dice con ${s.emotion}: "${s.line}"`}`).join(" ")} PRONUNCIACIÓN OBLIGATORIA: ${Array.from(new Set(cast.flatMap(c => c.pronunciations).concat(dialectPronunciations(dolaScenes.map(s => s.line).join(" "))))).join("; ") || "palabras completas con acentos correctos"}. VOCES: español latino neutro, cada palabra completa, nunca acento inglés; sincronización de labios solo para quien habla; sin subtítulos ni texto en pantalla.`;
   const platformAdaptations = buildPlatformAdaptations({ theme: ctx.idea || clean(raw?.title), seriesTitle: ctx.seriesTitle || clean(raw?.title), partNumber: ctx.partNumber || 1, previousSummary: ctx.previousSummary, hook });
+  const f = raw?.ficha || {};
+  const ficha = {
+    biblicalBase: clean(f.biblicalBase || raw?.biblicalBase),
+    synopsis: clean(f.synopsis) || clean(raw?.summary) || ctx.idea,
+    hookImage: clean(f.hookImage) || scenes[0]?.setting || "",
+    hookText: clean(f.hookText) || hook.join(" / "),
+    conflict: clean(f.conflict), development: clean(f.development), climax: clean(f.climax),
+    resolution: clean(f.resolution), closing: clean(f.closing) || scenes[scenes.length - 1]?.line || "",
+  };
+  const so = raw?.social || {};
+  const social = {
+    title: clean(so.title) || clean(raw?.title) || ctx.idea.slice(0, 60),
+    hooks: (Array.isArray(so.hooks) ? so.hooks.map(clean).filter(Boolean) : []).concat(hook.join(" "), clean(raw?.coverText)).filter(Boolean).slice(0, 3),
+    frameZeroText: clean(so.frameZeroText) || hook[0],
+    tiktokDescription: clean(so.tiktokDescription) || clean(raw?.description) || ctx.idea,
+    question: clean(so.question) || "¿Tú qué hubieras hecho en su lugar?",
+    coverIdea: clean(so.coverIdea) || `Primer plano de ${scenes[0]?.speaker || "la protagonista"} con ${scenes[0]?.emotion || "emoción"}, texto grande: ${hook[0]}`,
+    music: clean(so.music) || "Cuerdas dramáticas y piano emotivo (música con licencia para redes)",
+    biblicalPassage: clean(so.biblicalPassage) || ficha.biblicalBase,
+  };
   return {
-    title: clean(raw?.title) || `Episodio ${ctx.partNumber || 1}`,
+    title: clean(raw?.title) || `Episodio ${ctx.partNumber || 1}`, ficha, social,
     summary: clean(raw?.summary) || ctx.idea,
     cast, scenes, scriptBlocks, prompts: scenes.map(s => s.animationPrompt),
     dolaPrompt, dolaDuration, dolaIsAdaptation: total > dolaDuration, duration: total,
@@ -217,12 +251,29 @@ export function buildFlowBatch(out: any) {
   const cast: any[] = Array.isArray(out?.cast) ? out.cast : [];
   const scenes: any[] = Array.isArray(out?.scenes) ? out.scenes : [];
   const vertical = !/16:9/.test(String(scenes[0]?.imagePromptFlow || ""));
-  const fichas = cast.filter(c => c.flowPrompt).map((c, i) => `${sheetId(i + 1)} ${stripId(c.flowPrompt)}`);
-  const escenas = scenes.map((sc, i) => `${sceneId(sc.n || i + 1)} ${stripId(sc.imagePromptFlow)}`);
+  // El identificador va en su propia línea, separado del prompt: solo sirve para nombrar el archivo.
+  const fichas = cast.filter(c => c.flowPrompt).map((c, i) => `${sheetId(i + 1)}\n${stripId(c.flowPrompt)}`);
+  const escenas = scenes.map((sc, i) => `${sceneId(sc.n || i + 1)}\n${stripId(sc.imagePromptFlow)}`);
   const legend = cast.filter(c => c.flowPrompt).map((c, i) => `${sheetId(i + 1)} = ${c.name}`).join(", ");
-  const instruction = `Crea todas las imágenes según los prompts de abajo, una imagen por prompt, en formato ${vertical ? "vertical 9:16" : "16:9"}. Cada prompt empieza con su identificador entre corchetes. Renombra automáticamente cada imagen usando los 5 primeros caracteres de su prompt (el identificador, por ejemplo [001]). Genera primero las fichas de personaje [P01], [P02]… y úsalas como referencia en cada escena donde aparece ese personaje, para que su cabeza, ropa y colores sean idénticos en todas las imágenes${legend ? ` (${legend})` : ""}. No añadas texto ni marcas de agua.`;
+  const instruction = `Crea todas las imágenes según los prompts de abajo, una imagen por prompt, en formato ${vertical ? "vertical 9:16" : "16:9"}. Antes de cada prompt hay un identificador entre corchetes en su propia línea: no es parte de la imagen, úsalo solo como nombre del archivo (por ejemplo [001]). Genera primero las fichas de personaje [P01], [P02]… y úsalas como referencia en cada escena donde aparece ese personaje, para que su cabeza, ropa y colores sean idénticos en todas las imágenes${legend ? ` (${legend})` : ""}. No añadas texto ni marcas de agua.`;
   const full = [instruction, "", ...fichas.flatMap(f => [f, ""]), ...escenas.flatMap(e => [e, ""])].join("\n").trim();
   const dialogos = scenes.map(sc => `${sc.speaker}: ${sc.line}`).join("\n");
   const animaciones = scenes.map((sc, i) => `${sceneId(sc.n || i + 1)}\n${sc.animationPrompt}`).join("\n\n");
   return { full, fichas: fichas.join("\n\n"), escenas: escenas.join("\n\n"), dialogos, animaciones, count: { fichas: fichas.length, escenas: escenas.length } };
+}
+
+// Papel de cada escena en la estructura Gancho → Contexto → Desarrollo → Clímax → Consecuencia → Resolución,
+// repartido sobre el número real de escenas (la primera siempre es Gancho y la última Resolución).
+const ROLES = [
+  { title: "Gancho", goal: "Atrapar desde el fotograma cero con la acción o consecuencia más intrigante", sfx: "Golpe sonoro seco al inicio y ambiente del lugar", music: "Percusión tensa" },
+  { title: "Contexto", goal: "Explicar rápido qué originó el conflicto", sfx: "Ambiente del lugar, pasos y telas", music: "Cuerdas suaves de tensión" },
+  { title: "Desarrollo", goal: "Revelación, decisión u obstáculo que sube la tensión", sfx: "Ambiente y un objeto clave que suena", music: "Cuerdas que crecen" },
+  { title: "Clímax", goal: "La confrontación, descubrimiento o momento más fuerte", sfx: "Impacto dramático y silencio justo antes", music: "Percusión épica y cuerdas" },
+  { title: "Consecuencia", goal: "Reacción de los personajes o nuevo conflicto", sfx: "Respiraciones y ambiente que se calma", music: "Piano emotivo" },
+  { title: "Resolución", goal: "Conclusión emocional o espiritual y pregunta al público", sfx: "Ambiente suave", music: "Piano y cuerdas que cierran" },
+];
+export function sceneRole(i: number, total: number) {
+  if (i === 0) return ROLES[0];
+  if (i === total - 1) return ROLES[5];
+  return ROLES[Math.min(4, 1 + Math.floor(((i - 1) * 4) / Math.max(1, total - 2)))];
 }

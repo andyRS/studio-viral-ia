@@ -113,7 +113,7 @@ export function normalizeCast(list: unknown, style: StyleKey, opts: { taken?: Ca
       ...dialectPronunciations(name),
     ]));
     const member: CastMember = {
-      name, role: role || "personaje", fruit: fruitName_, fruitEmoji: fruitStory ? (clean(row.fruitEmoji) || fruit!.emoji) : undefined, headES,
+      name, role: role || "personaje", fruit: fruitName_, fruitEmoji: fruitStory ? (fruitInfo(fruitName_)?.emoji || fruit!.emoji) : undefined, headES,
       visualES, visualEN: clean(row.visualEN), clothing, voice, speechStyle: clean(row.speechStyle) || voice,
       subtitleColor: `#${hex}`, pronunciations, flowPrompt: "",
     };
