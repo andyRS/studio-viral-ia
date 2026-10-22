@@ -32,7 +32,9 @@ function checkFruitEpisode(r, label, fruitsExpected = []) {
   const s = r.episode.scenes;
   assert.ok(s.length >= 8 && s.length <= 16, `${label}: ${s.length} escenas`);
   for (const sc of s) {
-    assert.match(sc.animationPrompt, /^Usa Seedance 2\.5\./, `${label}: escena ${sc.n} sin "Usa Seedance 2.5."`);
+    // Seedance solo en el prompt de Dola; las escenas son para Pavo IA / Flow.
+    assert.doesNotMatch(sc.animationPrompt, /Seedance/, `${label}: escena ${sc.n} menciona Seedance`);
+    assert.match(sc.animationPrompt, /primer fotograma/, `${label}: escena ${sc.n} sin "primer fotograma"`);
     assert.match(sc.animationPrompt, /PRONUNCIACIÓN OBLIGATORIA/, `${label}: escena ${sc.n} sin PRONUNCIACIÓN`);
     assert.match(sc.animationPrompt, /nunca cara humana/);
     assert.ok(sc.imagePromptFlow && sc.line, `${label}: escena ${sc.n} incompleta`);
@@ -41,6 +43,9 @@ function checkFruitEpisode(r, label, fruitsExpected = []) {
   assert.equal(r.episode.guionJson.clips.length, s.length, `${label}: un clip por escena`);
   assert.equal(r.episode.guionJson.gancho.length, 2);
   assert.equal(r.episode.platformAdaptations.length, 4);
+  assert.match(r.episode.dolaPrompt, /^Usa Seedance 2\.5\./, `${label}: Dola sin Seedance`);
+  assert.ok(r.episode.cover && r.episode.cover.lines.length === 2 && /^PARTE \d+$/.test(r.episode.cover.part), `${label}: portada`);
+  assert.ok(r.episode.platformAdaptations.every(p => p.title && p.description && p.bestTime && p.cta && p.pinnedComment), `${label}: publicación incompleta`);
   for (const name of new Set(s.map(x => x.speaker))) assert.ok(r.episode.guionJson.colores[name], `${label}: sin color para ${name}`);
 }
 function checkChristian(r, label) {
@@ -99,6 +104,9 @@ function checkChristian(r, label) {
   console.log("  ficha IA:", JSON.stringify({ conflicto: g1.episode.ficha.conflict, climax: g1.episode.ficha.climax }).slice(0, 220));
   console.log("  escena 1 IA:", JSON.stringify({ t: g1.episode.scenes[0].title, sfx: g1.episode.scenes[0].sfx, musica: g1.episode.scenes[0].music }));
   console.log("  redes IA:", JSON.stringify(g1.episode.social).slice(0, 260));
+  console.log("  portada IA:", JSON.stringify(g1.episode.cover));
+  console.log("  autoevaluación IA:", JSON.stringify(g1.episode.selfScore));
+  console.log("  Facebook IA:", JSON.stringify((({ title, hashtags, bestTime, pinnedComment }) => ({ title, hashtags, bestTime, pinnedComment }))(g1.episode.platformAdaptations.find(p => p.platform === "Facebook"))));
   t0 = Date.now();
   const g2 = await generateSeries({ idea: dulces, style: "cristiana", duration: 90 });
   console.log("IA cristiana:", report(g2, t0)); console.log("  elenco:", g2.characters.map(c => `${c.fruitEmoji} ${c.name} (${c.fruit})`).join(" | "));

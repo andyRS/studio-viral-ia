@@ -17,6 +17,9 @@ export interface PlatformAdaptation {
   metricsToWatch: string[];
   checklist: string[];
   fileName: string; // archivo distinto por plataforma, nunca reutilizado
+  pinnedComment?: string;
+  start?: string;   // cómo empieza el vídeo en esta plataforma
+  extra?: string;   // acción extra recomendada
 }
 
 export const BASE_FORMULA_NAME = "FÓRMULA BASE (Instagram) — origen de las 4 adaptaciones";
@@ -49,9 +52,12 @@ export function formatAdaptationForCopy(a: PlatformAdaptation): string {
     `Mejor horario: ${a.bestTime}`,
     `Frecuencia: ${a.frequency}`,
     `CTA: ${a.cta}`,
+    a.pinnedComment ? `Comentario fijado: ${a.pinnedComment}` : "",
+    a.start ? `Inicio: ${a.start}` : "",
+    a.extra ? `Extra: ${a.extra}` : "",
     `Métricas a vigilar: ${a.metricsToWatch.join(", ")}`,
     `Checklist: ${a.checklist.join(" | ")}`,
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 }
 
 export function buildPlatformAdaptations(input: any): PlatformAdaptation[] {
@@ -64,7 +70,10 @@ export function buildPlatformAdaptations(input: any): PlatformAdaptation[] {
 
   const instagram: PlatformAdaptation = {
     platform: "Instagram",
-    recommendedDuration: "30-60s",
+    recommendedDuration: "Corte de 45-75 s del máster (sin saludos ni relleno; empieza en el conflicto)",
+    start: "Gancho de texto",
+    extra: "Historia «Disponible en unos minutos» con sticker",
+    pinnedComment: "Comenta PARTE 2 y te la subo 👇",
     editingChanges: [
       "Versión origen de la FÓRMULA BASE: conflicto/estatus visible en segundo 0-1, sin presentaciones",
       "Cortes rápidos cada 2-4 segundos",
@@ -72,21 +81,24 @@ export function buildPlatformAdaptations(input: any): PlatformAdaptation[] {
       "Estética cinematográfica, primeros planos de reacciones",
       'Cerrar con "Continuará..." y fijar el comentario "¿Parte 2?"',
     ],
-    coverText: `${hook1} — cara en primer plano + 1 frase de intriga`,
+    coverText: `Diseño de serie igual en todas las partes — ${hook1}`,
     title: `${seriesTitle} — Parte ${part} | ${theme}`,
     description: `¿De verdad hizo eso? 👀 ${theme}. Comenta PARTE 2 si quieres la continuación.`,
     hashtags: ["#Frutinovelas", "#DramaDominicano", "#ReelsRD", "#Microdrama", "#TelenovelaDeFrutas"],
-    bestTime: "12:00-13:00 y 19:00-21:00 (hora RD) — validar con Métricas",
+    bestTime: "7-9 p. m. (hora RD)",
     frequency: "1 Reel por episodio (versión base)",
     cta: "Comenta PARTE 2",
     metricsToWatch: ["compartidos", "guardados", "seguidores ganados"],
     checklist: ['Activar la etiqueta "Información de IA" / contenido generado con IA al publicar', "Portada con cara en primer plano + 1 frase de intriga", "3-5 hashtags de nicho (no más)", "Archivo propio de Instagram, no reutilizar el de TikTok/Facebook/Shorts"],
-    fileName: `${slug}-parte-${part}-instagram-reels.mp4`,
+    fileName: `${slug}-parte-${part}-instagram-corte.mp4`,
   };
 
   const facebook: PlatformAdaptation = {
     platform: "Facebook",
-    recommendedDuration: "60-90s",
+    recommendedDuration: "Máster de 60-90 s (mínimo 60 s para monetizar)",
+    start: "Gancho de texto",
+    extra: "Compartir en 3 grupos dominicanos con una frase propia",
+    pinnedComment: "¿Quién tiene la culpa? La Parte " + (part + 1) + " sale pronto 👇",
     editingChanges: [
       "Montaje más largo que Instagram: diálogo sin pausas, sin recortar la escalada",
       "Gancho visible sostenido durante los primeros 5-8 segundos",
@@ -94,10 +106,10 @@ export function buildPlatformAdaptations(input: any): PlatformAdaptation[] {
       "Dejar aire emotivo en la revelación con el objeto para que la audiencia comente",
       'Cerrar con "Continuará..." + pregunta de debate',
     ],
-    coverText: `¿Quién tiene la culpa? — ${hook1}`,
+    coverText: `Cara en primer plano + frase de intriga: ${hook1}`,
     title: `${seriesTitle} — Parte ${part}: ${theme}`,
     description: `${theme}. ${hook1} ¿Qué habrías hecho tú? Comenta tu opinión. Continuará...`,
-    hashtags: ["#Frutinovelas", "#Dominicanos", "#Novelas"],
+    hashtags: ["#Frutinovelas", "#Dominicanos"],
     bestTime: "19:00-22:00 (7-10 pm, hora RD)",
     frequency: "1 publicación al día",
     cta: "¿Quién tiene la culpa? Comenta y comparte en tu grupo",
@@ -113,12 +125,15 @@ export function buildPlatformAdaptations(input: any): PlatformAdaptation[] {
       "Grupo sugerido 2 (buscar: novelas y dramas en español): «Para los que aman las novelas cortas: una historia de frutas con un secreto familiar. ¿La sigo subiendo aquí?»",
       "Grupo sugerido 3 (buscar: dominicanos unidos / comunidad RD): «Talento dominicano con IA 🇩🇴 ¿apoyamos la Parte " + part + "? Comenten quién tiene la culpa.»",
     ],
-    fileName: `${slug}-parte-${part}-facebook-nativo.mp4`,
+    fileName: `${slug}-parte-${part}-master-facebook.mp4`,
   };
 
   const tiktok: PlatformAdaptation = {
     platform: "TikTok",
-    recommendedDuration: "1-3 min (más de 1 min: elegible para monetización)",
+    recommendedDuration: "Máster de 60-90 s (más de 1 min: elegible para monetización)",
+    start: isContinuation ? "«Anteriormente…» de 5 s y después el gancho" : "Gancho de texto",
+    extra: "Playlist por serie; responder comentarios con vídeo",
+    pinnedComment: "La Parte " + (part + 1) + " ya viene. ¿Qué harías tú? 👇",
     editingChanges: [
       isContinuation ? '"Anteriormente..." de 5-8 segundos al inicio (es continuación)' : "Sin 'Anteriormente...' (es Parte 1): entrar directo al conflicto del segundo 0-1",
       "Tarjetas de tiempo en pantalla: «Días después...», «Mientras tanto...»",
@@ -130,29 +145,32 @@ export function buildPlatformAdaptations(input: any): PlatformAdaptation[] {
     title: `${seriesTitle} — Parte ${part}`,
     description: `frutinovela | telenovela de frutas | drama dominicano — ${theme}. Parte ${part} de ${seriesTitle}. Sígueme y entra a la playlist de la serie para verla en orden. Continuará...`,
     hashtags: ["#frutinovela", "#telenoveladefrutas", "#dramadominicano", "#parati", "#novelas"],
-    bestTime: "12:00-13:00 y 19:00-22:00 (hora RD)",
+    bestTime: "12-2 p. m. o 7-10 p. m. (hora RD)",
     frequency: "1-2 publicaciones al día",
     cta: "Sigue la serie en la playlist y comenta: te respondo en video",
     metricsToWatch: ["% de video visto completo", "nuevos seguidores", "búsquedas que trajeron el video"],
     checklist: ["Agregar el episodio a la playlist de la serie en TikTok", "Responder comentarios con video (respuestas en video)", "Descripción con keywords buscables: frutinovela, telenovela de frutas, drama dominicano", "3-5 hashtags", "Archivo propio de TikTok, distinto al de Instagram/Facebook/Shorts"],
-    fileName: `${slug}-parte-${part}-tiktok.mp4`,
+    fileName: `${slug}-parte-${part}-master-tiktok.mp4`,
   };
 
   const shortsTitle = `${theme} 😱 #shorts`.slice(0, 60);
   const youtube: PlatformAdaptation = {
     platform: "YouTube Shorts",
-    recommendedDuration: "Hasta 3 min — ideal 45-90s",
+    recommendedDuration: "Máster o corte de hasta 90 s",
+    start: "Gancho de texto",
+    extra: "Vincular la siguiente parte (vídeo relacionado)",
+    pinnedComment: "Parte " + (part + 1) + " en el vídeo relacionado 👆",
     editingChanges: [
       "Final que empalma con el inicio: la última frase/frame conecta con la primera para crear bucle (loop)",
       "Recorte limpio, SIN marcas de agua de TikTok/Instagram/Facebook",
       "Exportar archivo limpio desde el máster, nunca descargar el video ya publicado en otra plataforma",
       'Vincular la siguiente parte con "video relacionado" de YouTube Shorts',
     ],
-    coverText: `${hook1} (texto corto, legible en miniatura)`,
+    coverText: `Fotograma más fuerte — ${hook1}`,
     title: shortsTitle,
     description: `${theme} — ${seriesTitle}, Parte ${part}. Mira la siguiente parte en el video relacionado. #shorts`,
-    hashtags: ["#shorts", "#frutinovelas", "#dramadominicano"],
-    bestTime: "18:00-21:00 (hora RD) — validar con Métricas",
+    hashtags: ["#shorts", "#frutinovelas"],
+    bestTime: "Cualquier hora",
     frequency: "1 Short por episodio (versión en bucle)",
     cta: "Mira la Parte " + (part + 1) + " en el video relacionado",
     metricsToWatch: ["visto vs deslizado (viewed vs swiped away)", "retención / duración media de la visualización"],
@@ -161,4 +179,21 @@ export function buildPlatformAdaptations(input: any): PlatformAdaptation[] {
   };
 
   return [instagram, facebook, tiktok, youtube];
+}
+
+// Textos de publicación que escribe la IA (título, descripción, hashtags, hora, CTA y comentario
+// fijado por plataforma) encima de la ficha de plantilla. Lo que la IA no da se queda como estaba.
+const KEY_OF: Record<string, PlatformAdaptation["platform"]> = { facebook: "Facebook", tiktok: "TikTok", instagram: "Instagram", youtube: "YouTube Shorts", shorts: "YouTube Shorts" };
+export function mergeModelPlatforms(base: PlatformAdaptation[], model: any): PlatformAdaptation[] {
+  if (!model || typeof model !== "object") return base;
+  const byPlatform = new Map<string, any>();
+  for (const [k, v] of Object.entries(model)) { const name = KEY_OF[k.toLowerCase().replace(/[^a-z]/g, "")]; if (name && v && typeof v === "object") byPlatform.set(name, v); }
+  const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
+  return base.map(a => {
+    const m = byPlatform.get(a.platform);
+    if (!m) return a;
+    const tags = Array.isArray(m.hashtags) ? m.hashtags.map((t: unknown) => String(t).trim()).filter(Boolean).map((t: string) => (t.startsWith("#") ? t : "#" + t)) : [];
+    return { ...a, title: str(m.title) || a.title, description: str(m.description) || a.description, hashtags: tags.length ? tags : a.hashtags,
+      bestTime: str(m.hour) || a.bestTime, cta: str(m.cta) || a.cta, pinnedComment: str(m.pinnedComment) || a.pinnedComment };
+  });
 }

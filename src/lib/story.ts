@@ -44,13 +44,25 @@ function styleRules(style: StyleKey) {
   return [MANUAL_VIRAL, isFruitStyle(style) ? FRUIT_CAST_RULES : "", style === "cristiana" ? CHRISTIAN_RULES : ""].filter(Boolean).join("\n\n");
 }
 
+// Sección «MI PEDIDO» del prompt maestro, con los datos del formulario.
+function miPedido(input: any, style: StyleKey, duration: number, count: number, type: "nueva" | "continuacion" | "replica") {
+  const tipo = type === "replica" ? `réplica de un viral ajeno (copia la estructura y la emoción, nunca personajes, diálogo literal ni marca). Viral: ${String(input.replica || "").trim() || "(sin descripción)"}`
+    : type === "continuacion" ? "continuación (debe entenderse sola, sin haber visto las anteriores)" : "historia nueva (Parte 1 que se entiende sola)";
+  return `## MI PEDIDO
+- Estilo: ${STYLES[style].label}
+- Idea: ${String(input.idea || input.wish || "").trim() || "decide tú lo que más enganche"}
+- Tipo: ${tipo}
+- Duración del máster: ${count * 8} s (${count} escenas de 8 s)
+- Notas: ${String(input.notes || "").trim() || "ninguna"}`;
+}
+
 const CAST_FIELDS = (style: StyleKey) => isFruitStyle(style)
   ? `{"name":"nombre dominicano con la fruta (p. ej. Platanito, Don Coco)","fruit":"plátano","fruitEmoji":"🍌","role":"protagonista humilde","headES":"cabeza de fruta: forma, color, textura, hojas o semilla, ojos y boca expresivos","clothing":"ropa fija de manga larga y accesorios","voice":"edad, tono y manera de hablar","speechStyle":"","subtitleColor":"FFE14D","pronunciations":["palabra = SÍ-la-bas, nunca X"]}`
   : `{"name":"nombre propio","role":"protagonista","visualES":"apariencia física fija","visualEN":"same appearance in English","clothing":"vestuario fijo de los 90","voice":"edad, tono y manera de hablar","subtitleColor":"FF9A1F","pronunciations":[]}`;
 
 function sceneBrief(style: StyleKey, count: number) {
   const st = STYLES[style];
-  return `Eres guionista profesional de microdramas verticales. Escribe una historia original con los hechos concretos de la idea del usuario (relaciones, oficio, lugar, objeto que revela, desenlace), nunca una plantilla.
+  return `FORMATO DE ENTREGA (la app construye los prompts de imagen y animación con tus campos: NO los escribas). Usa los hechos concretos de la idea (relaciones, oficio, lugar, objeto que revela, desenlace).
 ESTILO VISUAL: ${st.visual}
 ESTILO DE VOZ: ${st.voice}
 ESCENAS: exactamente ${count} escenas de 8 segundos. En cada escena habla UN SOLO personaje, una frase de 6 a 14 palabras que quepa en 8 s. Escena 1 = conflicto visible desde el segundo 0. Cada escena avanza la historia con información nueva; nada de repetir frases ni escenas. La última frase es del Narrador: "Lo que X no sabe... es que..."${style === "cristiana" ? ' y después el Narrador pide "Escribe AMÉN"' : ""}.
@@ -61,6 +73,8 @@ ESTRUCTURA: reparte las escenas como Gancho -> Contexto -> Desarrollo -> Clímax
 
 const SCENES_SCHEMA = `"scenes":[{"title":"título corto de la escena","goal":"objetivo narrativo","setting":"","speaker":"","line":"","emotion":"","onScreen":["nombres presentes"],"sfx":"efectos sonoros","music":"música","transition":"transición","link":"conexión con la siguiente escena"}]`;
 // Ficha del episodio y paquete para redes (estructura del prompt maestro).
+// Portada, publicación por plataforma y autoevaluación (secciones 5, 6 y 7 del prompt maestro).
+const PUBLISH_SCHEMA = `"cover":{"frame":"qué fotograma usar (máxima emoción, sin spoiler)","lines":["línea 1","línea 2"],"part":"PARTE 1"},"platforms":{"facebook":{"title":"","description":"","hashtags":[],"hour":"","cta":"","pinnedComment":""},"tiktok":{"title":"","description":"","hashtags":[],"hour":"","cta":"","pinnedComment":""},"instagram":{"title":"","description":"","hashtags":[],"hour":"","cta":"","pinnedComment":""},"youtube":{"title":"","description":"","hashtags":[],"hour":"","cta":"","pinnedComment":""}},"selfScore":{"hook":0,"clarity":0,"escalation":0,"twist":0,"comments":0}`;
 const FICHA_SCHEMA = `"ficha":{"biblicalBase":"libro capítulo:versículos si aplica, si no vacío","synopsis":"","hookImage":"primera imagen impactante","hookText":"frase del fotograma cero","conflict":"qué quiere el protagonista y qué se lo impide","development":"","climax":"","resolution":"","closing":"reflexión, pregunta o conexión con el siguiente episodio"},"social":{"title":"","hooks":["","",""],"frameZeroText":"","tiktokDescription":"","question":"","coverIdea":"portada vertical 9:16","music":"recomendación de música cinematográfica","biblicalPassage":""}`;
 
 // Segunda llamada corta: solo el elenco, cuando el primero vino sin frutas o con nombres genéricos.
@@ -92,13 +106,14 @@ function fallbackNotice(error: unknown) {
 export async function generateSeries(input: any) {
   const style = styleKey(input.style);
   const duration = Number(input.duration || 90);
-  const idea = String(input.idea || "").trim();
+  const idea = String(input.idea || input.replica || "").trim();
   if (!idea) throw new Error("Escribe primero la idea concreta de la historia.");
   if (!process.env.LLM_API_KEY) return { ...templateSeries(input), notice: "El servidor no tiene clave de IA: se usó la plantilla local." };
   try {
     const count = sceneCountFor(duration);
-    const system = `${sceneBrief(style, count)}\n\n${styleRules(style)}${extraContext(input)}\n\nTAREA: crea una SERIE NUEVA a partir de la idea y escribe su EPISODIO 1. Elenco de 3 a 6 personajes.
-Responde SOLO JSON: {"series":{"title":"","logline":"","world":"","tone":""},"characters":[${CAST_FIELDS(style)}],"episode":{"title":"","summary":"3-4 frases con el cliffhanger final","hook":["línea 1","línea 2"],"coverText":"","description":"","hashtags":[],${FICHA_SCHEMA},${SCENES_SCHEMA}}}`;
+    const type = String(input.replica || "").trim() ? "replica" : "nueva";
+    const system = `${styleRules(style)}${extraContext(input)}\n\n${sceneBrief(style, count)}\n\n${miPedido(input, style, duration, count, type)}\n\nTAREA: crea una SERIE NUEVA a partir del pedido y escribe su EPISODIO 1 (Parte 1). Elenco de 3 a 6 personajes.
+Responde SOLO JSON: {"series":{"title":"","logline":"","world":"","tone":""},"characters":[${CAST_FIELDS(style)}],"episode":{"title":"","summary":"3-4 frases con el cliffhanger final","hook":["línea 1","línea 2"],"coverText":"","description":"","hashtags":[],${FICHA_SCHEMA},${PUBLISH_SCHEMA},${SCENES_SCHEMA}}}`;
     const parsed = await askJson(system, JSON.stringify({ idea, duracionSegundos: duration, cuentaPrincipal: input.account?.name, notas: input.notes }));
     let chars = parsed.characters;
     if (castNeedsRepair(chars, style)) chars = await repairCast(chars, style, idea);
@@ -135,11 +150,11 @@ export async function generateNextEpisode(input: any) {
     const castSheet = existing.map(c => isFruitStyle(style)
       ? `- ${c.name} (${c.role}): cabeza entera de ${c.fruit} — ${c.headES}. Ropa: ${c.clothing}. Voz: ${c.voice}.`
       : `- ${c.name} (${c.role}): ${c.visualES}. Ropa: ${c.clothing}. Voz: ${c.voice}.`).join("\n");
-    const system = `${sceneBrief(style, count)}\n\n${styleRules(style)}${extraContext(input)}\n\nTAREA: escribe el EPISODIO ${input.partNumber} de la serie "${input.series?.title}", continuando exactamente donde terminó el anterior (retoma su cliffhanger en la escena 1; si es para TikTok/Facebook puede abrir con "Anteriormente...").
+    const system = `${styleRules(style)}${extraContext(input)}\n\n${sceneBrief(style, count)}\n\n${miPedido(input, style, duration, count, "continuacion")}\n\nTAREA: escribe el EPISODIO ${input.partNumber} de la serie "${input.series?.title}", continuando exactamente donde terminó el anterior (retoma su cliffhanger en la escena 1; si es para TikTok/Facebook puede abrir con "Anteriormente...").
 ELENCO FIJO (reutilízalo SIN cambiar nombre, fruta ni ropa):
 ${castSheet}
 Si la historia necesita un personaje nuevo, créalo en newCharacters (máximo 2) con una fruta que no use nadie del elenco.
-Responde SOLO JSON: {"episode":{"title":"","summary":"","hook":["",""],"coverText":"","description":"","hashtags":[],${FICHA_SCHEMA},${SCENES_SCHEMA}},"newCharacters":[${CAST_FIELDS(style)}]}`;
+Responde SOLO JSON: {"episode":{"title":"","summary":"","hook":["",""],"coverText":"","description":"","hashtags":[],${FICHA_SCHEMA},${PUBLISH_SCHEMA},${SCENES_SCHEMA}},"newCharacters":[${CAST_FIELDS(style)}]}`;
     const parsed = await askJson(system, JSON.stringify({
       serie: input.series, mundo: input.bible, episodiosAnteriores: input.history,
       deseoDelUsuario: input.wish || "Decide tú lo que pasa para que enganche más", duracionSegundos: duration,

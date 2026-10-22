@@ -78,15 +78,29 @@ export function normalizeCast(list: unknown, style: StyleKey, opts: { taken?: Ca
   const usedNames = new Set<string>(taken.map(c => norm(c.name)));
   const usedColors = new Set<string>(taken.map(c => c.subtitleColor.replace("#", "").toUpperCase()));
   const fruitStory = isFruitStyle(style);
+  // Frutas asignadas antes de construir las fichas. Nunca dos personajes con la misma fruta:
+  // primero la recibe quien la lleva en el nombre (Don Coco); al otro se le da la variante
+  // (coco → coco joven, p. ej. Coquita) o la fruta que mejor encaje con su rol.
+  const assigned: (FruitInfo | undefined)[] = new Array(rows.length);
+  if (fruitStory) {
+    const ctx = (r: any) => `${clean(r.name)} ${clean(r.role)} ${clean(r.visualES)} ${clean(r.speechStyle)}`;
+    const ownsByName = (r: any) => { const a = fruitInfo(r.fruit), b = fruitInfo(r.name); return a && b && a.fruit === b.fruit ? 1 : 0; };
+    const order = rows.map((_, i) => i).sort((a, b) => ownsByName(rows[b]) - ownsByName(rows[a]) || a - b);
+    for (const i of order) {
+      const r: any = rows[i];
+      let f = fruitInfo(r.fruit) || fruitInfo(r.name);
+      if (f && usedFruits.has(f.fruit)) f = FRUIT_CATALOG.find(x => x.fruit !== f!.fruit && x.fruit.startsWith(f!.fruit) && !usedFruits.has(x.fruit)) || fruitForRole(ctx(r), usedFruits);
+      if (!f) f = fruitForRole(ctx(r), usedFruits);
+      usedFruits.add(f.fruit); assigned[i] = f;
+    }
+  }
   return rows.map((row: any, i) => {
     const role = clean(row.role) || (i === 0 ? "protagonista" : "");
     let name = clean(row.name);
     const context = `${name} ${role} ${clean(row.visualES)} ${clean(row.speechStyle)}`;
     let fruit: FruitInfo | undefined;
     if (fruitStory) {
-      fruit = fruitInfo(row.fruit) || fruitInfo(name);
-      if (!fruit || usedFruits.has(fruit.fruit) && !fruitInfo(row.fruit)) fruit = fruitForRole(context, usedFruits);
-      usedFruits.add(fruit.fruit);
+      fruit = assigned[i]!;
       if (isGenericName(name)) name = fruitName(fruit.fruit, usedNames);
     } else if (isGenericName(name)) {
       name = ["Elena", "Rafael", "Doña Carmen", "Julián", "Marisol", "Don Ernesto"][i % 6];
@@ -94,7 +108,7 @@ export function normalizeCast(list: unknown, style: StyleKey, opts: { taken?: Ca
     if (usedNames.has(norm(name))) name = `${name} ${i + 1}`;
     usedNames.add(norm(name));
 
-    const fruitName_ = fruitStory ? clean(row.fruit) && fruitInfo(row.fruit) ? clean(row.fruit) : fruit!.fruit : undefined;
+    const fruitName_ = fruitStory ? fruit!.fruit : undefined;
     const headES = fruitStory ? (clean(row.headES) || fruit!.head) : undefined;
     const female = FEMALE.test(norm(context));
     const clothing = clean(row.clothing) || (female ? "blusa de manga larga y falda por debajo de la rodilla" : "camisa de manga larga y pantalón de tela");

@@ -31,6 +31,9 @@ export default function PlatformAdaptations({ adaptations }:{ adaptations: Platf
             <span className="block"><b>Mejor horario:</b> {a.bestTime}</span>
             <span className="block"><b>Frecuencia:</b> {a.frequency}</span>
             <span className="block"><b>CTA:</b> {a.cta}</span>
+            {a.pinnedComment && <span className="block"><b>Comentario fijado:</b> {a.pinnedComment}</span>}
+            {a.start && <span className="block"><b>Inicio:</b> {a.start}</span>}
+            {a.extra && <span className="block"><b>Extra:</b> {a.extra}</span>}
             <span className="block"><b>Métricas:</b> {a.metricsToWatch.join(", ")}</span>
           </p>
           <div className="text-xs mt-2"><b>Cambios de montaje:</b><ul className="list-disc ml-4 mt-1 space-y-1">{a.editingChanges.map((c,i)=><li key={i}>{c}</li>)}</ul></div>
