@@ -12,6 +12,7 @@ import MontajePanel from "./MontajePanel";
 import { STYLES, type StyleKey } from "@/lib/knowledge";
 import { templateSeries, templateNext } from "@/lib/story";
 import { isGenericName } from "@/lib/cast";
+import { buildFlowBatch } from "@/lib/production";
 
 type View = "inicio" | "nueva" | "continuar" | "resultado";
 
@@ -336,6 +337,7 @@ function Result({ episode: out, part, seriesTitle, onBack, onNext, onRecreate }:
   const dolaDuration = out.dolaDuration || 60;
   const sec = scenes.length ? 8 : 15;
   const tabs: [Tab, string][] = [...(cast.length ? [["elenco", "Elenco"], ["escenas", "Escenas"]] as [Tab, string][] : []), ["guion", "Guion"], ["prompts", "Prompts"], ["plataformas", "Plataformas"], ["archivos", "Archivos"], ["montaje", "Montaje"]];
+  const lote = useMemo(() => buildFlowBatch(out), [out]);
   const allScenes = scenes.map((s: any) => `ESCENA ${s.n} (${s.speaker})\n\nIMAGEN PARA FLOW:\n${s.imagePromptFlow}\n\nANIMACIÓN:\n${s.animationPrompt}`).join("\n\n----------\n\n");
   return <>
     <button onClick={onBack} className="mb-4 text-sm text-slate-400 hover:text-white">← Inicio</button>
@@ -379,6 +381,23 @@ function Result({ episode: out, part, seriesTitle, onBack, onNext, onRecreate }:
         </article>)}
       </div>}
       {tab === "escenas" && <div>
+        <section className="mb-4 rounded-2xl border border-sky-400/25 bg-sky-400/[.06] p-4" aria-label="Lote para Flow">
+          <div className="flex flex-wrap items-center gap-2"><h3 className="font-bold text-white">⚡ Lote para Flow</h3><span className="text-xs text-slate-300">{lote.count.fichas} fichas + {lote.count.escenas} escenas en un solo pegado</span>
+            <a href="https://flow.google.com/" target="_blank" rel="noreferrer" className="ml-auto text-xs font-semibold text-sky-300 hover:text-sky-200">Abrir Flow ↗</a></div>
+          <ol className="mt-2 list-decimal space-y-0.5 pl-5 text-xs leading-5 text-slate-300">
+            <li>Copia el lote completo y pégalo una sola vez en Flow.</li>
+            <li>Flow crea primero las fichas <b>[P01]</b>, <b>[P02]</b>… y las usa como referencia en las escenas <b>[001]</b>, <b>[002]</b>…</li>
+            <li>Cada imagen queda nombrada con su identificador: así sabes a qué escena va sin revisarlas una por una.</li>
+          </ol>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <CopyButton text={lote.full} label={`Copiar lote completo (${lote.count.fichas + lote.count.escenas} imágenes)`} />
+            <CopyButton text={lote.fichas} label="Solo fichas" />
+            <CopyButton text={lote.escenas} label="Solo escenas" />
+            <CopyButton text={lote.animaciones} label="Todas las animaciones" />
+            <CopyButton text={lote.dialogos} label="Diálogos en limpio" />
+          </div>
+          <p className="mt-2 text-[11px] text-slate-400">Si Flow corta un lote largo, pega primero «Solo fichas» y luego «Solo escenas».</p>
+        </section>
         <div className="mb-3 flex flex-wrap items-center gap-2"><p className="text-sm text-slate-300">{scenes.length} escenas de 8 s: una imagen de Flow y un clip por escena, un solo personaje hablando.</p><span className="ml-auto"><CopyButton text={allScenes} label="Copiar todas las escenas" /></span></div>
         <ol className="space-y-3">{scenes.map((s: any) => { const c = cast.find((x: any) => x.name === s.speaker); return <li key={s.n} className="rounded-2xl border border-white/10 bg-[#151C2B] p-4">
           <div className="flex flex-wrap items-center gap-2"><span className="rounded-lg bg-amber-400 px-2 py-0.5 text-xs font-black text-black">{s.n}</span><span className="text-xs text-slate-400">{(s.n - 1) * 8}-{s.n * 8} s · {s.setting}</span></div>
@@ -410,6 +429,7 @@ function Result({ episode: out, part, seriesTitle, onBack, onNext, onRecreate }:
         <div className="flex flex-wrap gap-2">
           <DownloadJson data={out.guionJson || {}} filename="guion.json" />
           {cast.length > 0 && <DownloadText text={episodeMarkdown(out, seriesTitle, part)} filename={`elenco-escenas-ep${part}.md`} label="Descargar elenco y escenas (.md)" />}
+          {scenes.length > 0 && <DownloadText text={lote.full} filename={`lote-flow-ep${part}.txt`} label="Descargar lote para Flow (.txt)" />}
           <DownloadJson data={out.platformAdaptations || []} filename="adaptaciones-plataformas.json" />
         </div>
         <p className="text-xs text-slate-500">guion.json es el archivo para el montaje con subtitular.py: colores sin #, gancho de 2 líneas, cierre y un clip por escena.</p>

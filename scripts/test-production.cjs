@@ -64,7 +64,17 @@ function checkChristian(r, label) {
   checkChristian(t2, "plantilla cristiana");
   const t3 = templateSeries({ idea: "Una cantante reconoce al hombre que la dejó en el altar", style: "cine90", duration: 90 });
   assert.ok(t3.characters.every(c => !c.fruit), "cine90 sin frutas");
-  assert.match(t3.episode.scenes[0].imagePromptFlow, /^Cinematic 1990s/);
+  assert.ok(t3.episode.scenes[0].imagePromptFlow.startsWith("[001] Cinematic 1990s"), "cine90: imagen en inglés con identificador");
+  // Lote para Flow: instrucción + fichas [P01..] + escenas [001..], con identificadores de 5 caracteres.
+  const { buildFlowBatch } = require("../src/lib/production.ts");
+  const lote = buildFlowBatch(t1.episode);
+  assert.ok(lote.full.startsWith("Crea todas las imágenes"), "lote sin instrucción");
+  assert.equal(lote.count.fichas, t1.characters.length);
+  assert.equal(lote.count.escenas, t1.episode.scenes.length);
+  assert.ok(lote.full.includes("[P01] ") && lote.full.includes("[001] ") && !lote.full.includes("[001] [001]"), "identificadores");
+  const shots = t1.episode.scenes.map(s => s.imagePromptFlow.match(/Encuadre: ([^.]+)/)[1]);
+  assert.ok(shots.every((s, i) => i === 0 || s !== shots[i - 1]), "encuadre repetido en escenas seguidas");
+  assert.match(t1.episode.scenes[0].animationPrompt, /0–2 s: .*2–5 s: .*5–8 s: /s, "microescenas");
   // Reparación en el código: nombres genéricos -> fruta por rol.
   const fixed = normalizeCast([{ name: "Protagonista", role: "motoconchista humilde" }, { name: "Antagonista", role: "papá rico" }], "frutinovela");
   assert.deepEqual(fixed.map(c => c.fruit), ["plátano", "coco"]);

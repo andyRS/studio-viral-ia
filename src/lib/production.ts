@@ -59,35 +59,55 @@ function pronunciationFor(speakerMember: CastMember | undefined, line: string) {
   return list.length ? list.join("; ") : "tíguere = TÍ-gue-re, nunca tigre; yipeta = yi-PE-ta; vaina = VAI-na, nunca baila; Piña = PI-ña; mi cualto con L";
 }
 
-function imagePrompt(s: { setting: string; speaker: string; emotion: string }, member: CastMember | undefined, others: CastMember[], style: StyleKey) {
+// Variedad visual obligatoria: cada escena abre con un encuadre y movimiento distintos al anterior.
+const SHOTS: { es: string; en: string; move: string; moveEn: string }[] = [
+  { es: "plano general", en: "wide shot", move: "dolly lento hacia adelante", moveEn: "slow dolly in" },
+  { es: "primer plano", en: "close-up", move: "cámara fija con ligero zoom", moveEn: "static camera, subtle zoom" },
+  { es: "plano detalle de un objeto clave", en: "detail shot of a key object", move: "paneo suave", moveEn: "gentle pan" },
+  { es: "plano medio", en: "medium shot", move: "cámara en mano", moveEn: "handheld camera" },
+  { es: "contraplano por encima del hombro", en: "over-the-shoulder shot", move: "travelling lateral", moveEn: "lateral tracking shot" },
+  { es: "plano a contraluz", en: "backlit silhouette shot", move: "grúa descendente", moveEn: "descending crane" },
+  { es: "contrapicado", en: "low-angle shot", move: "tilt hacia arriba", moveEn: "tilt up" },
+  { es: "picado", en: "high-angle shot", move: "órbita lenta alrededor del personaje", moveEn: "slow orbit around the character" },
+];
+export const shotFor = (i: number) => SHOTS[i % SHOTS.length];
+
+// Identificadores de 5 caracteres para que Flow renombre cada imagen: fichas [P01], escenas [001].
+export const sceneId = (n: number) => `[${String(n).padStart(3, "0")}]`;
+export const sheetId = (n: number) => `[P${String(n).padStart(2, "0")}]`;
+const stripId = (t: string) => String(t || "").replace(/^\[(?:P\d{2}|\d{3})\]\s*/, "");
+
+function imagePrompt(s: { setting: string; speaker: string; emotion: string }, member: CastMember | undefined, others: CastMember[], style: StyleKey, i: number) {
+  const shot = shotFor(i);
   if (!isFruitStyle(style)) {
     const who = member ? `${member.name} (${member.visualEN || member.visualES}; outfit: ${member.clothing})` : "the scene";
-    return `Cinematic 1990s Dominican romance film still, 35mm grain, warm golden light, vertical 9:16. Reference: character sheet of ${member?.name || "the cast"}. Scene: ${s.setting}. ${who}, ${s.emotion}, medium shot.${others.length ? ` Also present: ${others.map(o => o.name).join(", ")}.` : ""} Real people, no text.`;
+    return `Cinematic 1990s Dominican romance film still, 35mm grain, warm golden light, vertical 9:16. Reference: character sheet of ${member?.name || "the cast"}. Scene: ${s.setting}. ${who}, ${s.emotion}, ${shot.en}.${others.length ? ` Also present: ${others.map(o => o.name).join(", ")}.` : ""} Real people, no text, no watermark.`;
   }
   const guard = style === "cristiana" ? ` ${CHRISTIAN_SCENE_GUARD[0].toUpperCase()}${CHRISTIAN_SCENE_GUARD.slice(1)}.` : "";
-  const who = member ? `${member.name} (cabeza entera de ${member.fruit}; ${member.clothing}) con expresión ${s.emotion}, plano medio` : `voz en off, plano general`;
-  return `Imagen 3D estilo Pixar premium, vertical 9:16. Referencia: ficha de ${member?.name || "los personajes"}. Escena: ${s.setting}. ${who}.${others.length ? ` También en escena: ${others.map(o => `${o.name} (cabeza de ${o.fruit})`).join(", ")}.` : ""} Cabeza de fruta en cada personaje, nunca cara humana.${guard} Sin texto ni letreros.`;
+  const who = member ? `${member.name} (cabeza entera de ${member.fruit}; ${member.clothing}) con expresión ${s.emotion}` : `sin personaje hablando`;
+  return `Imagen 3D estilo Pixar premium, vertical 9:16. Encuadre: ${shot.es}. Referencia: ficha de ${member?.name || "los personajes"}. Escena: ${s.setting}. ${who}.${others.length ? ` También en escena: ${others.map(o => `${o.name} (cabeza de ${o.fruit})`).join(", ")}.` : ""} Cabeza de fruta en cada personaje, nunca cara humana.${guard} Sin texto, sin letreros, sin marca de agua.`;
 }
 
-function animationPrompt(s: { setting: string; speaker: string; line: string; emotion: string }, member: CastMember | undefined, style: StyleKey) {
+function animationPrompt(s: { setting: string; speaker: string; line: string; emotion: string }, member: CastMember | undefined, style: StyleKey, i: number) {
   const narrator = s.speaker === NARRATOR;
+  const shot = shotFor(i);
   if (!isFruitStyle(style)) {
     const voice = narrator ? `Off-screen narrator voice; nobody moves their lips.` : `Only ${member!.name} speaks; lip sync only for ${member!.name}. Voice: ${member!.voice}.`;
     return `Use Seedance 2.5. 1990s Dominican romance film, 35mm grain, warm golden light, vertical 9:16, 8 seconds.
 References: image 1 = scene${member ? `; image 2 = character sheet of ${member.name}` : ""}.
 CHARACTERS: ${member ? `${member.name}: ${member.visualEN || member.visualES}; outfit: ${member.clothing}. Real people.` : "No one speaks on camera."}
 SCENE: ${s.setting}.
-SHOTS: 0–2 s: establishing shot. 2–8 s: ${narrator ? "slow push-in on the scene" : `close-up of ${member!.name}`}, ${narrator ? "the narrator says" : `${member!.name} says with ${s.emotion}`} (in Spanish, exact words): "${s.line}"
+SHOTS: 0–2 s: ${shot.en}, ${shot.moveEn}, ${narrator ? "the setting" : `${member!.name} reacts with ${s.emotion}`}. 2–5 s: ${narrator ? "slow push-in while the narrator says" : `medium shot, slow dolly toward ${member!.name}, who says with ${s.emotion}`} (in Spanish, exact words): "${s.line}" 5–8 s: ${narrator ? "wide shot holding on the scene" : `close-up of ${member!.name} holding the emotion after the line, static camera`}.
 PRONUNCIATION: Latin American Spanish, every word complete, never English accent.
 VOICES: ${voice} No subtitles or on-screen text.`;
   }
   const guard = style === "cristiana" ? ` ${CHRISTIAN_SCENE_GUARD[0].toUpperCase()}${CHRISTIAN_SCENE_GUARD.slice(1)}.` : "";
   const personajes = member
-    ? `${member.name}: su cabeza es entera una ${member.fruit} (${member.headES}); ${member.clothing}. Cabeza de fruta en cada toma, nunca cara humana.`
+    ? `${member.name}: su cabeza es entera de ${member.fruit} (${member.headES}); ${member.clothing}. Cabeza de fruta en cada toma, nunca cara humana.`
     : "Personajes con cabeza de fruta, nunca cara humana; nadie habla a cámara.";
   const tomas = narrator
-    ? `0–2 s: plano general de la escena. 2–8 s: acercamiento lento mientras el narrador dice en voz en off: "${s.line}"`
-    : `0–2 s: plano de establecimiento, ${member!.name} reacciona con ${s.emotion}. 2–8 s: plano medio de ${member!.name}, que dice con ${s.emotion}: "${s.line}"`;
+    ? `0–2 s: ${shot.es} de la escena, ${shot.move}. 2–6 s: acercamiento lento mientras el narrador dice en voz en off: "${s.line}" 6–8 s: plano general que se sostiene en silencio.`
+    : `0–2 s: ${shot.es}, ${shot.move}; ${member!.name} reacciona con ${s.emotion}. 2–5 s: plano medio con dolly lento hacia ${member!.name}, que dice con ${s.emotion}: "${s.line}" 5–8 s: primer plano de ${member!.name} sosteniendo la emoción al terminar la frase, cámara fija.`;
   const voces = narrator
     ? `VOCES: Narrador: voz masculina profunda y cálida, en off. Español latino neutro, cada palabra completa, nunca acento inglés. Nadie mueve los labios. Sin subtítulos ni texto en pantalla.`
     : `VOCES: ${member!.name}: ${member!.voice}. Español latino neutro, cada palabra completa, nunca acento inglés. Solo habla ${member!.name}; sincronización de labios solo para quien habla. Sin subtítulos ni texto en pantalla.`;
@@ -137,8 +157,8 @@ export function buildProduction(raw: any, ctx: Ctx) {
     const others = s.present.map((p: unknown) => byName.get(findSpeaker(p, cast))).filter((m: CastMember | undefined): m is CastMember => !!m && m !== member);
     return {
       n: i + 1, durationSec: SCENE_SECONDS, setting: s.setting, speaker: s.speaker, line: s.line, emotion: s.emotion,
-      imagePromptFlow: imagePrompt(s, member, others, style),
-      animationPrompt: animationPrompt(s, member, style),
+      imagePromptFlow: `${sceneId(i + 1)} ${imagePrompt(s, member, others, style, i)}`,
+      animationPrompt: animationPrompt(s, member, style, i),
     };
   });
 
@@ -188,4 +208,21 @@ export function templateScenes(idea: string, cast: CastMember[], style: StyleKey
   const out = beats.slice(0, Math.max(2, count - 1)).map(([m, setting, emotion, line]) => ({ speaker: m.name, setting, emotion, line }));
   out.push({ speaker: NARRATOR, setting: "plano final de la calle", emotion: "intriga", line: `Lo que ${a.name} no sabe… es que la verdad apenas comienza.` });
   return { title: "Episodio 1", summary: idea, scenes: out };
+}
+
+// ---------- LOTE PARA FLOW (adaptado del flujo «SEPARA») ----------
+// Un solo bloque para pegar en Flow: instrucción + fichas [P01..] + escenas [001..].
+// Se calcula desde el episodio guardado, así también funciona con episodios anteriores.
+export function buildFlowBatch(out: any) {
+  const cast: any[] = Array.isArray(out?.cast) ? out.cast : [];
+  const scenes: any[] = Array.isArray(out?.scenes) ? out.scenes : [];
+  const vertical = !/16:9/.test(String(scenes[0]?.imagePromptFlow || ""));
+  const fichas = cast.filter(c => c.flowPrompt).map((c, i) => `${sheetId(i + 1)} ${stripId(c.flowPrompt)}`);
+  const escenas = scenes.map((sc, i) => `${sceneId(sc.n || i + 1)} ${stripId(sc.imagePromptFlow)}`);
+  const legend = cast.filter(c => c.flowPrompt).map((c, i) => `${sheetId(i + 1)} = ${c.name}`).join(", ");
+  const instruction = `Crea todas las imágenes según los prompts de abajo, una imagen por prompt, en formato ${vertical ? "vertical 9:16" : "16:9"}. Cada prompt empieza con su identificador entre corchetes. Renombra automáticamente cada imagen usando los 5 primeros caracteres de su prompt (el identificador, por ejemplo [001]). Genera primero las fichas de personaje [P01], [P02]… y úsalas como referencia en cada escena donde aparece ese personaje, para que su cabeza, ropa y colores sean idénticos en todas las imágenes${legend ? ` (${legend})` : ""}. No añadas texto ni marcas de agua.`;
+  const full = [instruction, "", ...fichas.flatMap(f => [f, ""]), ...escenas.flatMap(e => [e, ""])].join("\n").trim();
+  const dialogos = scenes.map(sc => `${sc.speaker}: ${sc.line}`).join("\n");
+  const animaciones = scenes.map((sc, i) => `${sceneId(sc.n || i + 1)}\n${sc.animationPrompt}`).join("\n\n");
+  return { full, fichas: fichas.join("\n\n"), escenas: escenas.join("\n\n"), dialogos, animaciones, count: { fichas: fichas.length, escenas: escenas.length } };
 }

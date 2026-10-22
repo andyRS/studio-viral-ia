@@ -66,7 +66,7 @@ export function flowPromptFor(c: Pick<CastMember, "name" | "fruit" | "headES" | 
     return `Photorealistic 1990s Dominican romance film character sheet, full body, standing, neutral grey background, vertical 9:16, 35mm film grain, warm light. ${c.visualEN || c.visualES}. Outfit: ${c.clothing}. Real human, natural skin, no text.`;
   }
   const trait = c.role ? `${c.role}` : "expresiva";
-  return `Personaje 3D estilo Pixar premium, cuerpo entero, de pie, fondo gris neutro, vertical 9:16. Su cabeza es entera una ${c.fruit}: ${c.headES}. ${c.clothing}. Expresión: ${trait}. Cuerpo humano con manos. Nunca cara humana. Sin texto.`;
+  return `Personaje 3D estilo Pixar premium, cuerpo entero, de pie, fondo gris neutro, vertical 9:16. Su cabeza es entera de ${c.fruit}: ${c.headES}. ${c.clothing.charAt(0).toUpperCase()}${c.clothing.slice(1)}. Expresión: ${trait}. Cuerpo humano con manos. Nunca cara humana. Sin texto.`;
 }
 
 // Normaliza el elenco. Si al de frutas le falta la fruta o tiene un nombre genérico, la asigna
