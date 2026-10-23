@@ -2,7 +2,7 @@
 
 Monta un episodio a partir de los clips generados (Dola, Higgsfield…) y su `guion.json`:
 une los clips en 1080x1920, quema subtítulos karaoke con el color de cada personaje,
-pone el gancho los primeros 3 s, las tarjetas y el cierre, y quita la marca de agua de Dola.
+pone el gancho los primeros 3 s, las tarjetas y la tarjeta final, y quita la marca de agua de Dola o Pavo.
 
 ## Archivos
 - `subtitular.py` — el script de montaje (se puede usar solo por línea de comandos).
@@ -16,7 +16,8 @@ pone el gancho los primeros 3 s, las tarjetas y el cierre, y quita la marca de a
   "colores": {"Manguito": "FF9A1F", "Chinola": "C08BFF"},
   "gancho": ["Línea 1 del gancho...", "línea 2"],
   "cierre": "Continuará...",
-  "delogo": "x=603:y=1232:w=104:h=36",
+  "cierre_cta": "Comenta PARTE 2",
+  "marca": "pavo",
   "clips": [
     [["Chinola", "Manguito... ¿quién es esta señora?"], ["Manguito", "..."]],
     [],
@@ -28,7 +29,9 @@ pone el gancho los primeros 3 s, las tarjetas y el cierre, y quita la marca de a
 - `[]` = clip sin diálogo (por ejemplo una tarjeta "Un año después...").
 - Los nombres de `colores` deben coincidir exactamente con los hablantes.
 - Colores en hex **sin** `#`.
-- `delogo` es opcional: Dola tiene un área predefinida para 720x1280; para una marca fija de Pavo u otra fuente hay que indicar su rectángulo en píxeles y revisar el resultado.
+- `marca` (opcional): `"dola"` o `"pavo"`. Reescala cada clip a la resolución de esa herramienta (Dola 720x1280, Pavo 704x1280) y borra su marca de agua, aunque algún clip venga en otra resolución. Para otra marca, `delogo` con coordenadas propias (`x=..:y=..:w=..:h=..`, se valida).
+- `cierre` + `cierre_cta` (opcionales): tarjeta final de 3 s sobre el último cuadro difuminado y oscurecido; `cierre` en blanco grande ("Continuará..." o "FIN" en el último episodio) y `cierre_cta` en amarillo debajo ("Comenta PARTE 2", "Escribe AMÉN"). Los emojis se quitan porque la fuente no los dibuja.
+- v2: los bloques de subtítulos ya nunca se enciman.
 
 ## Uso por línea de comandos
 ```
@@ -37,6 +40,11 @@ python3 -I subtitular.py guion.json salida.mp4 clip1.mp4 clip2.mp4 ...
 
 ## API
 - `GET /salud` → `{"ok": true}`
+- `POST /trabajos` (multipart, mismos campos y autorización que `/montar`) → `{"id": "..."}` al instante. Es lo que usa la app.
+- `GET /trabajos/{id}?desde=N` → estado en vivo `{"estado","pct","paso","log","seq","error"}`. Espera hasta 20 s a que haya un paso nuevo (la página ve el montaje en vivo y la conexión abierta evita que Fly apague la máquina a mitad).
+- `GET /trabajos/{id}/video` → el vídeo terminado; se guarda 30 min. El id (aleatorio, 128 bits) hace de llave, así un montaje largo no depende del pase de 15 min.
+- Un montaje a la vez; los demás quedan «en cola». `subtitular.py` informa su avance con líneas `PROGRESO <pct> <mensaje>`.
+- Velocidad: `WHISPER_MODEL=base` y `X264_PRESET=veryfast` (en el Dockerfile). Para ir aún más rápido, una máquina con más CPU: en `fly.toml`, `cpu_kind = "performance"`.
 - `POST /montar` (multipart): campo `guion` (archivo) y uno o varios campos `clips` (en orden).
   Autorización obligatoria con `MONTAJE_TOKEN`, de una de estas dos formas:
   - `Authorization: Bearer <MONTAJE_TOKEN>` — para curl o scripts propios.

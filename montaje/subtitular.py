@@ -11,14 +11,16 @@ guion.json:
 {
   "colores": {"FRESA": "FF4D6D", "MANGO": "FF9A1F"},
   "gancho": ["Le dijo que estaba en su asiento...", "sin saber quién era él"],   (opcional)
-  "cierre": "Continuará...",                                                     (opcional)
+  "cierre": "Continuará...",          (opcional; "FIN" en el último episodio)
+  "cierre_cta": "Comenta PARTE 2",     (opcional; línea amarilla debajo, p.ej. "Escribe AMÉN")
   "clips": [
     [["FRESA", "Disculpe... usted está en mi asiento."], ["MANGO", "¿Ah, sí?"]],
     [["MANGO", "Esta canción es para la fresa de la fila tres."]]
   ]
 }
 Opcionales:
-  "delogo": "x=603:y=1232:w=104:h=36"   quita la marca de agua de Dola (clips 720x1280)
+  "marca": "dola" | "pavo"   quita la marca de agua de esa herramienta (reescala antes los clips con otra resolución)
+  "delogo": "x=..:y=..:w=..:h=.."   coordenadas propias si la marca es otra
   Un bloque vacío [] sirve para clips sin diálogo (tarjetas "Un año después...").
 Variables de entorno: FONT_DIR (carpeta con Poppins-Bold.ttf), WHISPER_MODEL (small por defecto).
 """
@@ -34,8 +36,20 @@ assert len(G["clips"]) == len(clips), "un bloque de diálogo por clip"
 tmp = tempfile.mkdtemp()
 
 
+# Marcas de agua conocidas: resolución nativa de sus clips + zona a borrar
+MARCAS = {
+    "dola": {"res": "720:1280", "delogo": "x=603:y=1232:w=104:h=36"},
+    "pavo": {"res": "704:1280", "delogo": "x=614:y=1220:w=66:h=38"},
+}
+
+
 def run(cmd):
     subprocess.run(cmd, check=True)
+
+
+def progreso(pct, msg):
+    """Línea que lee server.py para mostrar el montaje en vivo: PROGRESO <0-100> <mensaje>."""
+    print(f"PROGRESO {int(pct)} {msg}", flush=True)
 
 
 def dur(f):
@@ -50,10 +64,12 @@ def norm(w):
 
 
 # 1) palabras con tiempo por clip
+progreso(2, f"Preparando {len(clips)} clips y cargando Whisper")
 from faster_whisper import WhisperModel
 model = WhisperModel(os.environ.get("WHISPER_MODEL", "small"), compute_type="int8")
 offsets, words_per_clip, t = [], [], 0.0
 for ci, clip in enumerate(clips):
+    progreso(5 + 55 * ci / len(clips), f"Escuchando el clip {ci + 1} de {len(clips)} con Whisper")
     offsets.append(t)
     wav = os.path.join(tmp, f"c{ci}.wav")
     run(["ffmpeg", "-v", "error", "-y", "-i", clip, "-ac", "1", "-ar", "16000", wav])
@@ -70,7 +86,12 @@ for ci, clip in enumerate(clips):
         if len(best) >= 0.6 * len(prompt.split()):
             break
     words_per_clip.append(best)
+    if best:
+        progreso(5 + 55 * (ci + 1) / len(clips), f"Clip {ci + 1}: oí «{' '.join(x['w'] for x in best)[:120]}»")
+    elif G["clips"][ci]:
+        progreso(5 + 55 * (ci + 1) / len(clips), f"Clip {ci + 1}: no se oyó voz; los subtítulos se reparten por tiempo")
     t += dur(clip)
+progreso(61, "Alineando el texto del guion con las voces")
 
 # 2) alinear texto del guion con las palabras oídas
 sw, times = [], []   # sw: (hablante, palabra)
@@ -159,9 +180,10 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 for n, ch in enumerate(events):
     spk = sw[ch[0]][0]
     st, en = times[ch[0]][0], times[ch[-1]][1] + 0.35
-    if n + 1 < len(events):
-        en = min(en, times[events[n + 1][0]][0] - 0.02)
     en = max(en, times[ch[-1]][1])
+    if n + 1 < len(events):
+        en = min(en, times[events[n + 1][0]][0] - 0.02)   # nunca se encima con el siguiente bloque
+    en = max(en, st + 0.2)
     parts, cur = [], st
     for k in ch:
         ws, we = times[k]
@@ -170,13 +192,17 @@ for n, ch in enumerate(events):
     ass.append(f"Dialogue: 0,{ts(st)},{ts(en)},Sub,{spk},0,0,0,,{{\\1c{bgr(G['colores'][spk])}\\2c&H00FFFFFF&}}{' '.join(parts)}\n")
 ass_path = os.path.join(tmp, "subs.ass")
 open(ass_path, "w", encoding="utf-8").writelines(ass)
+progreso(65, f"Subtítulos de colores listos: {len(events)} bloques sin encimarse")
 
 # 4) unir clips + cierre, gancho y subtítulos
 inputs, fc, cat = [], "", ""
 for ci, c in enumerate(clips):
     inputs += ["-i", c]
     dl = ""
-    if G.get("delogo"):   # p.ej. "x=603:y=1232:w=104:h=36" (marca fija)
+    preset = MARCAS.get(str(G.get("marca", "")).lower())
+    if preset:   # todos los clips se llevan primero a la resolución de esa herramienta y se borra su marca
+        dl = f"scale={preset['res']},setsar=1,delogo={preset['delogo']},"
+    elif G.get("delogo"):   # coordenadas propias, p.ej. "x=603:y=1232:w=104:h=36"
         if not re.fullmatch(r"x=\d{1,4}:y=\d{1,4}:w=\d{1,4}:h=\d{1,4}", str(G["delogo"])):
             raise ValueError("delogo debe indicar x, y, w y h en píxeles")
         dl = f"delogo={G['delogo']},"
@@ -185,10 +211,24 @@ for ci, c in enumerate(clips):
     cat += f"[v{ci}][a{ci}]"
 n = len(clips)
 if G.get("cierre"):
+    progreso(68, f"Tarjeta final: «{G['cierre']}»" + (f" + «{G['cierre_cta']}»" if G.get("cierre_cta") else ""))
+    # Tarjeta final de 3 s: el último cuadro del episodio difuminado y oscurecido, con
+    # "Continuará..." (o "FIN") en grande y una línea de llamada a la acción opcional debajo.
     end = os.path.join(tmp, "end.mp4")
-    run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=black:s=1080x1920:r=24:d=3",
-         "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", "3", "-vf",
-         f"drawtext=fontfile={FONT}:text='{G['cierre']}':fontsize=90:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2",
+    last = os.path.join(tmp, "last.png")
+    run(["ffmpeg", "-v", "error", "-y", "-sseof", "-0.3", "-i", clips[-1], "-frames:v", "1",
+         "-vf", "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920", last])
+    sin_emoji = lambda t: "".join(ch for ch in str(t) if ord(ch) < 0x2190).strip()
+    t1 = os.path.join(tmp, "cierre1.txt"); open(t1, "w", encoding="utf-8").write(sin_emoji(G["cierre"]))
+    vf = (f"boxblur=20:2,eq=brightness=-0.35,"
+          f"drawtext=fontfile={FONT}:textfile={t1}:fontsize=96:fontcolor=white:borderw=5:bordercolor=black@0.7:"
+          f"x=(w-text_w)/2:y=(h-text_h)/2-60")
+    if G.get("cierre_cta"):   # p.ej. "Comenta PARTE 2" o "Escribe AMÉN"
+        t2 = os.path.join(tmp, "cierre2.txt"); open(t2, "w", encoding="utf-8").write(sin_emoji(G["cierre_cta"]))
+        vf += (f",drawtext=fontfile={FONT}:textfile={t2}:fontsize=58:fontcolor=0xFFD23F:borderw=4:"
+               f"bordercolor=black@0.7:x=(w-text_w)/2:y=(h/2)+70")
+    run(["ffmpeg", "-v", "error", "-y", "-loop", "1", "-framerate", "24", "-i", last,
+         "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", "3", "-vf", vf + ",format=yuv420p",
          "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", end])
     inputs += ["-i", end]
     fc += f"[{n}:v]setsar=1,fps=24[v{n}];[{n}:a]aformat=channel_layouts=stereo[a{n}];"
@@ -198,10 +238,25 @@ fc += f"{cat}concat=n={n}:v=1:a=1[vc][a];[vc]"
 alpha = "alpha='if(lt(t,2.6),1,max(0,1-(t-2.6)/0.4))':enable='lt(t,3)'"
 for k, line in enumerate(G.get("gancho", [])):
     col = "white" if k == 0 else "0xFFD23F"
-    fc += (f"drawtext=fontfile={FONT}:text='{line}':fontsize=54:fontcolor={col}:borderw=4:"
+    # El texto va en archivo: un apóstrofo o dos puntos en el gancho no rompen el filtro de ffmpeg.
+    gk = os.path.join(tmp, f"gancho{k}.txt"); open(gk, "w", encoding="utf-8").write("".join(c for c in str(line) if ord(c) < 0x2190).strip())
+    fc += (f"drawtext=fontfile={FONT}:textfile={gk}:fontsize=54:fontcolor={col}:borderw=4:"
            f"bordercolor=black@0.8:x=(w-text_w)/2:y=h*0.11+{72 * k}:{alpha},")
 fc += f"ass={ass_path}:fontsdir={FONTDIR}[v]"
-run(["ffmpeg", "-v", "error", "-y", *inputs, "-filter_complex", fc, "-map", "[v]", "-map", "[a]",
+total = t + (3 if G.get("cierre") else 0)
+mmss = lambda x: f"{int(x // 60)}:{int(x % 60):02d}"
+progreso(70, f"Codificando el vídeo final 1080x1920 ({mmss(total)})")
+enc = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-nostats", "-progress", "pipe:1", *inputs, "-filter_complex", fc, "-map", "[v]", "-map", "[a]",
      "-c:v", "libx264", "-crf", "17", "-preset", os.environ.get("X264_PRESET", "medium"), "-pix_fmt", "yuv420p",
-     "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", out_mp4])
+     "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", out_mp4], stdout=subprocess.PIPE, text=True)
+last_pct = -1
+for row in enc.stdout:
+    if row.startswith("out_time_us=") and row[12:].strip().isdigit():
+        done = int(row[12:]) / 1e6
+        pct = 70 + 29 * min(1, done / max(total, 1))
+        if int(pct) != last_pct:
+            last_pct = int(pct); progreso(pct, f"Codificando el vídeo final: {mmss(done)} de {mmss(total)}")
+if enc.wait() != 0:
+    raise SystemExit("ffmpeg falló al codificar el vídeo final")
+progreso(100, "Vídeo listo")
 print("OK", out_mp4, "bloques:", len(events))

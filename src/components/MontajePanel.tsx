@@ -1,15 +1,35 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { postApi, isAuthError } from "@/lib/api-client";
 
-// Marca de agua de Dola en clips 720x1280 (ver montaje/README.md).
-const DOLA_DELOGO = "x=603:y=1232:w=104:h=36";
-const EST_SECONDS_PER_CLIP = 60; // ~3 min por 3 clips de 15 s en una CPU modesta
+// Marcas de agua conocidas: el servidor reescala a 720x1280 (Dola) o 704x1280 (Pavo) y las borra (ver montaje/README.md).
+type Watermark = "none" | "dola" | "pavo" | "custom";
+type Live = { estado: string; pct: number; paso: string; log: string[] };
+
+// Sube con XMLHttpRequest para mostrar el avance de la subida (fetch no lo da).
+function upload(url: string, ticket: string, fd: FormData, onPct: (p: number) => void) {
+  return new Promise<{ id: string }>((resolve, reject) => {
+    const x = new XMLHttpRequest();
+    x.open("POST", url); x.setRequestHeader("Authorization", `Ticket ${ticket}`);
+    x.upload.onprogress = e => { if (e.lengthComputable) onPct(Math.round((e.loaded / e.total) * 100)); };
+    x.onload = () => { let j: any = {}; try { j = JSON.parse(x.responseText); } catch {} x.status < 300 && j.id ? resolve(j) : reject(new Error(j.detail || `HTTP ${x.status}`)); };
+    x.onerror = () => reject(new Error("se cortó la conexión con el servidor de montaje"));
+    x.send(fd);
+  });
+}
+
+// Clip que se está procesando según el paso que informa el servidor (para el monitor en vivo).
+function clipFromStep(paso: string, n: number) {
+  const m = /clip (\d+)/i.exec(paso); if (m) return Math.min(n, Number(m[1])) - 1;
+  const e = /(\d+):(\d\d) de (\d+):(\d\d)/.exec(paso);
+  if (e) { const done = +e[1] * 60 + +e[2], total = +e[3] * 60 + +e[4]; return Math.min(n - 1, Math.floor((done / Math.max(1, total)) * n)); }
+  return -1;
+}
 
 // El servidor espera un bloque de diálogo por clip. Si hay menos clips que bloques
 // (p. ej. un solo clip de Dola de 60 s), se juntan bloques consecutivos; si hay más,
 // los clips sobrantes van sin diálogo (tarjetas).
-export function adaptGuion(guion: any, nClips: number, delogo: string = "") {
+export function adaptGuion(guion: any, nClips: number, opts: { marca?: "dola" | "pavo"; delogo?: string; cierre?: string; cierreCta?: string } = {}) {
   const blocks: any[][] = Array.isArray(guion?.clips) ? guion.clips : [];
   let clips: any[][];
   if (nClips >= blocks.length) clips = [...blocks, ...Array.from({ length: nClips - blocks.length }, () => [])];
@@ -17,22 +37,40 @@ export function adaptGuion(guion: any, nClips: number, delogo: string = "") {
   const colores: Record<string, string> = {};
   for (const [k, v] of Object.entries(guion?.colores || {})) colores[k] = String(v).replace("#", "").toUpperCase();
   const out: any = { ...guion, colores, clips };
-  if (delogo) out.delogo = delogo; else delete out.delogo;
+  delete out.delogo; delete out.marca;
+  if (opts.marca) out.marca = opts.marca; else if (opts.delogo) out.delogo = opts.delogo;
+  if (opts.cierre) out.cierre = opts.cierre;
+  if (opts.cierreCta?.trim()) out.cierre_cta = opts.cierreCta.trim(); else delete out.cierre_cta;
   return out;
 }
 
-export default function MontajePanel({ guion, title, filesOverride }: { guion: any; title: string; filesOverride?: File[] }) {
+// Llamada final (línea amarilla de la tarjeta de cierre) según el estilo y si la serie termina.
+export function defaultCta(style: string, part: number, last: boolean) {
+  if (style === "cristiana") return "Escribe AMÉN";
+  return last ? "Dale me gusta y comenta qué te pareció" : `Comenta PARTE ${part + 1}`;
+}
+
+export default function MontajePanel({ guion, title, filesOverride, style = "frutinovela", part = 1 }: { guion: any; title: string; filesOverride?: File[]; style?: string; part?: number }) {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const files = filesOverride ?? selectedFiles;
-  const [watermark, setWatermark] = useState<"none" | "dola" | "custom">("none");
+  const [watermark, setWatermark] = useState<Watermark>("none");
+  const [lastEpisode, setLastEpisode] = useState(false);
+  const [cta, setCta] = useState(() => defaultCta(style, part, false));
+  const [ctaEdited, setCtaEdited] = useState(false);
+  useEffect(() => { if (!ctaEdited) setCta(defaultCta(style, part, lastEpisode)); }, [style, part, lastEpisode, ctaEdited]);
   const [rect, setRect] = useState({ x: "", y: "", w: "", h: "" });
   const [busy, setBusy] = useState(false);
   const [elapsed, setElapsed] = useState(0);
+  const [uploadPct, setUploadPct] = useState(0);
+  const [live, setLive] = useState<Live | null>(null);
   const [error, setError] = useState("");
   const [video, setVideo] = useState<string>("");
   const timer = useRef<any>(null);
   const blocks = Array.isArray(guion?.clips) ? guion.clips.length : 0;
-  const est = Math.max(1, files.length) * EST_SECONDS_PER_CLIP;
+  const monitorClip = live ? clipFromStep(live.paso, files.length) : -1;
+  const monitorUrl = useMemo(() => (monitorClip >= 0 && files[monitorClip] ? URL.createObjectURL(files[monitorClip]) : ""), [monitorClip, files]);
+  useEffect(() => () => { if (monitorUrl) URL.revokeObjectURL(monitorUrl); }, [monitorUrl]);
+  const monitorLines: [string, string][] = monitorClip >= 0 && Array.isArray(guion?.clips?.[monitorClip]) ? guion.clips[monitorClip] : [];
 
   useEffect(() => () => { clearInterval(timer.current); if (video) URL.revokeObjectURL(video); }, [video]);
 
@@ -49,8 +87,9 @@ export default function MontajePanel({ guion, title, filesOverride }: { guion: a
     if (!files.length) { setError("Elige los clips primero."); return; }
     const custom = `x=${rect.x}:y=${rect.y}:w=${rect.w}:h=${rect.h}`;
     if (watermark === "custom" && (!/^x=\d{1,4}:y=\d{1,4}:w=\d{1,4}:h=\d{1,4}$/.test(custom) || Number(rect.w) < 1 || Number(rect.h) < 1)) { setError("Indica x, y, ancho y alto positivos en píxeles para el área de la marca."); return; }
-    const delogo = watermark === "dola" ? DOLA_DELOGO : watermark === "custom" ? custom : "";
-    setBusy(true); setError(""); setElapsed(0);
+    const marca = watermark === "dola" || watermark === "pavo" ? watermark : undefined;
+    const delogo = watermark === "custom" ? custom : "";
+    setBusy(true); setError(""); setElapsed(0); setUploadPct(0); setLive(null);
     if (video) { URL.revokeObjectURL(video); setVideo(""); }
     const t0 = Date.now(); timer.current = setInterval(() => setElapsed(Math.round((Date.now() - t0) / 1000)), 1000);
     try {
@@ -58,17 +97,36 @@ export default function MontajePanel({ guion, title, filesOverride }: { guion: a
       if (isAuthError(t)) { setError("Inicia sesión para usar el montaje automático."); return; }
       if (!t.json?.ok) { setError(t.json?.error || "No se pudo contactar con el servidor de montaje."); return; }
       const fd = new FormData();
-      fd.append("guion", new Blob([JSON.stringify(adaptGuion(guion, files.length, delogo))], { type: "application/json" }), "guion.json");
+      fd.append("guion", new Blob([JSON.stringify(adaptGuion(guion, files.length, { marca, delogo, cierre: lastEpisode ? "FIN" : guion?.cierre || "Continuará...", cierreCta: cta }))], { type: "application/json" }), "guion.json");
       for (const f of files) fd.append("clips", f, f.name);
-      const r = await fetch(`${t.json.url}/montar`, { method: "POST", headers: { Authorization: `Ticket ${t.json.ticket}` }, body: fd });
-      if (!r.ok) { let msg = `HTTP ${r.status}`; try { msg = (await r.json()).detail || msg; } catch {} setError("El montaje falló: " + msg); return; }
-      setVideo(URL.createObjectURL(await r.blob()));
+      // 1) Subida: el servidor responde al instante con el número de trabajo.
+      const { id } = await upload(`${t.json.url}/trabajos`, t.json.ticket, fd, setUploadPct);
+      // 2) Progreso en vivo: cada respuesta llega en cuanto hay un paso nuevo (o a los 20 s).
+      let seq = -1, fails = 0, state: any = null;
+      while (true) {
+        try {
+          const r = await fetch(`${t.json.url}/trabajos/${id}?desde=${seq}`);
+          if (r.status === 404) throw Object.assign(new Error("el servidor perdió el montaje (¿se reinició?). Vuelve a pulsar «Montar vídeo final»."), { fatal: true });
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          state = await r.json(); fails = 0; seq = state.seq;
+          setLive({ estado: state.estado, pct: state.pct, paso: state.paso, log: state.log || [] });
+          if (state.estado === "listo" || state.estado === "error") break;
+        } catch (e: any) {
+          if (e?.fatal || ++fails > 6) throw e;
+          await new Promise(res => setTimeout(res, 5000));     // corte breve de red: se reintenta
+        }
+      }
+      if (state.estado === "error") { setError(state.error || "El montaje falló."); return; }
+      // 3) Descarga del vídeo terminado.
+      const v = await fetch(`${t.json.url}/trabajos/${id}/video`);
+      if (!v.ok) { setError(`No se pudo descargar el vídeo (HTTP ${v.status}). Está guardado 30 min en el servidor: vuelve a intentarlo.`); return; }
+      setVideo(URL.createObjectURL(await v.blob()));
     } catch (e: any) {
       setError("No se pudo completar el montaje: " + (e?.message || e) + ". Revisa que el servidor de montaje esté encendido.");
     } finally { clearInterval(timer.current); setBusy(false); }
   }
 
-  const pct = Math.min(95, Math.round((elapsed / est) * 100));
+  const pct = live ? live.pct : Math.round(uploadPct * 0.02);
   const fname = `${(title || "episodio").replace(/[^\w\-áéíóúñ ]+/gi, "").trim().replace(/\s+/g, "-") || "episodio"}.mp4`;
 
   return <div className="rounded-xl bg-[#121826] p-4 space-y-3">
@@ -85,11 +143,31 @@ export default function MontajePanel({ guion, title, filesOverride }: { guion: a
     {!filesOverride && !!files.length && files.length !== blocks && <p className="text-xs text-amber-200/80">
       El guion tiene {blocks} bloque(s) y subiste {files.length} clip(s). {files.length < blocks ? "Se juntarán bloques seguidos para que cada clip lleve su diálogo." : "Los clips sobrantes irán sin diálogo (como tarjetas)."}
     </p>}
-    <div className="space-y-2"><label htmlFor="watermark-mode" className="block text-xs text-slate-300">Quitar marca de agua</label><select id="watermark-mode" value={watermark} onChange={e => setWatermark(e.target.value as "none" | "dola" | "custom")} disabled={busy} className="max-w-sm"><option value="none">No · los clips no tienen marca (Higgsfield)</option><option value="dola">Sí · marca de Dola (720 × 1280)</option><option value="custom">Sí · marca de Pavo u otra (indicar área)</option></select>{watermark === "custom" && <div className="flex flex-wrap gap-2">{(["x", "y", "w", "h"] as const).map(key => <label key={key} className="text-xs text-slate-300">{key === "w" ? "Ancho" : key === "h" ? "Alto" : key}<input type="number" min="0" max="9999" value={rect[key]} onChange={e => setRect(prev => ({ ...prev, [key]: e.target.value }))} className="mt-1 w-20" /></label>)}<p className="w-full text-xs text-slate-400">Coordenadas en píxeles del clip original. Funciona con marcas fijas; revisa el resultado antes de publicar.</p></div>}</div>
+    <div className="space-y-2"><label htmlFor="watermark-mode" className="block text-xs text-slate-300">Quitar marca de agua</label><select id="watermark-mode" value={watermark} onChange={e => setWatermark(e.target.value as Watermark)} disabled={busy} className="max-w-sm"><option value="none">No · los clips no tienen marca (Higgsfield)</option><option value="dola">Sí · marca de Dola</option><option value="pavo">Sí · marca de Pavo IA</option><option value="custom">Sí · otra marca (indicar área)</option></select>{(watermark === "dola" || watermark === "pavo") && <p className="text-xs text-slate-400">Cada clip se lleva a la resolución de {watermark === "dola" ? "Dola (720 × 1280)" : "Pavo (704 × 1280)"} y se borra la marca, aunque alguno venga en otra resolución.</p>}{watermark === "custom" && <div className="flex flex-wrap gap-2">{(["x", "y", "w", "h"] as const).map(key => <label key={key} className="text-xs text-slate-300">{key === "w" ? "Ancho" : key === "h" ? "Alto" : key}<input type="number" min="0" max="9999" value={rect[key]} onChange={e => setRect(prev => ({ ...prev, [key]: e.target.value }))} className="mt-1 w-20" /></label>)}<p className="w-full text-xs text-slate-400">Coordenadas en píxeles del clip original. Funciona con marcas fijas; revisa el resultado antes de publicar.</p></div>}</div>
+    <div className="space-y-2">
+      <label htmlFor="cierre-cta" className="block text-xs text-slate-300">Llamada final <span className="text-slate-500">(línea amarilla bajo «{lastEpisode ? "FIN" : guion?.cierre || "Continuará..."}» en la tarjeta de cierre)</span></label>
+      <input id="cierre-cta" value={cta} maxLength={40} onChange={e => { setCta(e.target.value); setCtaEdited(true); }} disabled={busy} className="max-w-sm" />
+      <label className="flex items-center gap-2 text-xs text-slate-300"><input type="checkbox" checked={lastEpisode} onChange={e => setLastEpisode(e.target.checked)} disabled={busy} /> Último episodio de la serie (el cierre dice «FIN»)</label>
+    </div>
     <button type="button" disabled={busy || !files.length} onClick={montar} className="rounded bg-amber-500 px-5 py-2.5 font-bold disabled:opacity-50">{busy ? "Montando…" : "Montar vídeo final"}</button>
-    {busy && <div>
-      <div className="h-2 overflow-hidden rounded bg-white/10"><div className="h-full bg-amber-400 transition-all" style={{ width: `${pct}%` }} /></div>
-      <p className="mt-1 text-xs text-slate-400">{Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")} · suele tardar unos {Math.round(est / 60)} min. No cierres esta pestaña.</p>
+    {busy && <div className="space-y-3">
+      <div>
+        <div className="flex justify-between text-xs text-slate-300"><span>{live ? live.paso : uploadPct < 100 ? `Subiendo clips al servidor… ${uploadPct}%` : "Clips subidos, arrancando el servidor…"}</span><b>{pct}%</b></div>
+        <div className="mt-1 h-2 overflow-hidden rounded bg-white/10"><div className="h-full bg-amber-400 transition-all" style={{ width: `${pct}%` }} /></div>
+        <p className="mt-1 text-xs text-slate-500">{Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")} · progreso real del servidor. No cierres esta pestaña.</p>
+      </div>
+      {/* Montaje en vivo: el clip que está procesando el servidor, con su subtítulo, y el registro de pasos. */}
+      <div className="flex flex-wrap gap-3">
+        <div className="relative h-64 w-36 shrink-0 overflow-hidden rounded-lg bg-black">
+          {monitorUrl ? <video key={monitorUrl} src={monitorUrl} autoPlay muted loop playsInline className="h-full w-full object-cover" />
+            : <div className="flex h-full items-center justify-center p-2 text-center text-[11px] text-slate-500">{live?.estado === "en cola" ? "En cola…" : "Preparando…"}</div>}
+          {monitorClip >= 0 && <span className="absolute left-1 top-1 rounded bg-black/70 px-1.5 text-[10px] font-bold text-amber-300">CLIP {monitorClip + 1}/{files.length}</span>}
+          {monitorLines.length > 0 && <p className="absolute inset-x-1 bottom-6 text-center text-[11px] font-bold leading-tight drop-shadow-[0_1px_2px_rgba(0,0,0,1)]">{monitorLines.map(([spk, txt], k) => <span key={k} style={{ color: `#${guion?.colores?.[spk] ? String(guion.colores[spk]).replace("#", "") : "FFFFFF"}` }}>{txt} </span>)}</p>}
+        </div>
+        <ol className="min-w-[200px] flex-1 space-y-0.5 overflow-hidden text-xs">
+          {(live?.log || []).slice(-9).map((l, k, arr) => <li key={k} className={k === arr.length - 1 ? "font-semibold text-amber-200" : "text-slate-400"}>{k === arr.length - 1 ? "▶ " : "✓ "}{l}</li>)}
+        </ol>
+      </div>
     </div>}
     {error && <p className="rounded border border-red-500/30 bg-red-500/10 p-2 text-sm text-red-200">{error}</p>}
     {video && <div className="space-y-2">

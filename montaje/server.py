@@ -5,11 +5,18 @@ POST /montar  (multipart/form-data)
   clips: los clips en orden (varios campos "clips")
   Cabecera: Authorization: Bearer <MONTAJE_TOKEN>
          o  Authorization: Ticket <exp>.<firma>  (pase temporal que firma la app en Vercel)
-Devuelve: video/mp4 con gancho, subtítulos de colores, tarjetas y cierre.
+Devuelve: video/mp4 con gancho, subtítulos de colores, tarjetas y cierre (espera hasta el final).
+
+Montaje en segundo plano, con progreso en vivo (lo que usa la app):
+  POST /trabajos            mismos campos y cabecera que /montar -> {"id": "..."} al instante
+  GET  /trabajos/{id}?desde=N  espera hasta 20 s a que haya progreso nuevo ->
+       {"estado": "en cola|montando|listo|error", "pct": 0-100, "paso": "...", "log": [...], "seq": N, "error": "..."}
+  GET  /trabajos/{id}/video  el vídeo terminado (se borra 30 min después de terminar)
+  El id es aleatorio (128 bits) y hace de llave: no caduca a los 15 min como el pase de la app.
 
 GET /salud -> {"ok": true}
 """
-import asyncio, hashlib, hmac, os, shutil, subprocess, sys, tempfile, time, uuid
+import asyncio, hashlib, hmac, os, shutil, subprocess, sys, tempfile, threading, time, uuid
 from typing import List
 from fastapi import FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -53,6 +60,112 @@ def autorizado(authorization: str) -> bool:
 @app.get("/salud")
 def salud():
     return {"ok": True}
+
+
+# ---------- Trabajos en segundo plano ----------
+# Un montaje a la vez (la CPU es pequeña); los demás esperan «en cola».
+TRABAJOS: dict = {}
+CUPO = threading.Semaphore(1)
+RETENER_SEGUNDOS = 30 * 60
+
+
+def _avisar(job, **cambios):
+    with job["cond"]:
+        job.update(cambios)
+        job["seq"] += 1
+        job["cond"].notify_all()
+
+
+def _ejecutar(job, gpath, out, paths, work):
+    with CUPO:
+        _avisar(job, estado="montando", paso="Empezando", pct=1)
+        try:
+            proc = subprocess.Popen([sys.executable, "-I", "-u", os.path.join(HERE, "subtitular.py"), gpath, out, *paths],
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            # stderr se lee aparte para que no se llene el búfer y bloquee el proceso.
+            errores = []
+            lector = threading.Thread(target=lambda: errores.extend(proc.stderr.readlines()), daemon=True); lector.start()
+            inicio = time.time()
+            for linea in proc.stdout:
+                if linea.startswith("PROGRESO "):
+                    _, pct, msg = (linea.rstrip().split(" ", 2) + [""])[:3]
+                    log = (job["log"] + [msg])[-40:]
+                    _avisar(job, pct=int(pct), paso=msg, log=log)
+                if time.time() - inicio > 1800:
+                    proc.kill(); break
+            proc.wait(); lector.join(5)
+            if proc.returncode != 0 or not os.path.exists(out):
+                detalle = "".join(errores)[-1200:] or "el montaje excedió 30 minutos"
+                _avisar(job, estado="error", error="Falló el montaje: " + detalle)
+            else:
+                _avisar(job, estado="listo", pct=100, paso="Vídeo listo", out=out)
+        except Exception as e:  # nunca deja el trabajo colgado en «montando»
+            _avisar(job, estado="error", error=f"Falló el montaje: {e}")
+        finally:
+            job["terminado"] = time.time()
+    # Limpieza: el vídeo se guarda 30 min para descargarlo.
+    time.sleep(RETENER_SEGUNDOS)
+    shutil.rmtree(work, ignore_errors=True)
+    TRABAJOS.pop(job["id"], None)
+
+
+async def _guardar_entrada(guion: UploadFile, clips: List[UploadFile]):
+    if not 1 <= len(clips) <= MAX_CLIPS:
+        raise HTTPException(400, f"Se admiten entre 1 y {MAX_CLIPS} clips")
+    work = tempfile.mkdtemp(prefix="montaje_")
+    try:
+        gpath = os.path.join(work, "guion.json")
+        await save_upload(guion, gpath, MAX_SCRIPT_BYTES)
+        paths, total_bytes = [], 0
+        for i, c in enumerate(clips):
+            p = os.path.join(work, f"clip{i:02d}.mp4")
+            total_bytes += await save_upload(c, p, min(MAX_CLIP_BYTES, MAX_TOTAL_BYTES - total_bytes))
+            paths.append(p)
+    except Exception:
+        shutil.rmtree(work, ignore_errors=True); raise
+    return work, gpath, paths
+
+
+@app.post("/trabajos")
+async def crear_trabajo(guion: UploadFile = File(...), clips: List[UploadFile] = File(...), authorization: str = Header(default="")):
+    if not autorizado(authorization):
+        raise HTTPException(401, "Token inválido")
+    work, gpath, paths = await _guardar_entrada(guion, clips)
+    jid = uuid.uuid4().hex
+    en_cola = sum(1 for j in TRABAJOS.values() if j["estado"] in ("en cola", "montando"))
+    job = {"id": jid, "estado": "en cola", "pct": 0, "paso": f"En cola ({en_cola} por delante)" if en_cola else "Clips recibidos",
+           "log": [f"Recibidos {len(paths)} clips"], "seq": 0, "error": "", "out": "", "cond": threading.Condition(), "terminado": 0}
+    TRABAJOS[jid] = job
+    threading.Thread(target=_ejecutar, args=(job, gpath, os.path.join(work, "final.mp4"), paths, work), daemon=True).start()
+    return {"id": jid}
+
+
+def _trabajo(jid: str):
+    job = TRABAJOS.get(jid)
+    if not job:
+        raise HTTPException(404, "Ese montaje no existe o ya caducó (se guarda 30 min)")
+    return job
+
+
+@app.get("/trabajos/{jid}")
+async def estado_trabajo(jid: str, desde: int = -1):
+    job = _trabajo(jid)
+    # Espera larga: responde en cuanto hay progreso nuevo (o a los 20 s). Así la página lo ve en vivo
+    # y la conexión abierta evita que Fly apague la máquina a mitad del montaje.
+    def esperar():
+        with job["cond"]:
+            job["cond"].wait_for(lambda: job["seq"] > desde or job["estado"] in ("listo", "error"), timeout=20)
+    if job["seq"] <= desde and job["estado"] not in ("listo", "error"):
+        await asyncio.to_thread(esperar)
+    return {k: job[k] for k in ("estado", "pct", "paso", "log", "seq", "error")}
+
+
+@app.get("/trabajos/{jid}/video")
+def video_trabajo(jid: str):
+    job = _trabajo(jid)
+    if job["estado"] != "listo":
+        raise HTTPException(409, "El vídeo todavía no está listo")
+    return FileResponse(job["out"], media_type="video/mp4", filename="episodio_montado.mp4")
 
 @app.post("/montar")
 async def montar(guion: UploadFile = File(...), clips: List[UploadFile] = File(...), authorization: str = Header(default="")):
