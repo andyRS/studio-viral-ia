@@ -37,7 +37,7 @@ const isDraft = (e: any) => e.status === "Borrador" || e.output?.mode === "plant
 const FINISHED = "Terminado";
 const isFinished = (e: any) => e?.status === FINISHED;
 // Cliffhanger con el que cerró un episodio: lo retoma la parte siguiente.
-const cliffhangerOf = (out: any) => String(out?.ficha?.cierre || (Array.isArray(out?.scenes) && out.scenes.length ? out.scenes[out.scenes.length - 1].line : "") || "").trim();
+const cliffhangerOf = (out: any) => String(out?.ficha?.closing || out?.ficha?.cierre || (Array.isArray(out?.scenes) && out.scenes.length ? out.scenes[out.scenes.length - 1].line : "") || "").trim();
 // Texto corto y hashtags para Facebook y TikTok: la adaptación guardada o, si no hay, la fórmula del estilo.
 function publishPack(out: any, style: string, part: number) {
   const ad: any[] = out?.platformAdaptations || out?.platform_adaptations || [];
@@ -542,26 +542,14 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
     {lockedTab && <p className="mt-4 rounded-xl border border-emerald-400/25 bg-emerald-400/[.06] p-3 text-xs text-emerald-100">🔒 Episodio terminado: esta sección queda de solo lectura. Pulsa «Desbloquear para editar» arriba si necesitas cambiar algo.</p>}
     <fieldset disabled={lockedTab} className={`mt-4 min-w-0 ${lockedTab ? "opacity-70" : ""}`}>
       {tab === "guion" && <div className="space-y-3">
-        {ficha && <section className="rounded-2xl border border-amber-400/20 bg-gradient-to-br from-amber-400/10 to-transparent p-4">
-          <h3 className="font-bold text-white">Ficha del episodio</h3>
-          <dl className="mt-2 space-y-1.5 text-sm leading-6">
-            <Field label="Base bíblica" value={ficha.biblicalBase} />
-            <Field label="Sinopsis" value={ficha.synopsis} />
-            <Field label="Gancho (imagen)" value={ficha.hookImage} />
-            <Field label="Frase del fotograma cero" value={ficha.hookText} />
-            <Field label="Conflicto principal" value={ficha.conflict} />
-            <Field label="Desarrollo" value={ficha.development} />
-            <Field label="Clímax" value={ficha.climax} />
-            <Field label="Resolución" value={ficha.resolution} />
-            <Field label="Cierre" value={ficha.closing} />
-          </dl>
-          {out.selfScore && <div className="mt-3 flex flex-wrap gap-2 text-xs">{([["Gancho 0-1 s", out.selfScore.hook], ["Claridad sin contexto", out.selfScore.clarity], ["Escalada", out.selfScore.escalation], ["Giro final", out.selfScore.twist], ["Ganas de comentar", out.selfScore.comments]] as [string, number | null][]).filter(([, v]) => v).map(([k, v]) =>
-            <span key={k} className={`rounded-full px-2.5 py-1 font-semibold ${v! >= 8 ? "bg-emerald-500/15 text-emerald-200" : "bg-rose-500/15 text-rose-200"}`}>{k}: {v}/10</span>)}<span className="self-center text-slate-500">Autoevaluación de la IA</span></div>}
-        </section>}
+        {ficha && <EpisodeSheet ficha={ficha} score={out.selfScore} cast={cast} scenes={scenes.length} seconds={fullDuration} />}
         {!ficha && !!(out.hook || []).length && <div className="rounded-xl border border-amber-400/20 bg-amber-400/10 p-4"><p className="text-[11px] font-semibold uppercase tracking-wider text-amber-300">Gancho de los primeros 3 s</p><p className="mt-1 text-lg font-bold">{(out.hook || []).join(" / ")}</p></div>}
         {scenes.length ? scenes.map((s: any) => { const c = cast.find((x: any) => x.name === s.speaker); return <article key={s.n} className="rounded-xl bg-[#121826] p-4">
           <p className="text-xs font-semibold text-amber-300">ESCENA {String(s.n).padStart(2, "0")} — {s.title || ""} · {(s.n - 1) * 8}-{s.n * 8} s</p>
-          <p className="mt-2 text-sm"><span className="mr-1">{c?.fruitEmoji || "🎙️"}</span><b style={{ color: c?.subtitleColor || "#fff" }}>{s.speaker}</b> <span className="text-slate-400">({s.emotion})</span>: “{s.line}”</p>
+          <div className="mt-2 rounded-lg border-l-4 bg-white/[.03] px-3 py-2" style={{ borderColor: c?.subtitleColor || "#94a3b8" }}>
+            <p className="text-xs"><span className="mr-1">{c?.fruitEmoji || "🎙️"}</span><b style={{ color: c?.subtitleColor || "#fff" }}>{s.speaker}</b>{s.emotion && <span className="text-slate-400"> · {s.emotion}</span>}</p>
+            <p className="mt-0.5 text-base font-medium leading-snug">“{s.line}”</p>
+          </div>
           <dl className="mt-2 grid gap-x-4 gap-y-1 text-xs leading-5 sm:grid-cols-2">
             <Field label="Objetivo" value={s.goal} /><Field label="Personajes" value={(s.characters || []).join(", ") || "—"} />
             <Field label="Plano" value={s.shot} /><Field label="Acción visual" value={s.setting} />
@@ -709,6 +697,58 @@ function EpisodeCard({ ep, part, onOpen }: { ep: any; part: number; onOpen: (tab
       <div className="flex flex-wrap gap-2">{sections.map(([k, label, hint]) => <button key={k} type="button" onClick={() => onOpen(k)} title={hint} className="section-chip">{STEP[k] && <span className="text-slate-500">{STEP[k]}·</span>}{label}</button>)}</div>
     </div>
   </article>;
+}
+
+// Ficha del episodio: gancho destacado, arco en 5 pasos y autoevaluación visual.
+const ARC: [string, string, string][] = [
+  ["conflict", "Conflicto", "#f97316"], ["development", "Desarrollo", "#eab308"], ["climax", "Clímax", "#ef4444"],
+  ["resolution", "Resolución", "#22c55e"], ["closing", "Cierre", "#a78bfa"],
+];
+function EpisodeSheet({ ficha, score, cast, scenes, seconds }: { ficha: any; score: any; cast: any[]; scenes: number; seconds: number }) {
+  const metrics = score ? ([["Gancho 0-1 s", score.hook], ["Claridad sin contexto", score.clarity], ["Escalada", score.escalation], ["Giro final", score.twist], ["Ganas de comentar", score.comments]] as [string, number | null][]).filter(([, v]) => v) : [];
+  const avg = metrics.length ? Math.round((metrics.reduce((t, [, v]) => t + Number(v), 0) / metrics.length) * 10) / 10 : 0;
+  const steps = ARC.filter(([k]) => ficha[k]);
+  return <section className="overflow-hidden rounded-2xl border border-white/10 bg-[#121826]">
+    <div className="relative border-b border-white/10 bg-gradient-to-br from-amber-400/15 via-amber-400/[.04] to-transparent p-5">
+      <div className="flex flex-wrap items-start gap-4">
+        <div className="min-w-[240px] flex-1">
+          <p className="text-[11px] font-semibold uppercase tracking-[.18em] text-amber-300">Ficha del episodio</p>
+          {ficha.synopsis && <p className="mt-2 text-lg font-semibold leading-snug text-white">{ficha.synopsis}</p>}
+          <div className="mt-3 flex flex-wrap gap-2 text-xs">
+            {!!seconds && <span className="stat-chip">⏱ {seconds} s</span>}
+            {!!scenes && <span className="stat-chip">🎬 {scenes} escenas</span>}
+            {!!cast.length && <span className="stat-chip">👥 {cast.map((c: any) => c.name).join(" · ")}</span>}
+            {ficha.biblicalBase && <span className="stat-chip !border-sky-400/40 !text-sky-200">📖 {ficha.biblicalBase}</span>}
+          </div>
+        </div>
+        {!!metrics.length && <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/25 p-3">
+          <div className="grid h-16 w-16 place-items-center rounded-full text-xl font-black" style={{ background: `conic-gradient(${avg >= 8 ? "#34d399" : "#fb7185"} ${avg * 36}deg, rgba(255,255,255,.08) 0)` }}>
+            <span className="grid h-12 w-12 place-items-center rounded-full bg-[#121826]">{avg}</span>
+          </div>
+          <div className="space-y-1">{metrics.map(([k, v]) => <div key={k} className="flex items-center gap-2 text-[11px] text-slate-300">
+            <span className="w-32 truncate">{k}</span>
+            <span className="h-1.5 w-16 overflow-hidden rounded-full bg-white/10"><span className={`block h-full ${Number(v) >= 8 ? "bg-emerald-400" : "bg-rose-400"}`} style={{ width: `${Number(v) * 10}%` }} /></span>
+            <b className="w-5 text-right">{v}</b>
+          </div>)}<p className="pt-0.5 text-[10px] text-slate-500">Autoevaluación de la IA</p></div>
+        </div>}
+      </div>
+    </div>
+    {(ficha.hookText || ficha.hookImage) && <div className="grid gap-4 border-b border-white/10 p-5 md:grid-cols-[1fr_auto]">
+      <div>
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">🎣 Gancho · primeros 3 segundos</p>
+        {ficha.hookText && <p className="mt-2 text-2xl font-black leading-tight text-white">«{ficha.hookText}»</p>}
+        {ficha.hookImage && <p className="mt-2 text-sm text-slate-400"><span className="text-slate-500">En pantalla:</span> {ficha.hookImage}</p>}
+      </div>
+      {ficha.hookText && <div className="self-start"><CopyButton text={ficha.hookText} label="Copiar gancho" /></div>}
+    </div>}
+    {!!steps.length && <div className="p-5">
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Arco de la historia</p>
+      <ol className="mt-3 grid gap-3 md:grid-cols-5">{steps.map(([k, label, color], i) => <li key={k} className={`relative rounded-xl border bg-white/[.03] p-3 ${k === "closing" ? "border-violet-400/50 bg-violet-400/[.07]" : "border-white/10"}`} style={{ borderTopColor: color, borderTopWidth: 3 }}>
+        <p className="flex items-center gap-2 text-xs font-bold" style={{ color }}><span className="grid h-5 w-5 place-items-center rounded-full text-[10px] text-slate-950" style={{ background: color }}>{i + 1}</span>{label}</p>
+        <p className="mt-1.5 text-sm leading-snug text-slate-200">{ficha[k]}</p>
+      </li>)}</ol>
+    </div>}
+  </section>;
 }
 
 function EpisodeArchive({ episodes, series, onOpen, onDelete }: any) {
