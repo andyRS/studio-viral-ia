@@ -12,7 +12,7 @@ const PC_URL = "http://127.0.0.1:8765";
 const TARGET_KEY = "estudio-viral:montaje-destino";
 async function detectPc(): Promise<{ gpu: string } | null> {
   try {
-    const r = await fetch(`${PC_URL}/salud`, { signal: AbortSignal.timeout(1500) });
+    const r = await fetch(`${PC_URL}/salud`, { signal: AbortSignal.timeout(4000) });
     const j = await r.json();
     return j?.ok && j.local ? { gpu: String(j.gpu || "") } : null;
   } catch { return null; }
@@ -78,14 +78,25 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
   const [pc, setPc] = useState<{ gpu: string } | null>(null);
   const [checkingPc, setCheckingPc] = useState(true);
   const [target, setTarget] = useState<Target>("nube");
-  async function findPc() {
-    setCheckingPc(true);
+  async function findPc(quiet = false) {
+    if (!quiet) setCheckingPc(true);
     const found = await detectPc();
-    setPc(found); setCheckingPc(false);
+    setCheckingPc(false);
+    if (!found) { if (!quiet) setPc(null); return; }
+    setPc(found);
     let saved: string | null = null; try { saved = localStorage.getItem(TARGET_KEY); } catch {}
-    setTarget(found && saved !== "nube" ? "pc" : "nube");
+    setTarget(saved !== "nube" ? "pc" : "nube");
   }
   useEffect(() => { void findPc(); }, []);
+  // Si al abrir no estaba (ventana cerrada o Chrome aún preguntando por la red local), se vuelve a
+  // buscar cada 5 s y al volver a la pestaña, hasta encontrarlo.
+  useEffect(() => {
+    if (pc || busy) return;
+    const tick = () => { if (document.visibilityState === "visible") void findPc(true); };
+    const id = setInterval(tick, 5000);
+    window.addEventListener("focus", tick);
+    return () => { clearInterval(id); window.removeEventListener("focus", tick); };
+  }, [pc, busy]);
   function chooseTarget(t: Target) { setTarget(t); try { localStorage.setItem(TARGET_KEY, t); } catch {} }
   const [error, setError] = useState("");
   const [video, setVideo] = useState<string>("");
@@ -173,7 +184,7 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
           <b className="block">Servidor en la nube (Fly)</b>Respaldo · 10-25 min por episodio
         </button>
       </div>
-      {!checkingPc && !pc && <p className="text-[11px] text-slate-400">Para montar en tu PC abre «Montar en mi PC» (acceso directo del escritorio), déjalo abierto y pulsa <button type="button" onClick={findPc} className="text-sky-300 underline">buscar de nuevo</button>. Si Chrome pregunta si la página puede acceder a dispositivos de tu red local, pulsa «Permitir».</p>}
+      {!checkingPc && !pc && <p className="text-[11px] text-slate-400">Para montar en tu PC abre «Montar en mi PC» (acceso directo del escritorio), déjalo abierto y pulsa <button type="button" onClick={() => { void findPc(); }} className="text-sky-300 underline">buscar de nuevo</button>. Si Chrome pregunta si la página puede acceder a dispositivos de tu red local, pulsa «Permitir».</p>}
     </div>
     {!filesOverride && <input type="file" accept="video/mp4,video/*" multiple onChange={e => pick(e.target.files)} disabled={busy} />}
     {!!files.length && <ol className="space-y-1 text-sm">
