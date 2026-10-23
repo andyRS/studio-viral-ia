@@ -24,7 +24,7 @@ type EpisodeTab = "guion" | "elenco" | "imagenes" | "animacion" | "mesa" | "rede
 // Lo que hay dentro de cada episodio, en el orden de trabajo (accesos directos del centro de series).
 const EPISODE_SECTIONS: [EpisodeTab, string, string][] = [
   ["guion", "Guion", "Ficha, escenas y diálogos"],
-  ["elenco", "Biblia", "Fichas maestras de los personajes"],
+  ["elenco", "Personajes canónicos", "Fichas maestras de los personajes"],
   ["imagenes", "Imágenes", "Prompts de imagen por escena"],
   ["animacion", "Animación", "Prompts de vídeo por escena"],
   ["mesa", "Mesa y montaje", "Revisar clips y montar el vídeo"],
@@ -67,7 +67,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
   const [authError, setAuthError] = useState(false);
   const [notice, setNotice] = useState("");
   const [result, setResult] = useState<{ episode: any; episodeId: string; seriesId: string; part: number } | null>(null);
-  // Pestaña con la que se abre un episodio desde el centro de series (Guion, Biblia, Mesa…).
+  // Pestaña con la que se abre un episodio desde el centro de series (Guion, Personajes canónicos, Mesa…).
   const [openTab, setOpenTab] = useState<EpisodeTab | undefined>(undefined);
 
   // Historia nueva
@@ -333,7 +333,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
                   <span className="choice-icon !mb-0 bg-gradient-to-br from-amber-400 to-orange-600 text-black">＋</span>
                   <div><h3 className="font-bold">Siguiente: episodio {current.eps.length + 1}</h3><p className="text-xs text-slate-400">Con los mismos personajes y siguiendo lo que pasó antes.</p></div>
                 </div>
-                {!!missingCurrentMasters.length && !currentNeedsRepair && <p className="mt-3 rounded-lg border border-amber-400/25 bg-amber-400/10 p-3 text-xs text-amber-100">Antes, aprueba la ficha maestra de: {missingCurrentMasters.map(c => c.name).join(", ")}. {current.eps.length > 0 && <button type="button" onClick={() => openEpisode(current.id, current.eps[0], 1, "elenco")} className="font-semibold text-amber-300 underline">Ir a la Biblia →</button>}</p>}
+                {!!missingCurrentMasters.length && !currentNeedsRepair && <p className="mt-3 rounded-lg border border-amber-400/25 bg-amber-400/10 p-3 text-xs text-amber-100">Antes, aprueba la ficha maestra de: {missingCurrentMasters.map(c => c.name).join(", ")}. {current.eps.length > 0 && <button type="button" onClick={() => openEpisode(current.id, current.eps[0], 1, "elenco")} className="font-semibold text-amber-300 underline">Ir a Personajes canónicos →</button>}</p>}
                 <label htmlFor="generator-next-wish" className="field-label mt-4 block">¿Qué quieres que pase? (opcional)</label>
                 <textarea id="generator-next-wish" value={wish} onChange={e => setWish(e.target.value)} placeholder="Déjalo vacío y la IA propone un giro." />
                 <div className="mt-3"><HookPicker online={mode === "supabase"} chosen={chosenHook} onChoose={setChosenHook} body={() => ({ wish, style: current.style, series: { title: current.title, logline: current.description }, characters: currentChars.map((c: any) => ({ name: c.name })), history: current.eps.map((e: any, i: number) => ({ part: i + 1, summary: e.output?.summary || e.theme })), learnings, bank: bankTop })} /></div>
@@ -459,7 +459,7 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
   const dolaDuration = out.dolaDuration || 60;
   const sec = scenes.length ? 8 : 15;
   const lote = useMemo(() => buildFlowBatch(out), [out]);
-  const tabs: [Tab, string][] = [["guion", "Guion"], ...(cast.length ? [["elenco", "1 · Biblia"]] as [Tab, string][] : []), ...(scenes.length && cast.length >= 2 ? [["imagenes", "2 · Imágenes"], ["animacion", "3 · Animación"], ["mesa", "4 · Mesa y montaje"]] as [Tab, string][] : []), ...(social ? [["redes", "Redes"]] as [Tab, string][] : []), ["plataformas", "Plataformas"], ...(!isTemplate ? [["archivos", "Archivos"]] as [Tab, string][] : [])];
+  const tabs: [Tab, string][] = [["guion", "Guion"], ...(cast.length ? [["elenco", "1 · Personajes canónicos"]] as [Tab, string][] : []), ...(scenes.length && cast.length >= 2 ? [["imagenes", "2 · Imágenes"], ["animacion", "3 · Animación"], ["mesa", "4 · Mesa y montaje"]] as [Tab, string][] : []), ...(social ? [["redes", "Redes"]] as [Tab, string][] : []), ["plataformas", "Plataformas"], ...(!isTemplate ? [["archivos", "Archivos"]] as [Tab, string][] : [])];
   async function uploadMaster(c: any, file: File | undefined) {
     if (!file) return;
     if (file.size > 2 * 1024 * 1024) { window.alert("Exporta la ficha en menos de 2 MB para guardarla en tu cuenta."); return; }
@@ -487,7 +487,7 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
       {out.shortForLongPlatforms && <p className="mt-2 text-xs">{out.shortForLongPlatforms}</p>}
     </div>
     {promptsOutdated && <div className="mt-3 flex flex-wrap items-center gap-3 rounded-xl border border-sky-400/30 bg-sky-400/10 p-3 text-xs text-sky-100"><span className="flex-1 min-w-[220px]">Hay reglas nuevas para los prompts (p. ej. mantener el estilo 3D de la imagen en todo el vídeo). Este episodio tiene los prompts de una versión anterior.</span><button type="button" onClick={refresh} disabled={refreshing} className="rounded-lg bg-sky-400 px-3 py-1.5 font-bold text-slate-950 hover:bg-sky-300 disabled:opacity-50">{refreshing ? "Actualizando…" : "Actualizar prompts"}</button></div>}
-    {scenes.length > 0 && cast.length >= 2 && !referencesReady && <div className="mt-3 rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 text-xs text-amber-100">Faltan fichas maestras aprobadas: {missingMasters.join(", ")}. Súbelas y apruébalas en «1 · Biblia» antes de producir.</div>}
+    {scenes.length > 0 && cast.length >= 2 && !referencesReady && <div className="mt-3 rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 text-xs text-amber-100">Faltan fichas maestras aprobadas: {missingMasters.join(", ")}. Súbelas y apruébalas en «1 · Personajes canónicos» antes de producir.</div>}
     {scenes.length > 0 && cast.length >= 2 && referencesReady && !snapshotValid && <div className="mt-3 rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 text-xs text-amber-100">La ficha maestra cambió desde que se creó este guion, o el episodio es anterior al control de versiones. Regenera el episodio para alinear prompts y personajes.</div>}
     <div className="tabs mt-5">{tabs.map(([k, l]) => <button key={k} onClick={() => setTab(k)} disabled={(k === "imagenes" || k === "animacion" || k === "mesa") && !productionReady} className={`${tab === k ? "tab-active" : ""} disabled:cursor-not-allowed disabled:opacity-40`}>{l}</button>)}</div>
     <div className="mt-4">
@@ -611,7 +611,7 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
         <p className="text-xs text-slate-500">guion.json es el archivo para el montaje con subtitular.py. El .md trae la ficha del episodio, el guion por escenas, las 3 fases y el paquete de redes.</p>
       </div>}
       {tab === "mesa" && productionReady && <SceneDesk key={episodeId} episodeId={episodeId} scenes={scenes} guion={out.guionJson || {}} title={`${seriesTitle || "serie"} ${part}`} referencesReady={referencesReady} referenceSignature={referenceSignature} style={episodeStyle} part={part} />}
-      {(tab === "imagenes" || tab === "animacion" || tab === "mesa") && !productionReady && <p className="rounded-xl border border-amber-400/25 bg-amber-400/10 p-4 text-sm text-amber-100">Revisa la biblia y la versión de las fichas maestras antes de continuar.</p>}
+      {(tab === "imagenes" || tab === "animacion" || tab === "mesa") && !productionReady && <p className="rounded-xl border border-amber-400/25 bg-amber-400/10 p-4 text-sm text-amber-100">Revisa los personajes canónicos y la versión de sus fichas maestras antes de continuar.</p>}
     </div>
   </>;
 }
