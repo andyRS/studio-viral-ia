@@ -17,6 +17,7 @@ export interface Character { id:string; seriesId:string; name:string; imageUrl?:
 export interface Scene { n:number; durationSec:8; setting:string; imagePromptFlow:string; animationPrompt:string; speaker:string; line:string; emotion:string;
   // Ficha de escena (estructura del prompt maestro): todo opcional para episodios anteriores.
   title?:string; goal?:string; shot?:string; characters?:string[]; sfx?:string; music?:string; transition?:string; nextLink?:string;
+  location?:string;      // lugar fijo: idéntico en todas las escenas seguidas que pasan en ese sitio
   references?:string[];  // fichas que el usuario debe seleccionar en Flow/Pavo (fuera del prompt)
 }
 export interface Formula { id:string; name:string; category:string; content:string; structure:string[] }

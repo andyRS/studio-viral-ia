@@ -557,7 +557,7 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
           </div>
           <dl className="mt-2 grid gap-x-4 gap-y-1 text-xs leading-5 sm:grid-cols-2">
             <Field label="Objetivo" value={s.goal} /><Field label="Personajes" value={(s.characters || []).join(", ") || "—"} />
-            <Field label="Plano" value={s.shot} /><Field label="Acción visual" value={s.setting} />
+            <Field label="Lugar" value={s.location} /><Field label="Plano" value={s.shot} /><Field label="Acción visual" value={s.setting} />
             <Field label="Efectos" value={s.sfx} /><Field label="Música" value={s.music} />
             <Field label="Transición" value={s.transition} /><Field label="Conexión" value={s.nextLink} />
           </dl>

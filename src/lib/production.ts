@@ -17,7 +17,24 @@ export function timeJump(text: string) {
 export const NARRATOR = "Narrador";
 // Súbelo cada vez que cambien las reglas de los prompts: los episodios guardados con una versión
 // anterior muestran «Actualizar prompts» (rehace los prompts sin IA y sin tocar el guion).
-export const PROMPT_RULES_VERSION = 7;
+export const PROMPT_RULES_VERSION = 8;
+// v8: lugar fijo por secuencia: las escenas seguidas en el mismo sitio comparten la misma descripción del
+// lugar en los prompts, para que el decorado no salte de un colmado a un centro comercial entre planos.
+const firstClause = (t: string) => String(t || "").split(/[.,;:]/)[0].trim();
+const words = (t: string) => new Set(norm(t).split(/\s+/).filter(w => w.length > 3));
+export function assignLocations<T extends { setting: string; transition?: string; location?: string }>(scenes: T[]): T[] {
+  let prev = "";
+  return scenes.map(sc => {
+    let loc = String(sc.location || "").trim();
+    if (!loc) {
+      const guess = firstClause(sc.setting);
+      const shared = prev && Array.from(words(guess)).some(w => words(prev).has(w));
+      loc = prev && !timeJump(sc.transition || "") && (shared || !guess) ? prev : guess || prev;
+    }
+    prev = loc;
+    return { ...sc, location: loc };
+  });
+}
 // v7: si la escena tiene un beso, que sea en la boca (breve y romántico).
 const kissNote = (s: { setting: string; line: string }, lang: "es" | "en") => /\bb[eé]s(?:[oóa]|an|ar|ando|ame|it[oa])|\bkiss/i.test(`${s.setting} ${s.line}`)
   ? (lang === "es" ? " BESO: en la boca, de frente y bien visible, breve y romántico; la cámara en las caras, sin caricias íntimas ni poses sexuales." : " KISS: on the lips, clearly visible, brief and romantic; camera on the faces, no intimate caressing or sexual poses.") : "";
@@ -121,18 +138,18 @@ export const sceneId = (n: number) => `[${String(n).padStart(3, "0")}]`;
 export const sheetId = (n: number) => `[P${String(n).padStart(2, "0")}]`;
 const stripId = (t: string) => String(t || "").replace(/^\[(?:P\d{2}|\d{3})\]\s*/, "");
 
-function imagePrompt(s: { setting: string; speaker: string; emotion: string }, member: CastMember | undefined, others: CastMember[], style: StyleKey, i: number) {
+function imagePrompt(s: { setting: string; speaker: string; emotion: string; location?: string }, member: CastMember | undefined, others: CastMember[], style: StyleKey, i: number) {
   const shot = shotFor(i);
   if (!isFruitStyle(style)) {
     const who = member ? `${member.name} (${member.visualEN || member.visualES}; outfit: ${member.clothing})` : "the scene";
-    return `Cinematic 1990s Dominican romance film still, 35mm grain, warm golden light, vertical 9:16. Reference: character sheet of ${member?.name || "the cast"}. Scene: ${s.setting}. ${who}, ${s.emotion}, ${shot.en}.${others.length ? ` Also present: ${others.map(o => o.name).join(", ")}.` : ""} Real people, no text, no watermark.`;
+    return `Cinematic 1990s Dominican romance film still, 35mm grain, warm golden light, vertical 9:16. Reference: character sheet of ${member?.name || "the cast"}. ${s.location ? `Fixed location (identical in every scene set here: same set, time of day and light): ${s.location}. ` : ""}Scene: ${s.setting}. ${who}, ${s.emotion}, ${shot.en}.${others.length ? ` Also present: ${others.map(o => o.name).join(", ")}.` : ""} Real people, no text, no watermark.`;
   }
   const guard = style === "cristiana" ? ` ${CHRISTIAN_SCENE_GUARD[0].toUpperCase()}${CHRISTIAN_SCENE_GUARD.slice(1)}.` : "";
   const who = member ? `${member.name} (piel de ${member.fruit}: ${member.headES}; ${member.clothing}) con expresión ${s.emotion}` : `sin personaje hablando`;
-  return `Imagen 3D cinematográfica realista (película animada premium), vertical 9:16. Encuadre: ${shot.es}. Referencia: ficha de ${member?.name || "los personajes"}. Escena: ${s.setting}. ${who}.${others.length ? ` También en escena: ${others.map(o => `${o.name} (piel de ${o.fruit})`).join(", ")}.` : ""} Personajes de rostro humano realista con piel de su fruta, idénticos a sus fichas; nunca una fruta entera como cabeza.${guard} Sin texto, sin letreros, sin marca de agua.`;
+  return `Imagen 3D cinematográfica realista (película animada premium), vertical 9:16. Encuadre: ${shot.es}. Referencia: ficha de ${member?.name || "los personajes"}. ${s.location ? `LUGAR FIJO (idéntico en todas las escenas de este sitio: mismo decorado, misma hora y misma luz): ${s.location}. ` : ""}Escena: ${s.setting}. ${who}.${others.length ? ` También en escena: ${others.map(o => `${o.name} (piel de ${o.fruit})`).join(", ")}.` : ""} Personajes de rostro humano realista con piel de su fruta, idénticos a sus fichas; nunca una fruta entera como cabeza.${guard} Sin texto, sin letreros, sin marca de agua.`;
 }
 
-function animationPrompt(s: { setting: string; speaker: string; line: string; emotion: string }, member: CastMember | undefined, style: StyleKey, i: number) {
+function animationPrompt(s: { setting: string; speaker: string; line: string; emotion: string; location?: string }, member: CastMember | undefined, style: StyleKey, i: number) {
   const narrator = s.speaker === NARRATOR;
   const shot = shotFor(i);
   if (!isFruitStyle(style)) {
@@ -140,7 +157,7 @@ function animationPrompt(s: { setting: string; speaker: string; line: string; em
     return `1990s Dominican romance film, 35mm grain, warm golden light, vertical 9:16, 8 seconds. Animate from the scene image as the first frame.
 References: image 1 = scene${member ? `; image 2 = character sheet of ${member.name}` : ""}.
 CHARACTERS: ${member ? `${member.name}: ${member.visualEN || member.visualES}; outfit: ${member.clothing}. Real people.` : "No one speaks on camera."}
-SCENE: ${s.setting}.
+SCENE: ${s.location ? `${s.location} (same set as the other scenes here). ` : ""}${s.setting}.
 SHOTS: ${shot.en}, ${shot.moveEn}. From 0.3 s, with no pause before, ${narrator ? "slow push-in while the narrator says" : `${member!.name}, already in full ${s.emotion}, says while the camera dollies slowly toward the face`} (in Spanish, exact words): "${s.line}" Right after the line: 1 s ${narrator ? "holding on the scene" : `close-up of ${member!.name} holding the emotion`}, then the same shot continues without cuts.
 ${SOUND_EN}${kissNote(s, "en")}
 PRONUNCIATION: ${narrator ? accentPrompt(null, "en") : accentPrompt(member, "en")}.
@@ -160,7 +177,7 @@ VOICES: ${voice} No subtitles or on-screen text.`;
 ${ANIMATION_STYLE_LOCK}
 Referencias: imagen 1 = escena${member ? `; imagen 2 = ficha de ${member.name}` : ""}.
 PERSONAJES: ${personajes}
-ESCENA: ${s.setting}.${guard}
+ESCENA: ${s.location ? `${s.location} (el mismo decorado que las demás escenas en este lugar). ` : ""}${s.setting}.${guard}
 TOMAS: ${tomas}
 PRONUNCIACIÓN OBLIGATORIA: ${pronunciationFor(member, s.line)}.
 ${voces}
@@ -186,7 +203,7 @@ export function buildProduction(raw: any, ctx: Ctx) {
       emotion: clean(r.emotion || r.emocion) || "emoción contenida",
       present: Array.isArray(r.onScreen) ? r.onScreen : [],
       title: clean(r.title || r.titulo), goal: clean(r.goal || r.objetivo), sfx: clean(r.sfx || r.efectos), music: clean(r.music || r.musica),
-      transition: clean(r.transition || r.transicion), link: clean(r.link || r.conexion),
+      transition: clean(r.transition || r.transicion), link: clean(r.link || r.conexion), location: clean(r.location || r.lugar),
     }))
     .filter(s => s.line.length >= 3);
   // Un solo hablante por escena: una frase que no cabe en 8 s se parte en dos escenas,
@@ -207,9 +224,9 @@ export function buildProduction(raw: any, ctx: Ctx) {
   if (style === "cristiana" && !base.some(s => /escribe am[eé]n/i.test(s.line))) {
     const last = base[base.length - 1];
     if (last?.speaker === NARRATOR) last.line = `${last.line} Escribe AMÉN.`;
-    else base.push({ setting: last?.setting || "iglesia evangélica sencilla", speaker: NARRATOR, line: "Si crees que Dios restaura lo que el orgullo rompe… Escribe AMÉN.", emotion: "esperanza", present: [], title: "Cierre", goal: "Invitar al público a responder", sfx: "Silencio y respiración suave", music: "Piano emotivo que se apaga", transition: "Fundido a negro", link: "" });
+    else base.push({ location: last?.location || "", setting: last?.setting || "iglesia evangélica sencilla", speaker: NARRATOR, line: "Si crees que Dios restaura lo que el orgullo rompe… Escribe AMÉN.", emotion: "esperanza", present: [], title: "Cierre", goal: "Invitar al público a responder", sfx: "Silencio y respiración suave", music: "Piano emotivo que se apaga", transition: "Fundido a negro", link: "" });
   }
-  base = selectShortScenes(base, Math.min(MAX_SCENES, target));
+  base = assignLocations(selectShortScenes(base, Math.min(MAX_SCENES, target)));
 
   const scenes: Scene[] = base.map((s, i) => {
     const member = byName.get(s.speaker);
@@ -217,7 +234,7 @@ export function buildProduction(raw: any, ctx: Ctx) {
     const role = sceneRole(i, base.length);
     const present = [member, ...others].filter((m): m is CastMember => !!m).map(m => m.name);
     return {
-      n: i + 1, durationSec: SCENE_SECONDS, setting: s.setting, speaker: s.speaker, line: s.line, emotion: s.emotion,
+      n: i + 1, durationSec: SCENE_SECONDS, location: s.location, setting: s.setting, speaker: s.speaker, line: s.line, emotion: s.emotion,
       // Ficha de escena (estructura del prompt maestro). Lo que la IA no rellena lo completa el código.
       title: s.title || role.title, goal: s.goal || role.goal, shot: shotFor(i).es, characters: present,
       sfx: s.sfx || role.sfx, music: s.music || role.music,
@@ -351,7 +368,7 @@ export function sceneRole(i: number, total: number) {
 export function refreshPrompts(out: any, style: StyleKey) {
   const cast: CastMember[] = Array.isArray(out?.cast) ? out.cast : [];
   const byName = new Map(cast.map(c => [c.name, c]));
-  const scenes = (Array.isArray(out?.scenes) ? out.scenes : []).map((s: any, i: number) => {
+  const scenes = assignLocations(Array.isArray(out?.scenes) ? out.scenes : []).map((s: any, i: number) => {
     const member = byName.get(s.speaker);
     const others = (Array.isArray(s.characters) ? s.characters : []).map((n: string) => byName.get(n)).filter((m: CastMember | undefined): m is CastMember => !!m && m !== member);
     const idx = Number(s.n) ? Number(s.n) - 1 : i;
