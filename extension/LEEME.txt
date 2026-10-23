@@ -30,6 +30,12 @@ Importante
 - Copiar texto al portapapeles no puede adjuntar imágenes. Usa «Enviar a Flow» para pasar
   las fichas aprobadas por la extensión. Una ficha sin aprobar bloquea el envío.
 - La extensión guarda las fichas en el almacenamiento local de Chrome y las envía solo a Flow.
+- Cada ficha se sube a cada proyecto de Flow UNA sola vez, con el nombre «Ficha <nombre> v<versión>»
+  (aparece en «Cargas»). Después la extensión la toma del selector «+» de Flow sin subir copias,
+  así que no hace falta borrarla: es la referencia del personaje. Si el panel te pide recargar
+  (F5), es porque Flow solo actualiza su lista de cargas al recargar la página.
+- Al pulsar «Marcar generada» (o al terminar cada escena en modo automático) la extensión
+  renombra en Flow las imágenes nuevas de esa escena: «001», «001-2», «001-3»…
 - El modo automático usa tus créditos de Google Flow. El modo asistido no genera por sí solo.
 - Si Flow pide una verificación (reCAPTCHA), muestra un error o dice que no hay créditos,
   la extensión se para. Resuelve tú la verificación y vuelve a pulsar «Enviar todas»:

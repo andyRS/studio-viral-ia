@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Estudio Viral → Google Flow",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Envía en lote las escenas de Estudio Viral a Google Flow, con las fichas aprobadas de cada personaje como referencia.",
   "permissions": [
     "storage",

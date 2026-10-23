@@ -5,7 +5,7 @@
 (() => {
   if (window.__evFlowLoaded) return; window.__evFlowLoaded = true;
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  const state = { batch: null, running: false, stopRequested: false, mode: "asistido", delay: 12, attached: "", prepared: "" };
+  const state = { batch: null, running: false, stopRequested: false, mode: "asistido", delay: 12, attached: "", prepared: "", snapshot: null };
 
   // ---------- Controles de Flow (comprobados en la versión de Flow de octubre 2026) ----------
   const promptBox = () => document.querySelector('[role="textbox"][contenteditable="true"]');
@@ -63,7 +63,80 @@
     state.attached = "";
   }
 
-  // Adjunta las fichas de la escena. Si ya están las mismas adjuntas (de la escena anterior), no se vuelven a subir.
+  // ---------- Selector de activos de Flow («+»): reutiliza la ficha ya subida en vez de subirla otra vez ----------
+  const PAGE_LOAD = String(Date.now());
+  const sheetFileName = (sheet) => `Ficha ${sheet.name} v${sheet.version || 1}`;
+  const addButton = () => document.querySelector('button[aria-label="Agregar ingredientes al cuadro de instrucción"]');
+  const searchInput = () => document.querySelector('input[aria-label="Buscar activos"]');
+  const assetOptions = () => [...document.querySelectorAll('button[role="option"].asset-item')];
+  const optionName = (o) => (o.innerText || "").split("\n")[0].trim().replace(/\.(png|jpe?g|webp)$/i, "");
+  async function openPicker() {
+    if (searchInput()) return true;
+    addButton()?.click();
+    for (let t = 0; t < 20 && !searchInput(); t++) await sleep(150);
+    return !!searchInput();
+  }
+  async function closePicker() {
+    if (!searchInput()) return;
+    addButton()?.click(); await sleep(300);
+    if (searchInput()) { document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); await sleep(300); }
+  }
+  // Busca la ficha entre las cargas del proyecto y la adjunta con un clic. No crea copias en la galería.
+  async function pickExisting(fileBase) {
+    if (!(await openPicker())) return false;
+    const tab = [...document.querySelectorAll('[role="tab"]')].find((t) => /Cargas/.test(t.innerText || ""));
+    if (tab) { tab.click(); await sleep(500); }
+    const inp = searchInput();
+    if (inp) { inp.value = fileBase; inp.dispatchEvent(new Event("input", { bubbles: true })); }
+    let opt;
+    for (let t = 0; t < 12 && !opt; t++) { await sleep(250); opt = assetOptions().find((o) => optionName(o) === fileBase); }
+    if (!opt) { await closePicker(); return false; }
+    const before = ingredientImages().length;
+    opt.click();
+    for (let t = 0; t < 40 && ingredientImages().length <= before; t++) await sleep(250);
+    await closePicker();
+    return ingredientImages().length > before;
+  }
+  // ---------- Nombre de las imágenes generadas: «001», «001-2»… (menú «Cambiar nombre» de Flow) ----------
+  const tiles = () => [...document.querySelectorAll("flow-grid-tile-container")];
+  const tileId = (t) => t.querySelector("[data-media-id]")?.getAttribute("data-media-id") || "";
+  const tileName = (t) => (t.getAttribute("aria-label") || "").trim();
+  const snapshotTiles = () => new Set(tiles().map(tileId).filter(Boolean));
+  // Generadas después de preparar la escena: no estaban antes, ya tienen imagen y no son fichas ni escenas ya nombradas.
+  const newTiles = (before) => tiles().filter((t) => { const id = tileId(t); return id && !before.has(id) && !/^Ficha |^\d{3}(-\d+)?$/.test(tileName(t)); });
+  async function renameTile(tile, name) {
+    const r = tile.getBoundingClientRect();
+    tile.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: r.left + 20, clientY: r.top + 20, button: 2 }));
+    let item; for (let t = 0; t < 12 && !item; t++) { await sleep(150); item = [...document.querySelectorAll('[role="menuitem"]')].find((m) => /Cambiar nombre/.test(m.innerText || "")); }
+    if (!item) { document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); return false; }
+    item.click();
+    let input; for (let t = 0; t < 12 && !input; t++) { await sleep(150); input = document.querySelector(".rename-tile-overlay input"); }
+    if (!input) return false;
+    input.focus(); input.value = name; input.dispatchEvent(new Event("input", { bubbles: true })); await sleep(200);
+    document.querySelector('.rename-tile-overlay button[aria-label="Listo"]')?.click();
+    for (let t = 0; t < 12 && document.querySelector(".rename-tile-overlay"); t++) await sleep(150);
+    return tileName(tile) === name;
+  }
+  async function nameGenerated(sceneId, before, waitMs = 0) {
+    if (!before) return 0;
+    for (let t = 0; t < waitMs / 1000 && !newTiles(before).length; t++) await sleep(1000);
+    if (waitMs) await sleep(2000);                        // deja que terminen las 4 variantes
+    const fresh = newTiles(before).slice(0, 8);
+    let n = 0;
+    for (const [i, tile] of fresh.entries()) if (await renameTile(tile, i ? `${sceneId}-${i + 1}` : sceneId)) n++;
+    return n;
+  }
+
+  // Fichas subidas por la extensión en cada proyecto: { "/project/…": { "Ficha X v1": idDeCarga } }.
+  const getUploads = () => new Promise((r) => chrome.storage.local.get("evFlowUploads", (v) => r(v.evFlowUploads || {})));
+  async function markUploaded(fileBase) {
+    const all = await getUploads();
+    (all[location.pathname] ||= {})[fileBase] = PAGE_LOAD;
+    await chrome.storage.local.set({ evFlowUploads: all });
+  }
+
+  // Adjunta las fichas de la escena. Si ya están las mismas adjuntas (de la escena anterior), no se tocan.
+  // Cada ficha se sube a Flow UNA sola vez por proyecto; después se toma del selector de activos.
   async function attachRefs(refs) {
     const key = refs.slice().sort().join("|");
     if (key && key === state.attached && ingredientImages().length === refs.length) return;
@@ -73,11 +146,19 @@
     for (const name of refs) {
       const sheet = state.batch.sheets.find((s) => s.name === name);
       if (!sheet) throw new Error(`Falta la ficha aprobada de ${name} en el lote.`);
+      const fileBase = sheetFileName(sheet);
+      if (await pickExisting(fileBase)) { await sleep(400); continue; }
+      // Flow solo refresca su lista de cargas al recargar la página: si se subió en esta misma carga, no se sube otra copia.
+      if ((await getUploads())[location.pathname]?.[fileBase] === PAGE_LOAD) {
+        state.attached = "";
+        throw new Error(`La ficha de ${name} ya está subida a este proyecto. Recarga Flow (F5) y pulsa «Preparar» otra vez: la extensión la tomará de tus cargas sin subir otra copia.`);
+      }
       const before = ingredientImages().length;
-      const dt = new DataTransfer(); dt.items.add(await dataUrlToFile(sheet.dataUrl, name));
+      const dt = new DataTransfer(); dt.items.add(await dataUrlToFile(sheet.dataUrl, fileBase));
       paste(promptBox(), dt);
       for (let t = 0; t < 60 && ingredientImages().length <= before; t++) await sleep(250);   // hasta 15 s por subida
       if (ingredientImages().length <= before) throw new Error(`No se pudo adjuntar la ficha de ${name}.`);
+      await markUploaded(fileBase);
       await sleep(600);
     }
     state.attached = key;
@@ -86,6 +167,7 @@
   async function sendScene(scene) {
     const b = blocker(); if (b) throw Object.assign(new Error(b), { pause: true });
     if (!promptBox()) throw new Error("No encuentro el cuadro del prompt. Abre un proyecto de Flow.");
+    state.snapshot = snapshotTiles();                     // para reconocer después lo que se genere con esta escena
     await attachRefs(scene.refs || []);
     if (!(await setPromptText(scene.prompt))) throw new Error("El prompt quedó incompleto en Flow; revisa el cuadro antes de generar.");
     if (state.mode !== "auto") return "listo";            // modo asistido: tú pulsas generar
@@ -97,7 +179,11 @@
     for (let t = 0; t < 80; t++) {
       await sleep(250);
       const bl = blocker(); if (bl) throw Object.assign(new Error(bl), { pause: true });
-      if (!promptBox()?.innerText.trim()) return "enviada";
+      if (!promptBox()?.innerText.trim()) {
+        message = `${scene.id} enviada. Esperando las imágenes para ponerles su nombre…`; render();
+        await nameGenerated(scene.id, state.snapshot, 120000);
+        return "enviada";
+      }
     }
     throw new Error("Flow no confirmó el envío: el prompt sigue en el cuadro. Revisa la escena antes de reintentar.");
   }
@@ -152,7 +238,7 @@
         h("span", { style: "flex:1;color:#cbd5e1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap", title: s.title || "", text: `${s.title || ""} · ${(s.refs || []).join(", ") || "sin fichas"}` }),
         done.has(s.id) ? h("span", { style: "color:#34D399;font-size:11px", text: "✓" })
           : h("button", { "data-a": "one", "data-id": s.id, disabled: state.running || !onProject || !!state.prepared, style: btn("#1f2937") + ";padding:2px 8px;font-size:11px", text: auto ? "Enviar" : "Preparar" })))),
-      h("p", { style: "margin:8px 0 0;color:#94a3b8;font-size:11px", text: auto ? "Enviar usa tus créditos de Flow. La extensión se detiene si aparece una verificación o error." : "Preparar adjunta fichas y pega el texto sin generar. Revisa, genera en Flow y luego marca la escena como generada." }));
+      h("p", { style: "margin:8px 0 0;color:#94a3b8;font-size:11px", text: auto ? "Enviar usa tus créditos de Flow. La extensión se detiene si aparece una verificación o error." : "Preparar adjunta las fichas (se suben a Flow una sola vez por proyecto y luego se reutilizan) y pega el texto sin generar. Genera en Flow y marca la escena." }));
     panel.replaceChildren(head, body);
   }
 
@@ -186,7 +272,9 @@
     if (a === "one") run(ev.target.closest("[data-id]").getAttribute("data-id"));
     if (a === "confirm" && state.batch && state.prepared) {
       state.batch.done = [...new Set([...(state.batch.done || []), state.prepared])];
-      message = `${state.prepared} marcada como generada.`; state.prepared = ""; await save(); render();
+      const named = await nameGenerated(state.prepared, state.snapshot);
+      message = `${state.prepared} marcada como generada.` + (named ? ` ${named} imagen(es) renombrada(s) a «${state.prepared}» en Flow.` : " No encontré imágenes nuevas que renombrar (¿aún se están generando?).");
+      state.prepared = ""; await save(); render();
     }
     if (a === "stop") { state.stopRequested = true; message = "Pausando al terminar la escena actual…"; render(); }
     if (a === "reset" && state.batch) { state.batch.done = []; state.prepared = ""; await save(); message = ""; render(); }
