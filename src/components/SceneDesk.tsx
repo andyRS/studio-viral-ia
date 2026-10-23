@@ -162,6 +162,9 @@ export default function SceneDesk({ episodeId, scenes, guion, title, referencesR
             <div className="mt-1 flex flex-wrap gap-3 text-[11px]">
               {images[scene.n] && <button type="button" onClick={() => dropFile(scene.n, "image")} className="text-slate-400 hover:text-red-300">Quitar imagen</button>}
               {clips[scene.n] && <button type="button" onClick={() => dropFile(scene.n, "clip")} className="text-slate-400 hover:text-red-300">Quitar clip</button>}
+              {/* Cambiar (o subir) el archivo de ESTA escena, sin depender del nombre del archivo. */}
+              <label className="cursor-pointer text-sky-300 hover:text-sky-200">{clips[scene.n] ? "Cambiar clip" : "Subir clip"}<input type="file" accept="video/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) { place("clip", { [scene.n]: f }); setMessage(`Clip de s${String(scene.n).padStart(2, "0")} cambiado por «${f.name}». Revísalo y apruébalo.`); } e.target.value = ""; }} /></label>
+              <label className="cursor-pointer text-sky-300 hover:text-sky-200">{images[scene.n] ? "Cambiar imagen" : "Subir imagen"}<input type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) place("image", { [scene.n]: f }); e.target.value = ""; }} /></label>
               {check && <button type="button" onClick={() => { void deleteReview(scene.n); }} className="text-slate-400 hover:text-red-300">Borrar revisión</button>}
             </div>
           </div>
