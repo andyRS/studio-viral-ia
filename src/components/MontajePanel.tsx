@@ -159,6 +159,16 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
         if (!t.json?.ok) { setError(t.json?.error || "No se pudo contactar con el servidor de montaje."); return; }
         base = t.json.url; headers = { Authorization: `Ticket ${t.json.ticket}` };
       }
+      // Un servidor sin actualizar ignora la música sin avisar: se comprueba antes de subir nada.
+      if (music) {
+        const caps = await fetch(`${base}/salud`, { signal: AbortSignal.timeout(8000) }).then(r => r.json()).catch(() => null);
+        if (!caps?.musica) {
+          setError(target === "pc"
+            ? "El montaje de tu PC está desactualizado y no pondría la música. En la carpeta del proyecto ejecuta «git pull», cierra y vuelve a abrir «Montar en mi PC», y pulsa de nuevo «Montar vídeo final»."
+            : "El servidor de la nube (Fly) aún no tiene la versión con música. Ejecuta «fly deploy» en la carpeta montaje, o monta en tu PC actualizado.");
+          return;
+        }
+      }
       const fd = new FormData();
       fd.append("guion", new Blob([JSON.stringify({ ...adaptGuion(guion, files.length, { marca, delogo, cierre: lastEpisode ? "FIN" : guion?.cierre || "Continuará...", cierreCta: cta }), ...(music ? { musica_volumen: Number(musicVol) } : {}) })], { type: "application/json" }), "guion.json");
       for (const f of files) fd.append("clips", f, f.name);

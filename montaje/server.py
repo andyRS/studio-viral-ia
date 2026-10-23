@@ -15,7 +15,8 @@ Montaje en segundo plano, con progreso en vivo (lo que usa la app):
   GET  /trabajos/{id}/video  el vídeo terminado (se borra 30 min después de terminar)
   El id es aleatorio (128 bits) y hace de llave: no caduca a los 15 min como el pase de la app.
 
-GET /salud -> {"ok": true, "local": false, "gpu": ""}
+GET /salud -> {"ok": true, "local": false, "gpu": "", "musica": true}
+  "musica": este servidor monta la música de fondo (versiones anteriores la ignoraban sin avisar).
 
 Modo local (MONTAJE_LOCAL=1, en el PC del usuario con local/iniciar.ps1):
   escucha solo en 127.0.0.1, no pide token y solo acepta peticiones de la app con la cabecera
@@ -87,7 +88,7 @@ def autorizado(authorization: str) -> bool:
 
 @app.get("/salud")
 def salud():
-    return {"ok": True, "local": LOCAL, "gpu": GPU}
+    return {"ok": True, "local": LOCAL, "gpu": GPU, "musica": True}
 
 
 # ---------- Trabajos en segundo plano ----------
