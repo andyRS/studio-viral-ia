@@ -24,16 +24,22 @@ Opcionales:
   Un bloque vacío [] sirve para clips sin diálogo (tarjetas "Un año después...").
 Variables de entorno: FONT_DIR (carpeta con Poppins-Bold.ttf), WHISPER_MODEL (small por defecto).
 """
-import sys, os, json, re, subprocess, tempfile, unicodedata, difflib, wave
+import sys, os, json, re, shutil, subprocess, tempfile, unicodedata, difflib, wave
 import numpy as np
 
 FONTDIR = os.environ.get("FONT_DIR") or (os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts") if os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts", "Poppins-Bold.ttf")) else "/usr/share/fonts/truetype/google-fonts")
 FONT = os.path.join(FONTDIR, "Poppins-Bold.ttf")
 
-guion_path, out_mp4, clips = sys.argv[1], sys.argv[2], sys.argv[3:]
+guion_path, out_mp4 = os.path.abspath(sys.argv[1]), os.path.abspath(sys.argv[2])
+clips = [os.path.abspath(c) for c in sys.argv[3:]]
 G = json.load(open(guion_path, encoding="utf-8"))
 assert len(G["clips"]) == len(clips), "un bloque de diálogo por clip"
 tmp = tempfile.mkdtemp()
+# Los filtros de ffmpeg no aceptan rutas tipo "C:\..." (Windows): se trabaja dentro de tmp con
+# rutas relativas (fuente, textos y subtítulos copiados ahí). En Linux funciona igual.
+shutil.copy(FONT, os.path.join(tmp, "Poppins-Bold.ttf"))
+os.chdir(tmp)
+FONT_F = "Poppins-Bold.ttf"
 
 
 # Marcas de agua conocidas: resolución nativa de sus clips + zona a borrar
@@ -65,8 +71,20 @@ def norm(w):
 
 # 1) palabras con tiempo por clip
 progreso(2, f"Preparando {len(clips)} clips y cargando Whisper")
+DEVICE = os.environ.get("WHISPER_DEVICE", "cpu")
+if DEVICE == "cuda":
+    try:
+        import torch  # noqa: F401  en Windows carga las DLL de CUDA (cuBLAS/cuDNN) que usa faster-whisper
+    except Exception:
+        pass
 from faster_whisper import WhisperModel
-model = WhisperModel(os.environ.get("WHISPER_MODEL", "small"), compute_type="int8")
+try:
+    model = WhisperModel(os.environ.get("WHISPER_MODEL", "small"), device=DEVICE, compute_type="float16" if DEVICE == "cuda" else "int8")
+except Exception as e:  # sin GPU utilizable: sigue en CPU en vez de fallar
+    progreso(3, f"La GPU no está disponible ({str(e)[:80]}); Whisper sigue en el procesador")
+    DEVICE = "cpu"
+    model = WhisperModel(os.environ.get("WHISPER_MODEL", "small"), compute_type="int8")
+progreso(4, "Whisper en la GPU (RTX)" if DEVICE == "cuda" else "Whisper en el procesador")
 offsets, words_per_clip, t = [], [], 0.0
 for ci, clip in enumerate(clips):
     progreso(5 + 55 * ci / len(clips), f"Escuchando el clip {ci + 1} de {len(clips)} con Whisper")
@@ -221,11 +239,11 @@ if G.get("cierre"):
     sin_emoji = lambda t: "".join(ch for ch in str(t) if ord(ch) < 0x2190).strip()
     t1 = os.path.join(tmp, "cierre1.txt"); open(t1, "w", encoding="utf-8").write(sin_emoji(G["cierre"]))
     vf = (f"boxblur=20:2,eq=brightness=-0.35,"
-          f"drawtext=fontfile={FONT}:textfile={t1}:fontsize=96:fontcolor=white:borderw=5:bordercolor=black@0.7:"
+          f"drawtext=fontfile={FONT_F}:textfile={os.path.basename(t1)}:fontsize=96:fontcolor=white:borderw=5:bordercolor=black@0.7:"
           f"x=(w-text_w)/2:y=(h-text_h)/2-60")
     if G.get("cierre_cta"):   # p.ej. "Comenta PARTE 2" o "Escribe AMÉN"
         t2 = os.path.join(tmp, "cierre2.txt"); open(t2, "w", encoding="utf-8").write(sin_emoji(G["cierre_cta"]))
-        vf += (f",drawtext=fontfile={FONT}:textfile={t2}:fontsize=58:fontcolor=0xFFD23F:borderw=4:"
+        vf += (f",drawtext=fontfile={FONT_F}:textfile={os.path.basename(t2)}:fontsize=58:fontcolor=0xFFD23F:borderw=4:"
                f"bordercolor=black@0.7:x=(w-text_w)/2:y=(h/2)+70")
     run(["ffmpeg", "-v", "error", "-y", "-loop", "1", "-framerate", "24", "-i", last,
          "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", "3", "-vf", vf + ",format=yuv420p",
@@ -240,14 +258,17 @@ for k, line in enumerate(G.get("gancho", [])):
     col = "white" if k == 0 else "0xFFD23F"
     # El texto va en archivo: un apóstrofo o dos puntos en el gancho no rompen el filtro de ffmpeg.
     gk = os.path.join(tmp, f"gancho{k}.txt"); open(gk, "w", encoding="utf-8").write("".join(c for c in str(line) if ord(c) < 0x2190).strip())
-    fc += (f"drawtext=fontfile={FONT}:textfile={gk}:fontsize=54:fontcolor={col}:borderw=4:"
+    fc += (f"drawtext=fontfile={FONT_F}:textfile={os.path.basename(gk)}:fontsize=54:fontcolor={col}:borderw=4:"
            f"bordercolor=black@0.8:x=(w-text_w)/2:y=h*0.11+{72 * k}:{alpha},")
-fc += f"ass={ass_path}:fontsdir={FONTDIR}[v]"
+fc += "ass=subs.ass:fontsdir=.[v]"
 total = t + (3 if G.get("cierre") else 0)
+VCODEC = (["-c:v", "h264_nvenc", "-preset", "p5", "-rc", "vbr", "-cq", "19", "-b:v", "0"]
+          if os.environ.get("VIDEO_ENCODER") == "h264_nvenc"
+          else ["-c:v", "libx264", "-crf", "17", "-preset", os.environ.get("X264_PRESET", "medium")])
 mmss = lambda x: f"{int(x // 60)}:{int(x % 60):02d}"
-progreso(70, f"Codificando el vídeo final 1080x1920 ({mmss(total)})")
+progreso(70, f"Codificando el vídeo final 1080x1920 ({mmss(total)}) con {'la GPU (NVENC)' if VCODEC[1] == 'h264_nvenc' else 'x264'}")
 enc = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-nostats", "-progress", "pipe:1", *inputs, "-filter_complex", fc, "-map", "[v]", "-map", "[a]",
-     "-c:v", "libx264", "-crf", "17", "-preset", os.environ.get("X264_PRESET", "medium"), "-pix_fmt", "yuv420p",
+     *VCODEC, "-pix_fmt", "yuv420p",
      "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", out_mp4], stdout=subprocess.PIPE, text=True)
 last_pct = -1
 for row in enc.stdout:

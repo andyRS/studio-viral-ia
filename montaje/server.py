@@ -14,7 +14,11 @@ Montaje en segundo plano, con progreso en vivo (lo que usa la app):
   GET  /trabajos/{id}/video  el vídeo terminado (se borra 30 min después de terminar)
   El id es aleatorio (128 bits) y hace de llave: no caduca a los 15 min como el pase de la app.
 
-GET /salud -> {"ok": true}
+GET /salud -> {"ok": true, "local": false, "gpu": ""}
+
+Modo local (MONTAJE_LOCAL=1, en el PC del usuario con local/iniciar.ps1):
+  escucha solo en 127.0.0.1, no pide token y solo acepta peticiones de la app con la cabecera
+  X-Montaje-Local (eso obliga al navegador a una comprobación CORS que otras webs no pasan).
 """
 import asyncio, hashlib, hmac, os, shutil, subprocess, sys, tempfile, threading, time, uuid
 from typing import List
@@ -26,6 +30,28 @@ from starlette.background import BackgroundTask
 app = FastAPI(title="Montaje Estudio Viral")
 app.add_middleware(CORSMiddleware, allow_origins=os.environ.get("ALLOWED_ORIGINS", "*").split(","), allow_methods=["*"], allow_headers=["*"])
 TOKEN = os.environ.get("MONTAJE_TOKEN", "")
+LOCAL = os.environ.get("MONTAJE_LOCAL") == "1"
+
+
+@app.middleware("http")
+async def red_local(request, call_next):
+    # Chrome pide permiso explícito para que una web pública hable con 127.0.0.1 (Private Network Access).
+    response = await call_next(request)
+    if LOCAL:
+        response.headers["Access-Control-Allow-Private-Network"] = "true"
+    return response
+
+
+def _gpu() -> str:
+    if not LOCAL:
+        return ""
+    try:
+        return subprocess.run(["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"], capture_output=True, text=True, timeout=5).stdout.strip().splitlines()[0]
+    except Exception:
+        return ""
+
+
+GPU = _gpu()
 HERE = os.path.dirname(os.path.abspath(__file__))
 MAX_CLIPS = 24
 MAX_CLIP_BYTES = 200 * 1024 * 1024
@@ -59,7 +85,7 @@ def autorizado(authorization: str) -> bool:
 
 @app.get("/salud")
 def salud():
-    return {"ok": True}
+    return {"ok": True, "local": LOCAL, "gpu": GPU}
 
 
 # ---------- Trabajos en segundo plano ----------
@@ -127,8 +153,8 @@ async def _guardar_entrada(guion: UploadFile, clips: List[UploadFile]):
 
 
 @app.post("/trabajos")
-async def crear_trabajo(guion: UploadFile = File(...), clips: List[UploadFile] = File(...), authorization: str = Header(default="")):
-    if not autorizado(authorization):
+async def crear_trabajo(guion: UploadFile = File(...), clips: List[UploadFile] = File(...), authorization: str = Header(default=""), x_montaje_local: str = Header(default="")):
+    if not (autorizado(authorization) or (LOCAL and x_montaje_local == "1")):
         raise HTTPException(401, "Token inválido")
     work, gpath, paths = await _guardar_entrada(guion, clips)
     jid = uuid.uuid4().hex

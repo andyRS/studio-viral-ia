@@ -38,6 +38,13 @@ pone el gancho los primeros 3 s, las tarjetas y la tarjeta final, y quita la mar
 python3 -I subtitular.py guion.json salida.mp4 clip1.mp4 clip2.mp4 ...
 ```
 
+## Montar en tu PC (Windows + NVIDIA)
+Doble clic en `local/Montar en mi PC.bat` y deja la ventana abierta. La primera vez crea
+`%USERPROFILE%\Developer\montaje-env` (reutiliza faster-whisper y torch con CUDA de `whisperx-env` si existe).
+Escucha solo en `127.0.0.1:8765`, usa Whisper en la GPU y codifica con NVENC: un episodio de 11 clips
+en ~20 s (RTX 4060). La app lo detecta sola y lo ofrece como «Este PC»; Fly queda de respaldo.
+Chrome pide una vez permiso para que la página acceda a la red local: hay que pulsar «Permitir».
+
 ## API
 - `GET /salud` → `{"ok": true}`
 - `POST /trabajos` (multipart, mismos campos y autorización que `/montar`) → `{"id": "..."}` al instante. Es lo que usa la app.

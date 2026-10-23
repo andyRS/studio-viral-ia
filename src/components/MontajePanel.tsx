@@ -5,12 +5,24 @@ import { postApi, isAuthError } from "@/lib/api-client";
 // Marcas de agua conocidas: el servidor reescala a 720x1280 (Dola) o 704x1280 (Pavo) y las borra (ver montaje/README.md).
 type Watermark = "none" | "dola" | "pavo" | "custom";
 type Live = { estado: string; pct: number; paso: string; log: string[] };
+type Target = "pc" | "nube";
+
+// Servidor de montaje en el PC del usuario (montaje/local/«Montar en mi PC.bat»): GPU NVIDIA, sin subir los clips a internet.
+const PC_URL = "http://127.0.0.1:8765";
+const TARGET_KEY = "estudio-viral:montaje-destino";
+async function detectPc(): Promise<{ gpu: string } | null> {
+  try {
+    const r = await fetch(`${PC_URL}/salud`, { signal: AbortSignal.timeout(1500) });
+    const j = await r.json();
+    return j?.ok && j.local ? { gpu: String(j.gpu || "") } : null;
+  } catch { return null; }
+}
 
 // Sube con XMLHttpRequest para mostrar el avance de la subida (fetch no lo da).
-function upload(url: string, ticket: string, fd: FormData, onPct: (p: number) => void) {
+function upload(url: string, headers: Record<string, string>, fd: FormData, onPct: (p: number) => void) {
   return new Promise<{ id: string }>((resolve, reject) => {
     const x = new XMLHttpRequest();
-    x.open("POST", url); x.setRequestHeader("Authorization", `Ticket ${ticket}`);
+    x.open("POST", url); for (const [k, v] of Object.entries(headers)) x.setRequestHeader(k, v);
     x.upload.onprogress = e => { if (e.lengthComputable) onPct(Math.round((e.loaded / e.total) * 100)); };
     x.onload = () => { let j: any = {}; try { j = JSON.parse(x.responseText); } catch {} x.status < 300 && j.id ? resolve(j) : reject(new Error(j.detail || `HTTP ${x.status}`)); };
     x.onerror = () => reject(new Error("se cortó la conexión con el servidor de montaje"));
@@ -63,6 +75,18 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
   const [elapsed, setElapsed] = useState(0);
   const [uploadPct, setUploadPct] = useState(0);
   const [live, setLive] = useState<Live | null>(null);
+  const [pc, setPc] = useState<{ gpu: string } | null>(null);
+  const [checkingPc, setCheckingPc] = useState(true);
+  const [target, setTarget] = useState<Target>("nube");
+  async function findPc() {
+    setCheckingPc(true);
+    const found = await detectPc();
+    setPc(found); setCheckingPc(false);
+    let saved: string | null = null; try { saved = localStorage.getItem(TARGET_KEY); } catch {}
+    setTarget(found && saved !== "nube" ? "pc" : "nube");
+  }
+  useEffect(() => { void findPc(); }, []);
+  function chooseTarget(t: Target) { setTarget(t); try { localStorage.setItem(TARGET_KEY, t); } catch {} }
   const [error, setError] = useState("");
   const [video, setVideo] = useState<string>("");
   const timer = useRef<any>(null);
@@ -93,19 +117,26 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
     if (video) { URL.revokeObjectURL(video); setVideo(""); }
     const t0 = Date.now(); timer.current = setInterval(() => setElapsed(Math.round((Date.now() - t0) / 1000)), 1000);
     try {
-      const t = await postApi("/api/montaje", {});
-      if (isAuthError(t)) { setError("Inicia sesión para usar el montaje automático."); return; }
-      if (!t.json?.ok) { setError(t.json?.error || "No se pudo contactar con el servidor de montaje."); return; }
+      // Destino: este PC (sin pase, solo 127.0.0.1) o el servidor de Fly (pase temporal firmado por la app).
+      let base = PC_URL, headers: Record<string, string> = { "X-Montaje-Local": "1" };
+      if (target === "pc") {
+        if (!(await detectPc())) { setError("No encuentro el montaje de este PC. Abre «Montar en mi PC» (acceso directo del escritorio) y vuelve a pulsar, o elige «Servidor en la nube»."); return; }
+      } else {
+        const t = await postApi("/api/montaje", {});
+        if (isAuthError(t)) { setError("Inicia sesión para usar el montaje automático."); return; }
+        if (!t.json?.ok) { setError(t.json?.error || "No se pudo contactar con el servidor de montaje."); return; }
+        base = t.json.url; headers = { Authorization: `Ticket ${t.json.ticket}` };
+      }
       const fd = new FormData();
       fd.append("guion", new Blob([JSON.stringify(adaptGuion(guion, files.length, { marca, delogo, cierre: lastEpisode ? "FIN" : guion?.cierre || "Continuará...", cierreCta: cta }))], { type: "application/json" }), "guion.json");
       for (const f of files) fd.append("clips", f, f.name);
       // 1) Subida: el servidor responde al instante con el número de trabajo.
-      const { id } = await upload(`${t.json.url}/trabajos`, t.json.ticket, fd, setUploadPct);
+      const { id } = await upload(`${base}/trabajos`, headers, fd, setUploadPct);
       // 2) Progreso en vivo: cada respuesta llega en cuanto hay un paso nuevo (o a los 20 s).
       let seq = -1, fails = 0, state: any = null;
       while (true) {
         try {
-          const r = await fetch(`${t.json.url}/trabajos/${id}?desde=${seq}`);
+          const r = await fetch(`${base}/trabajos/${id}?desde=${seq}`);
           if (r.status === 404) throw Object.assign(new Error("el servidor perdió el montaje (¿se reinició?). Vuelve a pulsar «Montar vídeo final»."), { fatal: true });
           if (!r.ok) throw new Error(`HTTP ${r.status}`);
           state = await r.json(); fails = 0; seq = state.seq;
@@ -118,11 +149,11 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
       }
       if (state.estado === "error") { setError(state.error || "El montaje falló."); return; }
       // 3) Descarga del vídeo terminado.
-      const v = await fetch(`${t.json.url}/trabajos/${id}/video`);
+      const v = await fetch(`${base}/trabajos/${id}/video`);
       if (!v.ok) { setError(`No se pudo descargar el vídeo (HTTP ${v.status}). Está guardado 30 min en el servidor: vuelve a intentarlo.`); return; }
       setVideo(URL.createObjectURL(await v.blob()));
     } catch (e: any) {
-      setError("No se pudo completar el montaje: " + (e?.message || e) + ". Revisa que el servidor de montaje esté encendido.");
+      setError("No se pudo completar el montaje: " + (e?.message || e) + (target === "pc" ? ". Revisa que la ventana «Montar en mi PC» siga abierta, o elige «Servidor en la nube»." : ". Revisa que el servidor de montaje esté encendido."));
     } finally { clearInterval(timer.current); setBusy(false); }
   }
 
@@ -131,6 +162,19 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
 
   return <div className="rounded-xl bg-[#121826] p-4 space-y-3">
     <p className="text-sm text-slate-300">Sube los clips del episodio <b>en orden</b> y el servidor devuelve el vídeo final con gancho, subtítulos de colores, tarjetas y cierre.</p>
+    <div className="space-y-1.5">
+      <p className="text-xs text-slate-300">Dónde montar</p>
+      <div className="flex flex-wrap gap-2">
+        <button type="button" disabled={busy || !pc} onClick={() => chooseTarget("pc")} className={`rounded-lg border px-3 py-2 text-left text-xs disabled:opacity-50 ${target === "pc" ? "border-emerald-400 bg-emerald-400/10 text-emerald-100" : "border-white/10 text-slate-300"}`}>
+          <b className="block">Este PC {pc?.gpu ? `· ${pc.gpu.replace(/^NVIDIA GeForce /, "")}` : ""}</b>
+          {checkingPc ? "Buscando…" : pc ? "Conectado · ~1 min por episodio, sin subir a internet" : "No conectado"}
+        </button>
+        <button type="button" disabled={busy} onClick={() => chooseTarget("nube")} className={`rounded-lg border px-3 py-2 text-left text-xs ${target === "nube" ? "border-amber-400 bg-amber-400/10 text-amber-100" : "border-white/10 text-slate-300"}`}>
+          <b className="block">Servidor en la nube (Fly)</b>Respaldo · 10-25 min por episodio
+        </button>
+      </div>
+      {!checkingPc && !pc && <p className="text-[11px] text-slate-400">Para montar en tu PC abre «Montar en mi PC» (acceso directo del escritorio), déjalo abierto y pulsa <button type="button" onClick={findPc} className="text-sky-300 underline">buscar de nuevo</button>. Si Chrome pregunta si la página puede acceder a dispositivos de tu red local, pulsa «Permitir».</p>}
+    </div>
     {!filesOverride && <input type="file" accept="video/mp4,video/*" multiple onChange={e => pick(e.target.files)} disabled={busy} />}
     {!!files.length && <ol className="space-y-1 text-sm">
       {files.map((f, i) => <li key={f.name + i} className="flex items-center gap-2 rounded bg-white/[.03] px-2 py-1">
