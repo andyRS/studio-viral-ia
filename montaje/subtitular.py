@@ -21,6 +21,8 @@ guion.json:
 Opcionales:
   "marca": "dola" | "pavo"   quita la marca de agua de esa herramienta (reescala antes los clips con otra resolución)
   "delogo": "x=..:y=..:w=..:h=.."   coordenadas propias si la marca es otra
+  "musica_volumen": 0.05-0.4   volumen de la música de fondo (0.18 por defecto). El archivo lo pone
+                               server.py en "musica_archivo"; se repite si es corto y baja sola cuando hablan.
   Un bloque vacío [] sirve para clips sin diálogo (tarjetas "Un año después...").
 Variables de entorno: FONT_DIR (carpeta con Poppins-Bold.ttf), WHISPER_MODEL (small por defecto).
 """
@@ -303,7 +305,8 @@ if G.get("cierre"):
     fc += f"[{n}:v]setsar=1,fps=24[v{n}];[{n}:a]aformat=channel_layouts=stereo[a{n}];"
     cat += f"[v{n}][a{n}]"
     n += 1
-fc += f"{cat}concat=n={n}:v=1:a=1[vc][a];[vc]"
+MUSICA = G.get("musica_archivo") if G.get("musica_archivo") and os.path.exists(G["musica_archivo"]) else ""
+fc += f"{cat}concat=n={n}:v=1:a=1[vc][{'voz' if MUSICA else 'a'}];[vc]"
 alpha = "alpha='if(lt(t,2.6),1,max(0,1-(t-2.6)/0.4))':enable='lt(t,3)'"
 y = 205
 gancho = G.get("gancho", [])
@@ -317,6 +320,16 @@ for k, line in enumerate(gancho):
     y += 10
 fc += "ass=subs.ass:fontsdir=.[v]"
 total = t + (3 if G.get("cierre") else 0)
+if MUSICA:
+    # Música de fondo (p. ej. de Muse): en bucle hasta el final, entra y sale con fundido y baja
+    # sola cuando alguien habla (sidechain con las voces), para que el diálogo se entienda siempre.
+    vol = min(0.4, max(0.05, float(G.get("musica_volumen") or 0.18)))
+    inputs += ["-stream_loop", "-1", "-i", MUSICA]
+    fc += (f";[{n}:a]aresample=48000,aformat=channel_layouts=stereo,atrim=0:{total:.2f},volume={vol},"
+           f"afade=t=in:d=1,afade=t=out:st={max(0, total - 2.5):.2f}:d=2.5[mus];"
+           f"[voz]asplit[voz1][voz2];[mus][voz1]sidechaincompress=threshold=0.02:ratio=6:attack=15:release=450[musb];"
+           f"[voz2][musb]amix=inputs=2:duration=first:normalize=0[a]")
+    progreso(69, f"Música de fondo al {int(vol * 100)} %, baja sola cuando hablan")
 VCODEC = (["-c:v", "h264_nvenc", "-preset", "p5", "-rc", "vbr", "-cq", "19", "-b:v", "0"]
           if os.environ.get("VIDEO_ENCODER") == "h264_nvenc"
           else ["-c:v", "libx264", "-crf", "17", "-preset", os.environ.get("X264_PRESET", "medium")])

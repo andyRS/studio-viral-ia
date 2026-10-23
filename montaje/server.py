@@ -3,6 +3,7 @@
 POST /montar  (multipart/form-data)
   guion: archivo guion.json (formato de subtitular.py)
   clips: los clips en orden (varios campos "clips")
+  musica: (opcional) música de fondo en MP3/WAV/M4A, p. ej. creada en Muse; va bajo las voces
   Cabecera: Authorization: Bearer <MONTAJE_TOKEN>
          o  Authorization: Ticket <exp>.<firma>  (pase temporal que firma la app en Vercel)
 Devuelve: video/mp4 con gancho, subtítulos de colores, tarjetas y cierre (espera hasta el final).
@@ -20,8 +21,8 @@ Modo local (MONTAJE_LOCAL=1, en el PC del usuario con local/iniciar.ps1):
   escucha solo en 127.0.0.1, no pide token y solo acepta peticiones de la app con la cabecera
   X-Montaje-Local (eso obliga al navegador a una comprobación CORS que otras webs no pasan).
 """
-import asyncio, hashlib, hmac, os, shutil, subprocess, sys, tempfile, threading, time, uuid
-from typing import List
+import asyncio, hashlib, hmac, json, os, shutil, subprocess, sys, tempfile, threading, time, uuid
+from typing import List, Optional
 from fastapi import FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -57,6 +58,7 @@ MAX_CLIPS = 24
 MAX_CLIP_BYTES = 200 * 1024 * 1024
 MAX_TOTAL_BYTES = 2 * 1024 * 1024 * 1024
 MAX_SCRIPT_BYTES = 1024 * 1024
+MAX_MUSIC_BYTES = 40 * 1024 * 1024
 
 async def save_upload(upload: UploadFile, path: str, limit: int) -> int:
     written = 0
@@ -135,7 +137,22 @@ def _ejecutar(job, gpath, out, paths, work):
     TRABAJOS.pop(job["id"], None)
 
 
-async def _guardar_entrada(guion: UploadFile, clips: List[UploadFile]):
+async def _guardar_musica(musica: Optional[UploadFile], gpath: str, work: str):
+    """Guarda la música de fondo y apunta a ella en el guion. La ruta la pone siempre el servidor:
+    una «musica_archivo» que venga del navegador se descarta."""
+    g = json.load(open(gpath, encoding="utf-8"))
+    g.pop("musica_archivo", None)
+    if musica is not None and musica.filename:
+        ext = os.path.splitext(musica.filename)[1].lower()
+        if ext not in (".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac"):
+            raise HTTPException(400, "La música debe ser MP3, WAV, M4A, AAC, OGG o FLAC")
+        mpath = os.path.join(work, "musica" + ext)
+        await save_upload(musica, mpath, MAX_MUSIC_BYTES)
+        g["musica_archivo"] = mpath
+    json.dump(g, open(gpath, "w", encoding="utf-8"), ensure_ascii=False)
+
+
+async def _guardar_entrada(guion: UploadFile, clips: List[UploadFile], musica: Optional[UploadFile] = None):
     if not 1 <= len(clips) <= MAX_CLIPS:
         raise HTTPException(400, f"Se admiten entre 1 y {MAX_CLIPS} clips")
     work = tempfile.mkdtemp(prefix="montaje_")
@@ -147,20 +164,21 @@ async def _guardar_entrada(guion: UploadFile, clips: List[UploadFile]):
             p = os.path.join(work, f"clip{i:02d}.mp4")
             total_bytes += await save_upload(c, p, min(MAX_CLIP_BYTES, MAX_TOTAL_BYTES - total_bytes))
             paths.append(p)
+        await _guardar_musica(musica, gpath, work)
     except Exception:
         shutil.rmtree(work, ignore_errors=True); raise
     return work, gpath, paths
 
 
 @app.post("/trabajos")
-async def crear_trabajo(guion: UploadFile = File(...), clips: List[UploadFile] = File(...), authorization: str = Header(default=""), x_montaje_local: str = Header(default="")):
+async def crear_trabajo(guion: UploadFile = File(...), clips: List[UploadFile] = File(...), musica: Optional[UploadFile] = File(None), authorization: str = Header(default=""), x_montaje_local: str = Header(default="")):
     if not (autorizado(authorization) or (LOCAL and x_montaje_local == "1")):
         raise HTTPException(401, "Token inválido")
-    work, gpath, paths = await _guardar_entrada(guion, clips)
+    work, gpath, paths = await _guardar_entrada(guion, clips, musica)
     jid = uuid.uuid4().hex
     en_cola = sum(1 for j in TRABAJOS.values() if j["estado"] in ("en cola", "montando"))
     job = {"id": jid, "estado": "en cola", "pct": 0, "paso": f"En cola ({en_cola} por delante)" if en_cola else "Clips recibidos",
-           "log": [f"Recibidos {len(paths)} clips"], "seq": 0, "error": "", "out": "", "cond": threading.Condition(), "terminado": 0}
+           "log": [f"Recibidos {len(paths)} clips" + (" y la música de fondo" if musica is not None and musica.filename else "")], "seq": 0, "error": "", "out": "", "cond": threading.Condition(), "terminado": 0}
     TRABAJOS[jid] = job
     threading.Thread(target=_ejecutar, args=(job, gpath, os.path.join(work, "final.mp4"), paths, work), daemon=True).start()
     return {"id": jid}
@@ -194,7 +212,7 @@ def video_trabajo(jid: str):
     return FileResponse(job["out"], media_type="video/mp4", filename="episodio_montado.mp4")
 
 @app.post("/montar")
-async def montar(guion: UploadFile = File(...), clips: List[UploadFile] = File(...), authorization: str = Header(default="")):
+async def montar(guion: UploadFile = File(...), clips: List[UploadFile] = File(...), musica: Optional[UploadFile] = File(None), authorization: str = Header(default="")):
     if not autorizado(authorization):
         raise HTTPException(401, "Token inválido")
     if not 1 <= len(clips) <= MAX_CLIPS:
@@ -209,6 +227,7 @@ async def montar(guion: UploadFile = File(...), clips: List[UploadFile] = File(.
             p = os.path.join(work, f"clip{i:02d}.mp4")
             total_bytes += await save_upload(c, p, min(MAX_CLIP_BYTES, MAX_TOTAL_BYTES - total_bytes))
             paths.append(p)
+        await _guardar_musica(musica, gpath, work)
         out = os.path.join(work, f"montaje_{uuid.uuid4().hex[:8]}.mp4")
         r = await asyncio.to_thread(subprocess.run, [sys.executable, "-I", os.path.join(HERE, "subtitular.py"), gpath, out, *paths], capture_output=True, text=True, timeout=1800)
         if r.returncode != 0 or not os.path.exists(out):

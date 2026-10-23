@@ -173,7 +173,7 @@ export default function SceneDesk({ episodeId, scenes, guion, title, referencesR
       </li>;
     })}</ol>
     <section className="rounded-2xl border border-amber-400/20 bg-amber-400/[.06] p-4"><h3 className="font-bold">Montar vídeo final</h3><p className="mt-1 text-xs text-slate-300">Se habilita con fichas maestras y todas las escenas aprobadas, y con todos los clips s01… cargados en orden.</p>
-      {ready ? <div className="mt-3"><MontajePanel guion={guion} title={title} filesOverride={ordered} style={style} part={part} /></div> : <p className="mt-3 text-sm text-amber-200">Pendiente: {referencesReady ? "" : "fichas maestras; "}{scenes.length - approved} escenas por aprobar; {scenes.length - ordered.length} clips por subir.</p>}
+      {ready ? <div className="mt-3"><MontajePanel guion={guion} title={title} filesOverride={ordered} style={style} part={part} musicCues={scenes.map(s => s.music || "")} seconds={scenes.reduce((t, s) => t + (s.durationSec || 8), 0)} /></div> : <p className="mt-3 text-sm text-amber-200">Pendiente: {referencesReady ? "" : "fichas maestras; "}{scenes.length - approved} escenas por aprobar; {scenes.length - ordered.length} clips por subir.</p>}
     </section>
   </div>;
 }

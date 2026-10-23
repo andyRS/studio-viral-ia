@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { postApi, isAuthError } from "@/lib/api-client";
+import CopyButton from "./CopyButton";
 
 // Marcas de agua conocidas: el servidor reescala a 720x1280 (Dola) o 704x1280 (Pavo) y las borra (ver montaje/README.md).
 type Watermark = "none" | "dola" | "pavo" | "custom";
@@ -62,7 +63,23 @@ export function defaultCta(style: string, part: number, last: boolean) {
   return last ? "Dale me gusta y comenta qué te pareció" : `Comenta PARTE ${part + 1}`;
 }
 
-export default function MontajePanel({ guion, title, filesOverride, style = "frutinovela", part = 1 }: { guion: any; title: string; filesOverride?: File[]; style?: string; part?: number }) {
+// Prompt para que Muse (muse.ai) cree la música de fondo original del episodio. Muse no tiene API
+// pública: se copia el prompt, se descarga el MP3 que crea y se sube aquí.
+export function musePrompt(style: string, seconds: number, cues: string[]) {
+  const mood = style === "cristiana" ? "emotiva y esperanzadora, de inspiración cristiana (piano, cuerdas y pads cálidos)"
+    : style === "cine90" ? "dramática de telenovela de los 90 (cuerdas, piano y sintetizadores de la época)"
+    : "dramática de telenovela latina moderna (cuerdas, piano y percusión suave)";
+  const arc = Array.from(new Set(cues.map(c => c.trim()).filter(Boolean))).slice(0, 6);
+  return [
+    `Crea una pista instrumental original, sin voces ni letra, de ${Math.max(30, Math.round(seconds))} segundos, para el fondo de un microdrama vertical de redes sociales.`,
+    `Estilo: música ${mood}.`,
+    arc.length ? `Que siga este arco emocional, en orden: ${arc.join(" → ")}.` : "Que empiece con tensión, suba hacia un clímax y cierre con un final emotivo en suspenso.",
+    "Debe quedar por debajo de los diálogos: melodía sencilla, sin solos fuertes ni golpes que tapen las voces.",
+    "Formato: MP3 de buena calidad, que empiece y termine limpio.",
+  ].join("\n");
+}
+
+export default function MontajePanel({ guion, title, filesOverride, style = "frutinovela", part = 1, musicCues = [], seconds = 0 }: { guion: any; title: string; filesOverride?: File[]; style?: string; part?: number; musicCues?: string[]; seconds?: number }) {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const files = filesOverride ?? selectedFiles;
   const [watermark, setWatermark] = useState<Watermark>("none");
@@ -71,6 +88,10 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
   const [ctaEdited, setCtaEdited] = useState(false);
   useEffect(() => { if (!ctaEdited) setCta(defaultCta(style, part, lastEpisode)); }, [style, part, lastEpisode, ctaEdited]);
   const [rect, setRect] = useState({ x: "", y: "", w: "", h: "" });
+  const [music, setMusic] = useState<File | null>(null);
+  const [musicVol, setMusicVol] = useState("0.18");
+  const musicUrl = useMemo(() => (music ? URL.createObjectURL(music) : ""), [music]);
+  useEffect(() => () => { if (musicUrl) URL.revokeObjectURL(musicUrl); }, [musicUrl]);
   const [busy, setBusy] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [uploadPct, setUploadPct] = useState(0);
@@ -139,8 +160,9 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
         base = t.json.url; headers = { Authorization: `Ticket ${t.json.ticket}` };
       }
       const fd = new FormData();
-      fd.append("guion", new Blob([JSON.stringify(adaptGuion(guion, files.length, { marca, delogo, cierre: lastEpisode ? "FIN" : guion?.cierre || "Continuará...", cierreCta: cta }))], { type: "application/json" }), "guion.json");
+      fd.append("guion", new Blob([JSON.stringify({ ...adaptGuion(guion, files.length, { marca, delogo, cierre: lastEpisode ? "FIN" : guion?.cierre || "Continuará...", cierreCta: cta }), ...(music ? { musica_volumen: Number(musicVol) } : {}) })], { type: "application/json" }), "guion.json");
       for (const f of files) fd.append("clips", f, f.name);
+      if (music) fd.append("musica", music, music.name);
       // 1) Subida: el servidor responde al instante con el número de trabajo.
       const { id } = await upload(`${base}/trabajos`, headers, fd, setUploadPct);
       // 2) Progreso en vivo: cada respuesta llega en cuanto hay un paso nuevo (o a los 20 s).
@@ -203,6 +225,21 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
       <label htmlFor="cierre-cta" className="block text-xs text-slate-300">Llamada final <span className="text-slate-500">(línea amarilla bajo «{lastEpisode ? "FIN" : guion?.cierre || "Continuará..."}» en la tarjeta de cierre)</span></label>
       <input id="cierre-cta" value={cta} maxLength={40} onChange={e => { setCta(e.target.value); setCtaEdited(true); }} disabled={busy} className="max-w-sm" />
       <label className="flex items-center gap-2 text-xs text-slate-300"><input type="checkbox" checked={lastEpisode} onChange={e => setLastEpisode(e.target.checked)} disabled={busy} /> Último episodio de la serie (el cierre dice «FIN»)</label>
+    </div>
+    <div className="space-y-2 rounded-lg border border-white/10 p-3">
+      <p className="text-xs text-slate-300">Música de fondo original <span className="text-slate-500">(opcional · creada con Muse)</span></p>
+      <ol className="list-decimal space-y-1 pl-4 text-[11px] text-slate-400">
+        <li>Copia el prompt y pégalo en <a href="https://muse.ai" target="_blank" rel="noreferrer" className="text-sky-300 underline">Muse</a>.</li>
+        <li>Descarga el MP3 que crea y súbelo aquí. Si es más corto que el episodio, se repite.</li>
+        <li>Al montar, la música va por debajo y baja sola cuando alguien habla.</li>
+      </ol>
+      <CopyButton text={musePrompt(style, seconds || files.length * 8, musicCues)} label="Copiar prompt para Muse" />
+      <div className="flex flex-wrap items-center gap-2">
+        <input type="file" accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/mp4,audio/x-m4a,audio/aac,audio/ogg,audio/flac,.mp3,.wav,.m4a,.aac,.ogg,.flac" onChange={e => setMusic(e.target.files?.[0] || null)} disabled={busy} />
+        {music && <><select aria-label="Volumen de la música" value={musicVol} onChange={e => setMusicVol(e.target.value)} disabled={busy} className="text-xs"><option value="0.1">Muy suave</option><option value="0.18">Suave (recomendado)</option><option value="0.28">Media</option></select>
+        <button type="button" disabled={busy} onClick={() => setMusic(null)} className="text-xs text-slate-400 hover:text-red-300">Quitar música</button></>}
+      </div>
+      {music && <audio src={musicUrl} controls className="h-8 w-full max-w-sm" />}
     </div>
     <button type="button" disabled={busy || !files.length} onClick={montar} className="rounded bg-amber-500 px-5 py-2.5 font-bold disabled:opacity-50">{busy ? "Montando…" : "Montar vídeo final"}</button>
     {busy && <div className="space-y-3">

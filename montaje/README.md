@@ -52,7 +52,7 @@ Chrome pide una vez permiso para que la página acceda a la red local: hay que p
 - `GET /trabajos/{id}/video` → el vídeo terminado; se guarda 30 min. El id (aleatorio, 128 bits) hace de llave, así un montaje largo no depende del pase de 15 min.
 - Un montaje a la vez; los demás quedan «en cola». `subtitular.py` informa su avance con líneas `PROGRESO <pct> <mensaje>`.
 - Velocidad: `WHISPER_MODEL=base` y `X264_PRESET=veryfast` (en el Dockerfile). Para ir aún más rápido, una máquina con más CPU: en `fly.toml`, `cpu_kind = "performance"`.
-- `POST /montar` (multipart): campo `guion` (archivo) y uno o varios campos `clips` (en orden).
+- `POST /montar` (multipart): campo `guion` (archivo) y uno o varios campos `clips` (en orden). Opcional: `musica` (MP3/WAV/M4A, p. ej. de Muse), que va en bucle bajo las voces y baja sola cuando hablan.
   Autorización obligatoria con `MONTAJE_TOKEN`, de una de estas dos formas:
   - `Authorization: Bearer <MONTAJE_TOKEN>` — para curl o scripts propios.
   - `Authorization: Ticket <exp>.<firma>` — pase temporal (15 min) que firma la app en
