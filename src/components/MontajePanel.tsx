@@ -170,7 +170,7 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
         const missing = needs.filter(([k]) => !caps?.[k]).map(([, label]) => label);
         if (missing.length) {
           setError(target === "pc"
-            ? `El montaje de tu PC está desactualizado y no haría: ${missing.join(", ")}. En la carpeta del proyecto ejecuta «git pull», cierra y vuelve a abrir «Montar en mi PC», y pulsa de nuevo «Montar vídeo final».`
+            ? `El montaje de tu PC está desactualizado y no haría: ${missing.join(", ")}. ${caps?.carpeta ? `Se está ejecutando desde «${caps.carpeta}»: ejecuta «git pull» en esa carpeta` : "La ventana abierta es de una versión anterior (arrancada antes del «git pull» o desde otra copia del proyecto)"}. Cierra todas las ventanas «Montar en mi PC», ábrela de nuevo y pulsa otra vez «Montar vídeo final». Para comprobarlo, abre http://127.0.0.1:8765/salud: debe decir "recorte": true.`
             : `El servidor de la nube (Fly) aún no tiene: ${missing.join(", ")}. Ejecuta «fly deploy» en la carpeta montaje, o monta en tu PC actualizado.`);
           return;
         }
