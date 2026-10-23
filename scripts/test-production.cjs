@@ -92,6 +92,14 @@ function checkChristian(r, label) {
   const shots = t1.episode.scenes.map(s => s.imagePromptFlow.match(/Encuadre: ([^.]+)/)[1]);
   assert.ok(shots.every((s, i) => i === 0 || s !== shots[i - 1]), "encuadre repetido en escenas seguidas");
   assert.match(t1.episode.scenes[0].animationPrompt, /0–2 s: .*2–5 s: .*5–8 s: /s, "microescenas");
+  // «Actualizar prompts»: un episodio guardado con prompts antiguos queda igual que uno nuevo, sin tocar el guion.
+  const { refreshPrompts, PROMPT_RULES_VERSION } = require("../src/lib/production.ts");
+  const old = { ...t2.episode, promptsVersion: undefined, dolaPrompt: "viejo", scenes: t2.episode.scenes.map(s => ({ ...s, animationPrompt: "Telenovela animada 3D cinematográfica realista", imagePromptFlow: "viejo" })) };
+  const fresh = refreshPrompts(old, "cristiana");
+  assert.equal(fresh.promptsVersion, PROMPT_RULES_VERSION);
+  assert.deepEqual(fresh.scenes.map(s => [s.animationPrompt, s.imagePromptFlow]), t2.episode.scenes.map(s => [s.animationPrompt, s.imagePromptFlow]), "prompts actualizados distintos a los nuevos");
+  assert.equal(fresh.dolaPrompt, t2.episode.dolaPrompt, "Dola actualizado distinto");
+  assert.deepEqual(fresh.scenes.map(s => s.line), t2.episode.scenes.map(s => s.line), "cambió el guion");
   // Reparación en el código: nombres genéricos -> fruta por rol.
   const fixed = normalizeCast([{ name: "Protagonista", role: "motoconchista humilde" }, { name: "Antagonista", role: "papá rico" }], "frutinovela");
   assert.deepEqual(fixed.map(c => c.fruit), ["plátano", "coco"]);

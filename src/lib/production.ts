@@ -8,6 +8,9 @@ import type { Scene } from "./types";
 
 export const SCENE_SECONDS = 8;
 export const NARRATOR = "Narrador";
+// Súbelo cada vez que cambien las reglas de los prompts: los episodios guardados con una versión
+// anterior muestran «Actualizar prompts» (rehace los prompts sin IA y sin tocar el guion).
+export const PROMPT_RULES_VERSION = 2;
 // Sin esto, en los primeros planos el modelo de vídeo pasa del 3D animado a un actor real con la piel teñida.
 export const ANIMATION_STYLE_LOCK = "ESTILO FIJO: el mismo render 3D animado de la imagen de la escena durante todo el vídeo, también en los primeros planos y con lluvia o luz dura. Nunca acción real, nunca fotorrealista, nunca un actor o persona real; la cara, la piel de fruta, el pelo y las proporciones del personaje no cambian.";
 const clean = (v: unknown) => String(v ?? "").replace(/\s+/g, " ").trim();
@@ -144,6 +147,12 @@ PRONUNCIACIÓN OBLIGATORIA: ${pronunciationFor(member, s.line)}.
 ${voces}`;
 }
 
+// Prompt de Dola (Seedance) con las escenas elegidas para la versión corta.
+function buildDolaPrompt(dolaScenes: { n: number; setting: string; speaker: string; line: string; emotion: string }[], cast: CastMember[], style: StyleKey, total: number, dolaDuration: number) {
+  const castLine = cast.map(c => isFruitStyle(style) ? `${c.name}: personaje 3D animado con rostro humano y piel de ${c.fruit} (${c.headES}); ${c.clothing}` : `${c.name}: ${c.visualEN || c.visualES}; ${c.clothing}`).join(". ");
+  return `Usa Seedance 2.5. ${isFruitStyle(style) ? `Telenovela animada 3D (render CGI de película animada premium), vertical 9:16; personajes 3D animados de rostro humano con piel de su fruta, nunca una fruta entera como cabeza. ${ANIMATION_STYLE_LOCK}` : "Película romántica dominicana de los 90, 35 mm, vertical 9:16, personas reales."} ${total > dolaDuration ? `Adaptación de ${dolaDuration} s del episodio de ${total} s. Conserva el gancho y el cierre; elimina solo escenas intermedias.` : `Episodio completo de ${total} s.`}${style === "cristiana" ? ` ${CHRISTIAN_SCENE_GUARD}.` : ""} PERSONAJES: ${castLine}. ${dolaScenes.map((s, i) => `${i * SCENE_SECONDS}-${(i + 1) * SCENE_SECONDS}s [escena ${s.n}]: ${s.setting}. ${s.speaker === NARRATOR ? `Narrador en off: "${s.line}"` : `${s.speaker} dice con ${s.emotion}: "${s.line}"`}`).join(" ")} PRONUNCIACIÓN OBLIGATORIA: ${Array.from(new Set(cast.flatMap(c => c.pronunciations).concat(dialectPronunciations(dolaScenes.map(s => s.line).join(" "))))).join("; ") || "palabras completas con acentos correctos"}. VOCES: español latino neutro, cada palabra completa, nunca acento inglés; sincronización de labios solo para quien habla; sin subtítulos ni texto en pantalla.`;
+}
+
 // Construye todo el paquete de producción del episodio a partir de lo que devolvió la IA.
 export function buildProduction(raw: any, ctx: Ctx) {
   const { style, characters: cast } = ctx;
@@ -212,8 +221,7 @@ export function buildProduction(raw: any, ctx: Ctx) {
   // Dola: versión corta sin perder el último giro, narrador ni cliffhanger.
   const dolaScenes = selectShortScenes(scenes, Math.floor(60 / SCENE_SECONDS));
   const dolaDuration = dolaScenes.length * SCENE_SECONDS;
-  const castLine = cast.map(c => isFruitStyle(style) ? `${c.name}: rostro humano realista con piel de ${c.fruit} (${c.headES}); ${c.clothing}` : `${c.name}: ${c.visualEN || c.visualES}; ${c.clothing}`).join(". ");
-  const dolaPrompt = `Usa Seedance 2.5. ${isFruitStyle(style) ? `Telenovela animada 3D (render CGI de película animada premium), vertical 9:16; personajes 3D animados de rostro humano con piel de su fruta, nunca una fruta entera como cabeza. ${ANIMATION_STYLE_LOCK}` : "Película romántica dominicana de los 90, 35 mm, vertical 9:16, personas reales."} ${total > dolaDuration ? `Adaptación de ${dolaDuration} s del episodio de ${total} s. Conserva el gancho y el cierre; elimina solo escenas intermedias.` : `Episodio completo de ${total} s.`}${style === "cristiana" ? ` ${CHRISTIAN_SCENE_GUARD}.` : ""} PERSONAJES: ${castLine}. ${dolaScenes.map((s, i) => `${i * SCENE_SECONDS}-${(i + 1) * SCENE_SECONDS}s [escena ${s.n}]: ${s.setting}. ${s.speaker === NARRATOR ? `Narrador en off: "${s.line}"` : `${s.speaker} dice con ${s.emotion}: "${s.line}"`}`).join(" ")} PRONUNCIACIÓN OBLIGATORIA: ${Array.from(new Set(cast.flatMap(c => c.pronunciations).concat(dialectPronunciations(dolaScenes.map(s => s.line).join(" "))))).join("; ") || "palabras completas con acentos correctos"}. VOCES: español latino neutro, cada palabra completa, nunca acento inglés; sincronización de labios solo para quien habla; sin subtítulos ni texto en pantalla.`;
+  const dolaPrompt = buildDolaPrompt(dolaScenes, cast, style, total, dolaDuration);
   const platformAdaptations = mergeModelPlatforms(buildPlatformAdaptations({ theme: ctx.idea || clean(raw?.title), seriesTitle: ctx.seriesTitle || clean(raw?.title), partNumber: ctx.partNumber || 1, previousSummary: ctx.previousSummary, hook }), raw?.platforms);
   const f = raw?.ficha || {};
   const ficha = {
@@ -247,7 +255,7 @@ export function buildProduction(raw: any, ctx: Ctx) {
   return {
     title: clean(raw?.title) || `Episodio ${ctx.partNumber || 1}`, ficha, social, cover, selfScore,
     summary: clean(raw?.summary) || ctx.idea,
-    cast, scenes, scriptBlocks, prompts: scenes.map(s => s.animationPrompt),
+    cast, scenes, scriptBlocks, prompts: scenes.map(s => s.animationPrompt), promptsVersion: PROMPT_RULES_VERSION,
     dolaPrompt, dolaDuration, dolaSceneNumbers: dolaScenes.map(s => s.n), dolaIsAdaptation: total > dolaDuration, duration: total,
     shortForLongPlatforms: total < 60 ? "Facebook y TikTok necesitan al menos 60 s: añade la tarjeta «Continuará…» de 3 s al final." : "",
     dialogueRules: "Palabras dominicanas completas con acentos (tíguere, yipeta, jevito, vaina, un chin, mi cualto). Nunca pa', vamo', e', ta'. Un solo personaje habla por escena.",
@@ -310,4 +318,22 @@ export function sceneRole(i: number, total: number) {
   if (i === 0) return ROLES[0];
   if (i === total - 1) return ROLES[5];
   return ROLES[Math.min(4, 1 + Math.floor(((i - 1) * 4) / Math.max(1, total - 2)))];
+}
+
+// Rehace los prompts de imagen, animación y Dola de un episodio guardado con las reglas actuales.
+// Conserva guion, escenas, personajes y todo lo demás.
+export function refreshPrompts(out: any, style: StyleKey) {
+  const cast: CastMember[] = Array.isArray(out?.cast) ? out.cast : [];
+  const byName = new Map(cast.map(c => [c.name, c]));
+  const scenes = (Array.isArray(out?.scenes) ? out.scenes : []).map((s: any, i: number) => {
+    const member = byName.get(s.speaker);
+    const others = (Array.isArray(s.characters) ? s.characters : []).map((n: string) => byName.get(n)).filter((m: CastMember | undefined): m is CastMember => !!m && m !== member);
+    const idx = Number(s.n) ? Number(s.n) - 1 : i;
+    return { ...s, imagePromptFlow: imagePrompt(s, member, others, style, idx), animationPrompt: animationPrompt(s, member, style, idx) };
+  });
+  const total = scenes.length * SCENE_SECONDS;
+  const dolaNums: number[] = Array.isArray(out?.dolaSceneNumbers) && out.dolaSceneNumbers.length ? out.dolaSceneNumbers : selectShortScenes(scenes, Math.floor(60 / SCENE_SECONDS)).map((s: any) => s.n);
+  const dolaScenes = scenes.filter((s: any) => dolaNums.includes(s.n));
+  const dolaDuration = dolaScenes.length * SCENE_SECONDS;
+  return { ...out, scenes, prompts: scenes.map((s: any) => s.animationPrompt), dolaPrompt: scenes.length ? buildDolaPrompt(dolaScenes, cast, style, total, dolaDuration) : out?.dolaPrompt, promptsVersion: PROMPT_RULES_VERSION };
 }

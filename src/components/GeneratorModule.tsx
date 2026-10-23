@@ -16,7 +16,7 @@ import SceneDesk from "./SceneDesk";
 import { STYLES, type StyleKey } from "@/lib/knowledge";
 import { templateSeries, templateNext } from "@/lib/story";
 import { isGenericName } from "@/lib/cast";
-import { buildFlowBatch } from "@/lib/production";
+import { buildFlowBatch, refreshPrompts, PROMPT_RULES_VERSION } from "@/lib/production";
 import { seriesSignals } from "@/lib/seriesSignals";
 
 type View = "inicio" | "nueva" | "continuar" | "resultado";
@@ -42,7 +42,7 @@ const IDEAS: Record<StyleKey, string[]> = {
 };
 
 export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpisodeId?: string; focusTab?: "mesa" } = {}) {
-  const { data, insert, remove, mode } = useData();
+  const { data, insert, remove, update, mode } = useData();
   const deleteSeries = useDeleteSeries();
   // Ganchos ocultados del banco (se guardan en este navegador).
   const [hiddenHooks, setHiddenHooks] = useState<string[]>([]);
@@ -333,6 +333,15 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
       {view === "resultado" && result && <Result
         episode={result.episode} episodeId={result.episodeId} seriesId={result.seriesId} part={result.part} seriesTitle={data.series.find((s: any) => s.id === result.seriesId)?.title} initialTab={focusTab}
         onBack={() => setView("inicio")} onNext={() => { setSeriesId(result.seriesId); setView("continuar"); }}
+        onRefreshPrompts={async () => {
+          // Rehace los prompts con las reglas actuales, sin IA: el guion, las escenas y los personajes no cambian.
+          const firstBible = data.episodes.find((e: any) => e.seriesId === result.seriesId && e.output?.seriesBible?.style)?.output?.seriesBible;
+          const st = (result.episode?.seriesBible?.style || firstBible?.style || (result.episode?.cast?.some((c: any) => c.fruit) ? "frutinovela" : "cine90")) as StyleKey;
+          const output = refreshPrompts(result.episode, st);
+          if (result.episodeId) await update("episodes", result.episodeId, { output });
+          setResult({ ...result, episode: output });
+          setNotice("Prompts actualizados con las reglas nuevas. El guion y los personajes no cambiaron; vuelve a enviar el lote a Flow si ya lo habías enviado.");
+        }}
         onDelete={async () => { if (!result.episodeId || !confirmDelete(`el episodio «${result.episode?.title || "sin título"}»`)) return; await remove("episodes", result.episodeId); setResult(null); setView("inicio"); }}
         onRecreate={() => {
           const oldSeries = data.series.find((s: any) => s.id === result.seriesId);
@@ -385,7 +394,7 @@ function DownloadText({ text, filename, label }: { text: string; filename: strin
 const Field = ({ label, value }: { label: string; value?: string }) => value ? <div><dt className="inline font-semibold text-slate-200">{label}: </dt><dd className="inline text-slate-300">{value}</dd></div> : null;
 const RefChips = ({ refs }: { refs?: string[] }) => <p className="mt-2 text-[11px] text-sky-200">Referencias a seleccionar (fuera del prompt): {(refs || []).length ? (refs || []).map(r => <span key={r} className="ml-1 rounded-full bg-sky-400/15 px-2 py-0.5">{r}</span>) : <span className="text-slate-400">ninguna</span>}</p>;
 
-function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialTab, onBack, onNext, onRecreate, onDelete }: any) {
+function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialTab, onBack, onNext, onRecreate, onDelete, onRefreshPrompts }: any) {
   type Tab = "guion" | "elenco" | "imagenes" | "animacion" | "mesa" | "redes" | "plataformas" | "archivos";
   const { data, update } = useData();
   const cast: any[] = Array.isArray(out.cast) ? out.cast : [];
@@ -401,6 +410,9 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
   const referencesReady = !!cast.length && master.every(c => !!c?.imageUrl && !!c?.referenceApprovedAt);
   const snapshotValid = !!out.referenceVersions && master.every((c, i) => Number(c?.referenceVersion || 1) === Number(out.referenceVersions[String(cast[i].name).toLowerCase()]));
   const productionReady = referencesReady && snapshotValid;
+  const promptsOutdated = scenes.length > 0 && Number(out.promptsVersion || 1) < PROMPT_RULES_VERSION;
+  const [refreshing, setRefreshing] = useState(false);
+  async function refresh() { setRefreshing(true); try { await onRefreshPrompts?.(); } finally { setRefreshing(false); } }
   const referenceSignature = master.map(c => `${c?.id || "missing"}:${c?.referenceVersion || 0}`).join("|");
   const missingMasters = cast.filter((_, i) => !master[i]?.imageUrl || !master[i]?.referenceApprovedAt).map(c => c.name);
   const fullDuration = out.duration || scenes.length * 8 || (out.scriptBlocks || []).length * 15;
@@ -425,7 +437,7 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
         <h2 className="text-xl font-bold">{out.title || `Episodio ${part}`}</h2>
         {out.summary && <p className="mt-1 text-sm text-slate-400">{out.summary}</p>}
       </div>
-      <span className="flex items-center gap-3">{episodeId && <button type="button" onClick={onDelete} className="text-xs text-slate-400 hover:text-red-300">Eliminar episodio</button>}
+      <span className="flex items-center gap-3">{scenes.length > 0 && <button type="button" onClick={refresh} disabled={refreshing} title="Rehace los prompts de imagen, animación y Dola con las reglas actuales, sin IA y sin tocar el guion" className="text-xs text-slate-400 hover:text-amber-300 disabled:opacity-50">{refreshing ? "Actualizando…" : "Actualizar prompts"}</button>}{episodeId && <button type="button" onClick={onDelete} className="text-xs text-slate-400 hover:text-red-300">Eliminar episodio</button>}
       <button onClick={onNext} className="rounded bg-amber-500 px-4 py-2 text-sm font-bold">Crear episodio {part + 1} →</button></span>
     </div>
     <div className={`mt-4 rounded-xl border p-4 text-sm ${fromAI ? "border-emerald-400/25 bg-emerald-400/[.07] text-emerald-100" : "border-amber-400/30 bg-amber-400/[.08] text-amber-100"}`}>
@@ -434,6 +446,7 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
       {!fromAI && <button onClick={onRecreate} className="mt-3 rounded-lg bg-amber-500 px-3 py-2 text-xs font-bold text-slate-950 hover:bg-amber-400">Recrear con la IA</button>}
       {out.shortForLongPlatforms && <p className="mt-2 text-xs">{out.shortForLongPlatforms}</p>}
     </div>
+    {promptsOutdated && <div className="mt-3 flex flex-wrap items-center gap-3 rounded-xl border border-sky-400/30 bg-sky-400/10 p-3 text-xs text-sky-100"><span className="flex-1 min-w-[220px]">Hay reglas nuevas para los prompts (p. ej. mantener el estilo 3D de la imagen en todo el vídeo). Este episodio tiene los prompts de una versión anterior.</span><button type="button" onClick={refresh} disabled={refreshing} className="rounded-lg bg-sky-400 px-3 py-1.5 font-bold text-slate-950 hover:bg-sky-300 disabled:opacity-50">{refreshing ? "Actualizando…" : "Actualizar prompts"}</button></div>}
     {scenes.length > 0 && cast.length >= 2 && !referencesReady && <div className="mt-3 rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 text-xs text-amber-100">Faltan fichas maestras aprobadas: {missingMasters.join(", ")}. Súbelas y apruébalas en «1 · Biblia» antes de producir.</div>}
     {scenes.length > 0 && cast.length >= 2 && referencesReady && !snapshotValid && <div className="mt-3 rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 text-xs text-amber-100">La ficha maestra cambió desde que se creó este guion, o el episodio es anterior al control de versiones. Regenera el episodio para alinear prompts y personajes.</div>}
     <div className="tabs mt-5">{tabs.map(([k, l]) => <button key={k} onClick={() => setTab(k)} disabled={(k === "imagenes" || k === "animacion" || k === "mesa") && !productionReady} className={`${tab === k ? "tab-active" : ""} disabled:cursor-not-allowed disabled:opacity-40`}>{l}</button>)}</div>
