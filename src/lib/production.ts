@@ -20,7 +20,7 @@ export const NARRATOR = "Narrador";
 export const PROMPT_RULES_VERSION = 7;
 // v7: si la escena tiene un beso, que sea en la boca (breve y romántico).
 const kissNote = (s: { setting: string; line: string }, lang: "es" | "en") => /\bb[eé]s(?:[oóa]|an|ar|ando|ame|it[oa])|\bkiss/i.test(`${s.setting} ${s.line}`)
-  ? (lang === "es" ? " BESO: en la boca, de frente y bien visible, breve y romántico; nunca sexual." : " KISS: on the lips, clearly visible, brief and romantic; never sexual.") : "";
+  ? (lang === "es" ? " BESO: en la boca, de frente y bien visible, breve y romántico; la cámara en las caras, sin caricias íntimas ni poses sexuales." : " KISS: on the lips, clearly visible, brief and romantic; camera on the faces, no intimate caressing or sexual poses.") : "";
 // v6: acento por personaje (accentPrompt): marcado para quien lo tenga en su ficha, neutro para el resto.
 // Ritmo viral (v4): la voz empieza en el primer segundo, sin silencios de entrada ni de salida, ambiente
 // continuo y sin música dentro del clip (la música va en el montaje; si cada clip trae la suya, salta en cada corte).
