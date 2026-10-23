@@ -18,7 +18,7 @@ import { templateSeries, templateNext } from "@/lib/story";
 import { isGenericName } from "@/lib/cast";
 import { buildFlowBatch, refreshPrompts, PROMPT_RULES_VERSION, sceneCountFor } from "@/lib/production";
 import { seriesSignals } from "@/lib/seriesSignals";
-import { stylePublish, formatDescription } from "@/lib/platforms";
+import { stylePublish, formatDescription, viralHashtags } from "@/lib/platforms";
 
 type View = "inicio" | "nueva" | "continuar" | "resultado";
 type EpisodeTab = "guion" | "elenco" | "imagenes" | "animacion" | "mesa" | "redes" | "plataformas" | "archivos";
@@ -39,13 +39,14 @@ const isFinished = (e: any) => e?.status === FINISHED;
 // Cliffhanger con el que cerró un episodio: lo retoma la parte siguiente.
 const cliffhangerOf = (out: any) => String(out?.ficha?.closing || out?.ficha?.cierre || (Array.isArray(out?.scenes) && out.scenes.length ? out.scenes[out.scenes.length - 1].line : "") || "").trim();
 // Texto corto y hashtags para Facebook y TikTok: la adaptación guardada o, si no hay, la fórmula del estilo.
-function publishPack(out: any, style: string, part: number) {
+function publishPack(out: any, style: string, part: number, seriesTitle = "") {
   const ad: any[] = out?.platformAdaptations || out?.platform_adaptations || [];
   const sp = stylePublish(style);
   const title = String(out?.social?.title || out?.title || "").trim();
   return (["Facebook", "TikTok"] as const).map(platform => {
     const a = ad.find(x => x?.platform === platform);
-    const hashtags: string[] = a?.hashtags?.length ? a.hashtags : sp.tags;
+    // Los de la IA solo aportan el tema del episodio; el resto es la fórmula de los virales del nicho.
+    const hashtags = viralHashtags(style, platform, seriesTitle, [...(a?.hashtags || []), ...(out?.hashtags || [])]);
     const text = String(a?.description || (platform === "TikTok" && out?.social?.tiktokDescription ? `${out.social.tiktokDescription}\n${hashtags.slice(0, 5).join(" ")}` : formatDescription(title, sp.word(part), hashtags))).replace(/#[^\s#]+/g, "").replace(/[ \t]+\n/g, "\n").trim();
     return { platform, text, hashtags: hashtags.join(" "), extra: platform === "Facebook" ? (a?.topic || sp.topic ? `Tema al publicar: ${a?.topic || sp.topic}` : "") : (a?.bestTime ? `Mejor hora: ${a.bestTime}` : "") };
   });
@@ -469,7 +470,7 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
   const finished = status === FINISHED;
   // Terminado: se puede ver, publicar y descargar textos, pero no editar fichas, prompts ni la mesa.
   const lockedTab = finished && (tab === "elenco" || tab === "imagenes" || tab === "animacion" || tab === "mesa");
-  const pack = useMemo(() => publishPack(out, out.seriesBible?.style || (cast.some((c: any) => c.fruit) ? "frutinovela" : "cine90"), part), [out, part]);
+  const pack = useMemo(() => publishPack(out, out.seriesBible?.style || (cast.some((c: any) => c.fruit) ? "frutinovela" : "cine90"), part, seriesTitle || ""), [out, part, seriesTitle]);
   const [reviewed, setReviewed] = useState(false);
   useEffect(() => { setReviewed(false); setTab(initialTab || "guion"); }, [out, initialTab]);
   const fromAI = !!out.mode && out.mode !== "plantilla-local" && out.mode !== "gemini-borrador" && cast.length >= 2;
@@ -652,7 +653,7 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
         </div>
         <p className="text-xs text-slate-500">guion.json es el archivo para el montaje con subtitular.py. El .md trae la ficha del episodio, el guion por escenas, las 3 fases y el paquete de redes.</p>
       </div>}
-      {tab === "mesa" && productionReady && <SceneDesk key={episodeId} onDownloaded={onFinish} episodeId={episodeId} scenes={scenes} guion={out.guionJson || {}} title={`${seriesTitle || "serie"} ${part}`} referencesReady={referencesReady} referenceSignature={referenceSignature} style={episodeStyle} part={part} />}
+      {tab === "mesa" && productionReady && <SceneDesk key={episodeId} onDownloaded={onFinish} publish={pack} episodeId={episodeId} scenes={scenes} guion={out.guionJson || {}} title={`${seriesTitle || "serie"} ${part}`} referencesReady={referencesReady} referenceSignature={referenceSignature} style={episodeStyle} part={part} />}
       {(tab === "imagenes" || tab === "animacion" || tab === "mesa") && !productionReady && <p className="rounded-xl border border-amber-400/25 bg-amber-400/10 p-4 text-sm text-amber-100">Revisa los personajes canónicos y la versión de sus fichas maestras antes de continuar.</p>}
     </fieldset>
   </>;

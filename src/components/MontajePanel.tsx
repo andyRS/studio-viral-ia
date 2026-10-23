@@ -81,7 +81,7 @@ export function musePrompt(style: string, seconds: number, cues: string[]) {
   ].join("\n");
 }
 
-export default function MontajePanel({ guion, title, filesOverride, style = "frutinovela", part = 1, musicCues = [], seconds = 0, onDownloaded }: { guion: any; title: string; filesOverride?: File[]; style?: string; part?: number; musicCues?: string[]; seconds?: number; onDownloaded?: () => void }) {
+export default function MontajePanel({ guion, title, filesOverride, style = "frutinovela", part = 1, musicCues = [], seconds = 0, onDownloaded, publish = [] }: { guion: any; title: string; filesOverride?: File[]; style?: string; part?: number; musicCues?: string[]; seconds?: number; onDownloaded?: () => void; publish?: { platform: string; text: string; hashtags: string; extra?: string }[] }) {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const files = filesOverride ?? selectedFiles;
   const [watermark, setWatermark] = useState<Watermark>("none");
@@ -292,6 +292,18 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
       <video src={video} controls className="max-h-[70vh] rounded" />
       <a href={video} download={fname} onClick={() => onDownloaded?.()} className="inline-block rounded bg-emerald-500 px-4 py-2 text-sm font-bold text-black">Descargar {fname}</a>
       {onDownloaded && <p className="text-xs text-slate-400">Al descargarlo, este episodio queda terminado y bloqueado, y se abre el paso para crear la parte siguiente.</p>}
+      {!!publish.length && <div className="mt-3 space-y-2">
+        <p className="text-sm font-bold">Listo para publicar</p>
+        <div className="grid gap-3 md:grid-cols-2">{publish.map(p => <div key={p.platform} className="rounded-xl border border-white/10 bg-black/20 p-3">
+          <p className="font-bold">{p.platform === "Facebook" ? "📘" : "🎵"} {p.platform}</p>
+          <p className="mt-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Texto corto</p>
+          <p className="mt-1 whitespace-pre-line text-sm">{p.text}</p>
+          <p className="mt-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Hashtags</p>
+          <p className="mt-1 text-sm text-sky-200">{p.hashtags}</p>
+          {p.extra && <p className="mt-2 text-xs text-slate-400">{p.extra}</p>}
+          <div className="mt-3 flex flex-wrap gap-2"><CopyButton text={p.text} label="Copiar texto" /><CopyButton text={p.hashtags} label="Copiar hashtags" /><CopyButton text={`${p.text}\n\n${p.hashtags}`} label="Copiar todo" /></div>
+        </div>)}</div>
+      </div>}
     </div>}
   </div>;
 }

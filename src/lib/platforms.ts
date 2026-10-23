@@ -25,11 +25,29 @@ export interface PlatformAdaptation {
 
 // Por estilo: palabra para comentar, tema de Facebook y hashtags de nicho.
 const STYLE_PUBLISH: Record<string, { word: (part: number) => string; topic: string; tags: string[] }> = {
-  frutinovela: { word: p => `PARTE ${p + 1}`, topic: "Animación", tags: ["#Frutinovelas", "#DramaDominicano", "#TelenovelaDeFrutas", "#Microdrama", "#RD"] },
-  cristiana: { word: () => "AMÉN", topic: "Religión", tags: ["#Frutinovelas", "#Cristianos", "#Reflexión", "#Fe", "#DramaDominicano"] },
-  cine90: { word: () => "BUTACA", topic: "Películas", tags: ["#PeliculasQueNoExisten", "#Cine90", "#RomanceDominicano", "#Microdrama", "#RD"] },
+// Etiquetas que repiten los vídeos de frutinovelas que más alcance tienen en TikTok: las del nicho
+// (#frutinovela #frutinovelas), el género (#drama #minidrama) y #ia; las de alcance van aparte.
+  frutinovela: { word: p => `PARTE ${p + 1}`, topic: "Animación", tags: ["#frutinovela", "#frutinovelas", "#drama", "#minidrama", "#ia"] },
+  cristiana: { word: () => "AMÉN", topic: "Religión", tags: ["#frutinovela", "#frutinovelas", "#reflexion", "#cristianos", "#ia"] },
+  cine90: { word: () => "BUTACA", topic: "Películas", tags: ["#peliculasquenoexisten", "#romance", "#minidrama", "#drama", "#ia"] },
 };
 export const stylePublish = (style?: string) => STYLE_PUBLISH[style || ""] || STYLE_PUBLISH.frutinovela;
+
+const GENERIC_TAGS = /^#(fyp|foryou|foryoupage|parati|viral|xyzbca|tiktok|reels|fb|facebook)$/i;
+const tagOf = (t: string) => "#" + String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/^#/, "").replace(/[^a-z0-9ñ]/gi, "").toLowerCase();
+// Hashtags para que el vídeo llegue lejos: la etiqueta propia de la serie (como #fruitloveisland), las del
+// nicho, 1-2 del tema concreto del episodio (#suegratoxica, #infidelidad) y las de alcance.
+// TikTok: 6-7 etiquetas con #parati #fyp; Facebook: 4-5, sin las de TikTok.
+export function viralHashtags(style: string, platform: "TikTok" | "Facebook" | string, seriesTitle: string, episodeTags: string[] = []) {
+  const sp = stylePublish(style);
+  const serie = seriesTitle ? tagOf(seriesTitle) : "";
+  const nicho = sp.tags.map(tagOf);
+  const tema = episodeTags.map(tagOf).filter(t => t.length > 3 && !GENERIC_TAGS.test(t) && !nicho.includes(t) && t !== serie).slice(0, 2);
+  const list = platform === "TikTok"
+    ? [serie, nicho[0], nicho[1], ...tema, nicho[2], "#parati", "#fyp", nicho[4]]
+    : [serie, nicho[0], nicho[1], ...tema, nicho[2]];
+  return Array.from(new Set(list.filter(t => t && t.length > 2))).slice(0, platform === "TikTok" ? 8 : 5);
+}
 // Descripción: título corto en MAYÚSCULAS + palabra para comentar + 3-6 hashtags.
 export function formatDescription(title: string, word: string, hashtags: string[]) {
   return `${title.toUpperCase()}\nComenta ${word} 👇\n${hashtags.slice(0, 6).join(" ")}`;
