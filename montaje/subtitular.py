@@ -21,6 +21,11 @@ guion.json:
 Opcionales:
   "marca": "dola" | "pavo"   quita la marca de agua de esa herramienta (reescala antes los clips con otra resolución)
   "delogo": "x=..:y=..:w=..:h=.."   coordenadas propias si la marca es otra
+  "recortar": true (por defecto)   quita el silencio muerto al inicio y al final de cada clip con diálogo
+                                   (los clips de IA traen medio segundo o más): el vídeo fluye sin pausas.
+  "tarjetas": [{"antes": 3, "texto": "Horas después..."}]   tarjeta negra de 1,6 s antes del clip 3 (índice desde 0)
+  "anterior_archivo": lo pone server.py: vídeo o clip de la parte anterior; abre el episodio con 7 s en
+                      blanco y negro y «Anteriormente...».
   "musica_volumen": 0.05-0.4   volumen de la música de fondo (0.18 por defecto). El archivo lo pone
                                server.py en "musica_archivo"; se repite si es corto y baja sola cuando hablan.
   Un bloque vacío [] sirve para clips sin diálogo (tarjetas "Un año después...").
@@ -133,30 +138,67 @@ except Exception as e:  # sin GPU utilizable: sigue en CPU en vez de fallar
     DEVICE = "cpu"
     model = WhisperModel(os.environ.get("WHISPER_MODEL", "small"), compute_type="int8")
 progreso(4, "Whisper en la GPU (RTX)" if DEVICE == "cuda" else "Whisper en el procesador")
-offsets, words_per_clip, t = [], [], 0.0
+RECORTAR = G.get("recortar", True) is not False
+CARD_S = 1.6
+TARJETAS = {}
+for tj in G.get("tarjetas") or []:
+    try:
+        k, txt = int(tj.get("antes")), str(tj.get("texto") or "").strip()
+    except (TypeError, ValueError, AttributeError):
+        continue
+    if 0 < k < len(clips) and txt:
+        TARJETAS[k] = txt[:60]
+ANTERIOR = G.get("anterior_archivo") if G.get("anterior_archivo") and os.path.exists(G["anterior_archivo"]) else ""
+RECAP_S = 0.0
+if ANTERIOR:
+    da = dur(ANTERIOR)
+    # Vídeo final de la parte anterior (>20 s): se salta su tarjeta final de 3 s. Clip suelto: su final.
+    fin = da - 3.2 if da > 20 else da
+    RECAP_S = round(min(7.0, fin), 2)
+    RECAP_INI = max(0.0, fin - RECAP_S)
+offsets, words_per_clip, recortes, t = [], [], [], RECAP_S
 for ci, clip in enumerate(clips):
     progreso(5 + 55 * ci / len(clips), f"Escuchando el clip {ci + 1} de {len(clips)} con Whisper")
+    if ci in TARJETAS:
+        t += CARD_S
     offsets.append(t)
     wav = os.path.join(tmp, f"c{ci}.wav")
     run(["ffmpeg", "-v", "error", "-y", "-i", clip, "-ac", "1", "-ar", "16000", wav])
     w = wave.open(wav)
     x = np.frombuffer(w.readframes(w.getnframes()), np.int16).astype(np.float32) / 32768
     prompt = " ".join(txt for _, txt in G["clips"][ci])
+    D = dur(clip)
     best = []
     for kw in ({}, {"initial_prompt": prompt}):          # sin guion (tiempos más precisos) y, si falla, con guion
         segs, _ = model.transcribe(x, language="es", word_timestamps=True, **kw)
-        ws = [{"w": wd.word.strip(), "s": wd.start + t, "e": wd.end + t}
-              for s in segs for wd in s.words if wd.start < dur(clip)]
+        ws = [{"w": wd.word.strip(), "s": wd.start, "e": wd.end}
+              for s in segs for wd in s.words if wd.start < D]
         if len(ws) > len(best):
             best = ws
         if len(best) >= 0.6 * len(prompt.split()):
             break
+    # Recorte de silencios muertos: se empieza justo antes de la primera palabra y se corta medio
+    # segundo después de la última (deja respirar la reacción). Sin voz detectada, el clip va entero.
+    a, b = 0.0, D
+    if RECORTAR and best and G["clips"][ci]:
+        primera, ultima = best[0]["s"], max(x["e"] for x in best)
+        if primera > 0.35:
+            a = max(0.0, primera - 0.18)
+        if D - ultima > 0.75:
+            b = min(D, ultima + 0.5)
+        if b - a < 1.2:
+            a, b = 0.0, D
+    for x in best:
+        x["s"] += t - a; x["e"] += t - a
+    recortes.append((a, b))
     words_per_clip.append(best)
+    if a > 0.05 or D - b > 0.05:
+        progreso(5 + 55 * (ci + 1) / len(clips), f"Clip {ci + 1}: quito {a + D - b:.1f} s de silencio")
     if best:
         progreso(5 + 55 * (ci + 1) / len(clips), f"Clip {ci + 1}: oí «{' '.join(x['w'] for x in best)[:120]}»")
     elif G["clips"][ci]:
         progreso(5 + 55 * (ci + 1) / len(clips), f"Clip {ci + 1}: no se oyó voz; los subtítulos se reparten por tiempo")
-    t += dur(clip)
+    t += b - a
 progreso(61, "Alineando el texto del guion con las voces")
 
 # 2) alinear texto del guion con las palabras oídas
@@ -176,7 +218,7 @@ for ci, lines in enumerate(G["clips"]):
                 if j < j2:
                     loc[i1 + k] = (cw[j]["s"], cw[j]["e"])
     c0 = offsets[ci]
-    c1 = offsets[ci] + dur(clips[ci]) - 0.2
+    c1 = offsets[ci] + (recortes[ci][1] - recortes[ci][0]) - 0.2
     known = [k for k, v in enumerate(loc) if v]
     for k in range(len(loc)):
         if loc[k]:
@@ -260,9 +302,36 @@ ass_path = os.path.join(tmp, "subs.ass")
 open(ass_path, "w", encoding="utf-8").writelines(ass)
 progreso(65, f"Subtítulos de colores listos: {len(events)} bloques sin encimarse")
 
-# 4) unir clips + cierre, gancho y subtítulos
-inputs, fc, cat = [], "", ""
+# 4) unir: «Anteriormente», clips (recortados) con sus tarjetas de tiempo, cierre, gancho y subtítulos
+inputs, fc, cat, n = [], "", "", 0
+
+
+def segmento(path, vf_extra=""):
+    """Añade un vídeo ya normalizado (1080x1920, 24 fps, estéreo) a la secuencia."""
+    global fc, cat, n
+    inputs.extend(["-i", path])
+    fc += f"[{n}:v]setsar=1,fps=24{vf_extra}[v{n}];[{n}:a]aresample=48000,aformat=channel_layouts=stereo[a{n}];"
+    cat += f"[v{n}][a{n}]"
+    n += 1
+
+
+if ANTERIOR:
+    progreso(66, f"«Anteriormente...»: {RECAP_S:.0f} s de la parte anterior en blanco y negro")
+    rec = os.path.join(tmp, "anterior.mp4")
+    run(["ffmpeg", "-v", "error", "-y", "-ss", f"{RECAP_INI:.2f}", "-t", f"{RECAP_S:.2f}", "-i", ANTERIOR,
+         "-filter_complex", "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,fps=24,hue=s=0,eq=contrast=1.08,"
+         + texto_dt("Anteriormente...", 76, "white", "(h-text_h)/2", 5)
+         + f",fade=t=out:st={max(0, RECAP_S - 0.25):.2f}:d=0.25[v];[0:a]aresample=48000,aformat=channel_layouts=stereo[a]",
+         "-map", "[v]", "-map", "[a]", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-c:a", "aac", rec])
+    segmento(rec)
 for ci, c in enumerate(clips):
+    if ci in TARJETAS:   # salto de tiempo: negro con el texto, como «Horas después...»
+        card = os.path.join(tmp, f"tarjeta{ci}.mp4")
+        run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"color=c=black:s=1080x1920:r=24:d={CARD_S}",
+             "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", str(CARD_S),
+             "-vf", texto_dt(TARJETAS[ci], 70, "white", "(h-text_h)/2", 0, ":alpha='min(1,t/0.35)'") + ",format=yuv420p",
+             "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", card])
+        segmento(card)
     inputs += ["-i", c]
     dl = ""
     preset = MARCAS.get(str(G.get("marca", "")).lower())
@@ -272,17 +341,20 @@ for ci, c in enumerate(clips):
         if not re.fullmatch(r"x=\d{1,4}:y=\d{1,4}:w=\d{1,4}:h=\d{1,4}", str(G["delogo"])):
             raise ValueError("delogo debe indicar x, y, w y h en píxeles")
         dl = f"delogo={G['delogo']},"
-    fc += (f"[{ci}:v]{dl}scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,fps=24[v{ci}];"
-           f"[{ci}:a]aresample=48000,aformat=channel_layouts=stereo[a{ci}];")
-    cat += f"[v{ci}][a{ci}]"
-n = len(clips)
+    a, b = recortes[ci]
+    # Corte seco y limpio: trim al tramo con voz y micro-fundido de audio (sin «clic» entre clips).
+    fc += (f"[{n}:v]trim=start={a:.3f}:end={b:.3f},setpts=PTS-STARTPTS,{dl}scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,fps=24[v{n}];"
+           f"[{n}:a]atrim=start={a:.3f}:end={b:.3f},asetpts=PTS-STARTPTS,aresample=48000,aformat=channel_layouts=stereo,"
+           f"afade=t=in:d=0.03,afade=t=out:st={max(0, b - a - 0.04):.3f}:d=0.04[a{n}];")
+    cat += f"[v{n}][a{n}]"
+    n += 1
 if G.get("cierre"):
     progreso(68, f"Tarjeta final: «{G['cierre']}»" + (f" + «{G['cierre_cta']}»" if G.get("cierre_cta") else ""))
     # Tarjeta final de 3 s: el último cuadro del episodio difuminado y oscurecido, con
     # "Continuará..." (o "FIN") en grande y una línea de llamada a la acción opcional debajo.
     end = os.path.join(tmp, "end.mp4")
     last = os.path.join(tmp, "last.png")
-    run(["ffmpeg", "-v", "error", "-y", "-sseof", "-0.3", "-i", clips[-1], "-frames:v", "1",
+    run(["ffmpeg", "-v", "error", "-y", "-ss", f"{max(0, recortes[-1][1] - 0.3):.2f}", "-i", clips[-1], "-frames:v", "1",
          "-vf", "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920", last])
     cta = str(G.get("cierre_cta") or "").strip()
     if re.match(r"(?i)llamada final", cta):   # se coló el rótulo del campo en vez de la frase
@@ -301,13 +373,12 @@ if G.get("cierre"):
     run(["ffmpeg", "-v", "error", "-y", "-loop", "1", "-framerate", "24", "-i", last,
          "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", "3", "-vf", vf + ",format=yuv420p",
          "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", end])
-    inputs += ["-i", end]
-    fc += f"[{n}:v]setsar=1,fps=24[v{n}];[{n}:a]aformat=channel_layouts=stereo[a{n}];"
-    cat += f"[v{n}][a{n}]"
-    n += 1
+    segmento(end)
 MUSICA = G.get("musica_archivo") if G.get("musica_archivo") and os.path.exists(G["musica_archivo"]) else ""
 fc += f"{cat}concat=n={n}:v=1:a=1[vc][{'voz' if MUSICA else 'a'}];[vc]"
-alpha = "alpha='if(lt(t,2.6),1,max(0,1-(t-2.6)/0.4))':enable='lt(t,3)'"
+# El gancho sale en los 3 primeros segundos del episodio nuevo (después de «Anteriormente...» si lo hay).
+H0 = RECAP_S
+alpha = f"alpha='if(lt(t,{H0 + 2.6:.2f}),1,max(0,1-(t-{H0 + 2.6:.2f})/0.4))':enable='between(t,{H0:.2f},{H0 + 3:.2f})'"
 y = 205
 gancho = G.get("gancho", [])
 size = min([ajustar(line, 66, 46)[0] for line in gancho] or [66])   # las dos líneas, del mismo tamaño

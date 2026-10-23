@@ -7,6 +7,13 @@ import { dialectPronunciations, isFruitStyle, norm, type CastMember } from "./ca
 import type { Scene } from "./types";
 
 export const SCENE_SECONDS = 8;
+// Texto de tarjeta de salto de tiempo, si la transición o el lugar lo indican («Días después...»).
+export function timeJump(text: string) {
+  const m = /(?:unas?\s+|dos\s+|tres\s+|varias?\s+)?(?:minutos|horas|días|dias|semanas|meses|años)\s+después|al día siguiente|a la mañana siguiente|esa misma noche|más tarde/i.exec(text || "");
+  if (!m) return "";
+  const t = m[0].trim();
+  return t.charAt(0).toUpperCase() + t.slice(1).toLowerCase() + "...";
+}
 export const NARRATOR = "Narrador";
 // Súbelo cada vez que cambien las reglas de los prompts: los episodios guardados con una versión
 // anterior muestran «Actualizar prompts» (rehace los prompts sin IA y sin tocar el guion).
@@ -215,7 +222,9 @@ export function buildProduction(raw: any, ctx: Ctx) {
   const hook = chosen.length ? chosen : fromModel.length === 2 ? fromModel : [scenes[0]?.line || ctx.idea.slice(0, 50), "Y nadie esperaba lo que pasó después…"];
   const colores: Record<string, string> = Object.fromEntries(cast.map(c => [c.name, c.subtitleColor.replace("#", "").toUpperCase()]));
   if (scenes.some(s => s.speaker === NARRATOR)) colores[NARRATOR] = NARRATOR_COLOR;
-  const guionJson = { colores, gancho: hook, cierre: "Continuará...", clips: scenes.map(s => [[s.speaker, s.line]]) };
+  // Saltos de tiempo («Horas después...») → tarjeta negra corta antes de esa escena en el montaje.
+  const tarjetas = scenes.map((s, i) => ({ antes: i, texto: timeJump(`${s.transition || ""} ${s.setting || ""}`) })).filter(t => t.antes > 0 && t.texto);
+  const guionJson = { colores, gancho: hook, cierre: "Continuará...", clips: scenes.map(s => [[s.speaker, s.line]]), ...(tarjetas.length ? { tarjetas } : {}) };
   const total = scenes.length * SCENE_SECONDS;
   const scriptBlocks = scenes.map(s => ({ block: s.n, time: `${(s.n - 1) * SCENE_SECONDS}-${s.n * SCENE_SECONDS}s`, scene: s.setting, dialogue: [{ speaker: s.speaker, text: s.line }], onScreen: s.speaker === NARRATOR ? [] : [s.speaker] }));
   // Dola: versión corta sin perder el último giro, narrador ni cliffhanger.

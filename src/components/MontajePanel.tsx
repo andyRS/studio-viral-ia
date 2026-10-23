@@ -51,6 +51,8 @@ export function adaptGuion(guion: any, nClips: number, opts: { marca?: "dola" | 
   for (const [k, v] of Object.entries(guion?.colores || {})) colores[k] = String(v).replace("#", "").toUpperCase();
   const out: any = { ...guion, colores, clips };
   delete out.delogo; delete out.marca;
+  // Las tarjetas de tiempo van por número de clip: solo valen si hay un clip por escena.
+  if (nClips !== blocks.length) delete out.tarjetas;
   if (opts.marca) out.marca = opts.marca; else if (opts.delogo) out.delogo = opts.delogo;
   if (opts.cierre) out.cierre = opts.cierre;
   if (opts.cierreCta?.trim()) out.cierre_cta = opts.cierreCta.trim(); else delete out.cierre_cta;
@@ -90,6 +92,8 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
   const [rect, setRect] = useState({ x: "", y: "", w: "", h: "" });
   const [music, setMusic] = useState<File | null>(null);
   const [musicVol, setMusicVol] = useState("0.18");
+  const [recortar, setRecortar] = useState(true);
+  const [anterior, setAnterior] = useState<File | null>(null);
   const musicUrl = useMemo(() => (music ? URL.createObjectURL(music) : ""), [music]);
   useEffect(() => () => { if (musicUrl) URL.revokeObjectURL(musicUrl); }, [musicUrl]);
   const [busy, setBusy] = useState(false);
@@ -160,19 +164,22 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
         base = t.json.url; headers = { Authorization: `Ticket ${t.json.ticket}` };
       }
       // Un servidor sin actualizar ignora la música sin avisar: se comprueba antes de subir nada.
-      if (music) {
+      const needs = [music && ["musica", "la música de fondo"], anterior && ["anterior", "«Anteriormente...»"], recortar && ["recorte", "quitar las pausas"]].filter(Boolean) as [string, string][];
+      if (needs.length) {
         const caps = await fetch(`${base}/salud`, { signal: AbortSignal.timeout(8000) }).then(r => r.json()).catch(() => null);
-        if (!caps?.musica) {
+        const missing = needs.filter(([k]) => !caps?.[k]).map(([, label]) => label);
+        if (missing.length) {
           setError(target === "pc"
-            ? "El montaje de tu PC está desactualizado y no pondría la música. En la carpeta del proyecto ejecuta «git pull», cierra y vuelve a abrir «Montar en mi PC», y pulsa de nuevo «Montar vídeo final»."
-            : "El servidor de la nube (Fly) aún no tiene la versión con música. Ejecuta «fly deploy» en la carpeta montaje, o monta en tu PC actualizado.");
+            ? `El montaje de tu PC está desactualizado y no haría: ${missing.join(", ")}. En la carpeta del proyecto ejecuta «git pull», cierra y vuelve a abrir «Montar en mi PC», y pulsa de nuevo «Montar vídeo final».`
+            : `El servidor de la nube (Fly) aún no tiene: ${missing.join(", ")}. Ejecuta «fly deploy» en la carpeta montaje, o monta en tu PC actualizado.`);
           return;
         }
       }
       const fd = new FormData();
-      fd.append("guion", new Blob([JSON.stringify({ ...adaptGuion(guion, files.length, { marca, delogo, cierre: lastEpisode ? "FIN" : guion?.cierre || "Continuará...", cierreCta: cta }), ...(music ? { musica_volumen: Number(musicVol) } : {}) })], { type: "application/json" }), "guion.json");
+      fd.append("guion", new Blob([JSON.stringify({ ...adaptGuion(guion, files.length, { marca, delogo, cierre: lastEpisode ? "FIN" : guion?.cierre || "Continuará...", cierreCta: cta }), ...(music ? { musica_volumen: Number(musicVol) } : {}), recortar })], { type: "application/json" }), "guion.json");
       for (const f of files) fd.append("clips", f, f.name);
       if (music) fd.append("musica", music, music.name);
+      if (anterior) fd.append("anterior", anterior, anterior.name);
       // 1) Subida: el servidor responde al instante con el número de trabajo.
       const { id } = await upload(`${base}/trabajos`, headers, fd, setUploadPct);
       // 2) Progreso en vivo: cada respuesta llega en cuanto hay un paso nuevo (o a los 20 s).
@@ -235,6 +242,15 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
       <label htmlFor="cierre-cta" className="block text-xs text-slate-300">Llamada final <span className="text-slate-500">(línea amarilla bajo «{lastEpisode ? "FIN" : guion?.cierre || "Continuará..."}» en la tarjeta de cierre)</span></label>
       <input id="cierre-cta" value={cta} maxLength={40} onChange={e => { setCta(e.target.value); setCtaEdited(true); }} disabled={busy} className="max-w-sm" />
       <label className="flex items-center gap-2 text-xs text-slate-300"><input type="checkbox" checked={lastEpisode} onChange={e => setLastEpisode(e.target.checked)} disabled={busy} /> Último episodio de la serie (el cierre dice «FIN»)</label>
+    </div>
+    <div className="space-y-2 rounded-lg border border-white/10 p-3">
+      <p className="text-xs text-slate-300">Ritmo viral</p>
+      <label className="flex items-start gap-2 text-xs text-slate-300"><input type="checkbox" checked={recortar} onChange={e => setRecortar(e.target.checked)} disabled={busy} className="mt-0.5" /><span><b>Quitar pausas muertas</b> (recomendado): cada clip empieza justo antes de la primera palabra y corta al terminar la frase. Así el vídeo fluye sin silencios, como los virales.</span></label>
+      {Array.isArray(guion?.tarjetas) && guion.tarjetas.length > 0 && <p className="text-[11px] text-slate-400">Saltos de tiempo: {guion.tarjetas.map((t: any) => `«${t.texto}» antes de la escena ${t.antes + 1}`).join(" · ")} (tarjeta negra de 1,6 s).</p>}
+      {part > 1 && <div className="space-y-1">
+        <p className="text-xs text-slate-300"><b>«Anteriormente...»</b> <span className="text-slate-500">(opcional)</span>: sube el vídeo final de la Parte {part - 1} y el episodio abre con sus últimos 7 s en blanco y negro.</p>
+        <div className="flex flex-wrap items-center gap-2"><input type="file" accept="video/mp4,video/*" onChange={e => setAnterior(e.target.files?.[0] || null)} disabled={busy} />{anterior && <button type="button" disabled={busy} onClick={() => setAnterior(null)} className="text-xs text-slate-400 hover:text-red-300">Quitar</button>}</div>
+      </div>}
     </div>
     <div className="space-y-2 rounded-lg border border-white/10 p-3">
       <p className="text-xs text-slate-300">Música de fondo original <span className="text-slate-500">(opcional · creada con Muse)</span></p>
