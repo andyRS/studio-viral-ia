@@ -66,15 +66,20 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
   const [notes, setNotes] = useState("");
   // «Usar esta idea»: rellena la idea y deja en las notas lo que la IA debe respetar (base bíblica,
   // gancho, objeto, giro y elenco sugeridos). Las notas van a «MI PEDIDO» del prompt maestro.
-  const useIdea = (i: StoryIdea) => {
-    setIdea(i.idea);
-    setNotes([
-      i.biblicalBase && `Base bíblica: ${i.biblicalBase} (respeta los hechos; los diálogos son dramatización)`,
-      i.hook?.length && `Gancho sugerido: ${i.hook.join(" / ")}`,
-      i.object && `Objeto que revela: ${i.object}`,
-      i.twist && `Giro: ${i.twist}`,
-      i.cast?.length && `Elenco sugerido: ${i.cast.map(c => `${c.name}${c.fruit ? ` (${c.fruit})` : ""}${c.role ? `, ${c.role}` : ""}`).join("; ")}`,
-    ].filter(Boolean).join(". "));
+  const notesFromIdea = (i: StoryIdea) => [
+    i.biblicalBase && `Base bíblica: ${i.biblicalBase} (respeta los hechos; los diálogos son dramatización)`,
+    i.hook?.length && `Gancho sugerido: ${i.hook.join(" / ")}`,
+    i.object && `Objeto que revela: ${i.object}`,
+    i.twist && `Giro: ${i.twist}`,
+    i.cast?.length && `Elenco sugerido: ${i.cast.map(c => `${c.name}${c.fruit ? ` (${c.fruit})` : ""}${c.role ? `, ${c.role}` : ""}`).join("; ")}`,
+  ].filter(Boolean).join(". ");
+  // start = true: crea la serie al momento con esa idea; si no, solo la pasa al formulario y lleva hasta él.
+  const useIdea = (i: StoryIdea, start = false) => {
+    const n = notesFromIdea(i);
+    setIdea(i.idea); setNotes(n); setKind("nueva"); setStyleChosen(true);
+    if (start) { void createStory({ idea: i.idea, notes: n }); return; }
+    setNotice("Idea pasada al formulario: revísala y pulsa «Crear serie y episodio 1».");
+    setTimeout(() => document.getElementById("generator-idea")?.scrollIntoView({ behavior: "smooth", block: "center" }), 50);
   };
   // Tipo de pedido: historia nueva o réplica de un viral ajeno (se copia estructura y emoción).
   const [kind, setKind] = useState<"nueva" | "replica">("nueva");
@@ -131,15 +136,16 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
     return { output, episodeId: saved.id as string };
   }
 
-  async function createStory() {
-    if (!styleChosen) { setNotice("Elige primero el estilo de la historia."); return; }
-    if (!idea.trim() && !(kind === "replica" && replica.trim())) { setNotice(kind === "replica" ? "Describe el viral que quieres replicar." : "Escribe la idea de la historia o elige una de las sugerencias."); return; }
+  async function createStory(override?: { idea: string; notes: string }) {
+    const idea_ = override?.idea ?? idea, notes_ = override?.notes ?? notes, kind_ = override ? "nueva" : kind;
+    if (!styleChosen && !override) { setNotice("Elige primero el estilo de la historia."); return; }
+    if (!idea_.trim() && !(kind_ === "replica" && replica.trim())) { setNotice(kind === "replica" ? "Describe el viral que quieres replicar." : "Escribe la idea de la historia o elige una de las sugerencias."); return; }
     setLoading(true); setNotice(""); setAuthError(false);
     try {
-      const body = { idea, style, duration, account, notes, learnings, chosenHook, replica: kind === "replica" ? replica : "" };
+      const body = { idea: idea_, style, duration, account, notes: notes_, learnings, chosenHook, replica: kind_ === "replica" ? replica : "" };
       const res = await call("/api/series", body, () => templateSeries(body)); if (!res) return;
       const d = res.data;
-      const s = await insert("series", { title: d.series?.title || idea.slice(0, 60), description: d.series?.logline || idea, accountId: account?.id });
+      const s = await insert("series", { title: d.series?.title || idea_.slice(0, 60), description: d.series?.logline || idea_, accountId: account?.id });
       for (const c of d.characters || []) await insert("characters", { ...c, seriesId: s.id });
       const bible = { style, logline: d.series?.logline, world: d.series?.world, tone: d.series?.tone };
       const saved = await saveEpisode(s.id, 1, d.episode, bible);
@@ -248,7 +254,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
               <textarea id="generator-replica" value={replica} onChange={e => setReplica(e.target.value)} placeholder="Qué pasa en el vídeo, su gancho, quién humilla a quién, qué objeto revela el giro… Se copia la estructura y la emoción, nunca los personajes ni el diálogo." /></div>}
             <label htmlFor="generator-idea" className="field-label block">{kind === "replica" ? "Idea para adaptarlo a RD" : "Idea de la historia"}</label>
             <textarea id="generator-idea" value={idea} onChange={e => setIdea(e.target.value)} placeholder="Ej.: Una madre humilde descubre que su hijo rico la niega delante de sus amigos…" />
-            <div className="mt-3"><IdeasPanel style={style} online={mode === "supabase"} existing={data.series.map((x: any) => `${x.title}. ${x.description || ""}`)} onUse={useIdea} /></div>
+            <div className="mt-3"><IdeasPanel style={style} online={mode === "supabase"} existing={data.series.map((x: any) => `${x.title}. ${x.description || ""}`)} onUse={useIdea} busy={loading} /></div>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <div><label htmlFor="generator-account" className="field-label block">Cuenta principal</label>
@@ -259,7 +265,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
           <div><label htmlFor="generator-notes" className="field-label block">Notas opcionales</label>
             <input id="generator-notes" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Ej.: que la abuela se llame Doña Guanábana, que pase en Navidad…" /></div>
           <HookPicker online={mode === "supabase"} chosen={chosenHook} onChoose={setChosenHook} body={() => ({ idea, style, learnings, bank: bankTop })} />
-          <button disabled={loading} onClick={createStory} className="w-full rounded bg-amber-500 px-5 py-3 text-base font-bold sm:w-auto">{loading ? "Creando la serie…" : "Crear serie y episodio 1"}</button>
+          <button disabled={loading} onClick={() => { void createStory(); }} className="w-full rounded bg-amber-500 px-5 py-3 text-base font-bold sm:w-auto">{loading ? "Creando la serie…" : "Crear serie y episodio 1"}</button>
         </div>
       </>}
 

@@ -8,8 +8,8 @@ import type { StyleKey } from "@/lib/knowledge";
 
 type Turn = { role: "user" | "ia"; text: string; ideas?: StoryIdea[] };
 
-export default function IdeasPanel({ style, online, existing, onUse }: {
-  style: StyleKey; online: boolean; existing: string[]; onUse: (idea: StoryIdea) => void;
+export default function IdeasPanel({ style, online, existing, onUse, busy: creating = false }: {
+  style: StyleKey; online: boolean; existing: string[]; onUse: (idea: StoryIdea, start?: boolean) => void; busy?: boolean;
 }) {
   const [direction, setDirection] = useState("");
   const [bibleOn, setBibleOn] = useState(false);
@@ -79,7 +79,10 @@ export default function IdeasPanel({ style, online, existing, onUse }: {
               {!!i.cast?.length && <div><dt className="inline font-semibold text-slate-300">Elenco: </dt><dd className="inline">{i.cast.map(c => `${c.name}${c.fruit ? ` (${c.fruit})` : ""}`).join(", ")}</dd></div>}
               {i.why && <div><dt className="inline font-semibold text-slate-300">Por qué engancha: </dt><dd className="inline">{i.why}</dd></div>}
             </dl>
-            <button type="button" onClick={() => { setUsed(i.idea); onUse(i); }} className="mt-2 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-bold text-black">{used === i.idea ? "✓ Usando esta idea" : "Usar esta idea"}</button>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <button type="button" disabled={creating} onClick={() => { setUsed(i.idea); onUse(i, true); }} className="rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-bold text-black disabled:opacity-60">{creating && used === i.idea ? "Creando la serie…" : "Crear con esta idea →"}</button>
+              <button type="button" disabled={creating} onClick={() => { setUsed(i.idea); onUse(i, false); }} className="text-xs text-slate-300 hover:text-white">Solo pasar al formulario</button>
+            </div>
           </article>)}</div>
         </div>)}
     </div>}
