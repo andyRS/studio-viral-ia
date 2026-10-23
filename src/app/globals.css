@@ -165,3 +165,12 @@ tbody tr:hover { background:rgba(255,255,255,.025); }
   *,*::before,*::after { scroll-behavior:auto !important; animation-duration:.01ms !important; animation-iteration-count:1 !important; transition-duration:.01ms !important; }
   .choice-card:hover:not(:disabled) { transform:none; }
 }
+
+/* Centro de series (Generador › Continuar) */
+.series-strip { display:flex; gap:.6rem; overflow-x:auto; padding-bottom:.35rem; scroll-snap-type:x mandatory; }
+.series-tab { flex:0 0 min(260px,78vw); scroll-snap-align:start; text-align:left; border:1px solid var(--line); border-radius:1rem; padding:.75rem .9rem; background:var(--card); transition:border-color .15s, background .15s; }
+.series-tab:hover { border-color:rgba(255,159,28,.45); }
+.series-tab-active { border-color:rgba(255,159,28,.85); background:linear-gradient(180deg,rgba(255,159,28,.12),rgba(255,159,28,.03)),var(--card); box-shadow:0 10px 26px -20px rgba(255,159,28,.6); }
+.stat-chip { border:1px solid var(--line); border-radius:999px; padding:.3rem .7rem; color:#cbd5e1; background:rgba(255,255,255,.03); }
+.section-chip { display:inline-flex; gap:.25rem; align-items:center; border:1px solid var(--line); border-radius:.6rem; padding:.35rem .65rem; font-size:.75rem; color:#e2e8f0; background:rgba(255,255,255,.03); transition:border-color .15s, color .15s; }
+.section-chip:hover { border-color:rgba(255,159,28,.6); color:#fff; }

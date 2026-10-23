@@ -20,6 +20,18 @@ import { buildFlowBatch, refreshPrompts, PROMPT_RULES_VERSION } from "@/lib/prod
 import { seriesSignals } from "@/lib/seriesSignals";
 
 type View = "inicio" | "nueva" | "continuar" | "resultado";
+type EpisodeTab = "guion" | "elenco" | "imagenes" | "animacion" | "mesa" | "redes" | "plataformas" | "archivos";
+// Lo que hay dentro de cada episodio, en el orden de trabajo (accesos directos del centro de series).
+const EPISODE_SECTIONS: [EpisodeTab, string, string][] = [
+  ["guion", "Guion", "Ficha, escenas y diálogos"],
+  ["elenco", "Biblia", "Fichas maestras de los personajes"],
+  ["imagenes", "Imágenes", "Prompts de imagen por escena"],
+  ["animacion", "Animación", "Prompts de vídeo por escena"],
+  ["mesa", "Mesa y montaje", "Revisar clips y montar el vídeo"],
+  ["redes", "Redes", "Títulos, descripciones y hashtags"],
+];
+const STEP: Partial<Record<EpisodeTab, number>> = { elenco: 1, imagenes: 2, animacion: 3, mesa: 4 };
+const isDraft = (e: any) => e.status === "Borrador" || e.output?.mode === "plantilla-local";
 // Duración del máster (prompt maestro): 8 a 16 escenas de 8 s; 64-128 s.
 const DURATIONS = [64, 72, 80, 88, 96, 104, 128];
 
@@ -55,6 +67,8 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
   const [authError, setAuthError] = useState(false);
   const [notice, setNotice] = useState("");
   const [result, setResult] = useState<{ episode: any; episodeId: string; seriesId: string; part: number } | null>(null);
+  // Pestaña con la que se abre un episodio desde el centro de series (Guion, Biblia, Mesa…).
+  const [openTab, setOpenTab] = useState<EpisodeTab | undefined>(undefined);
 
   // Historia nueva
   const [idea, setIdea] = useState("");
@@ -178,7 +192,10 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
     finally { setLoading(false); }
   }
 
-  function openEpisode(sid: string, ep: any, part: number) { setSeriesId(sid); setResult({ episode: ep.output || {}, episodeId: ep.id, seriesId: sid, part }); setView("resultado"); setNotice(""); }
+  function openEpisode(sid: string, ep: any, part: number, tab?: EpisodeTab) { setSeriesId(sid); setOpenTab(tab); setResult({ episode: ep.output || {}, episodeId: ep.id, seriesId: sid, part }); setView("resultado"); setNotice(""); window.scrollTo?.({ top: 0, behavior: "smooth" }); }
+  function openSeries(sid: string) { setSeriesId(sid); setView("continuar"); setNotice(""); setWish(""); setChosenHook(null); }
+  // En «Continuar» siempre hay una serie abierta: la última trabajada si no se eligió otra.
+  useEffect(() => { if (view === "continuar" && !current && seriesList.length) setSeriesId(seriesList[0].id); }, [view, current, seriesList]);
   useEffect(() => {
     if (!focusEpisodeId) { focusedEpisodeRef.current = null; return; }
     if (focusedEpisodeRef.current === focusEpisodeId) return;
@@ -203,10 +220,10 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
             <span className="text-lg font-bold">Crear historia nueva</span>
             <span className="text-sm text-slate-400">Parte de tu idea para crear la serie, los personajes fijos y el episodio 1.</span>
           </button>
-          <button onClick={() => setView("continuar")} disabled={!seriesList.length} className="choice-card group">
+          <button onClick={() => openSeries(seriesList[0]?.id || "")} disabled={!seriesList.length} className="choice-card group">
             <span className="choice-icon bg-violet-500/20 text-violet-200">▶</span>
             <span className="text-lg font-bold">Continuar una serie</span>
-            <span className="text-sm text-slate-400">{seriesList.length ? "Elige una serie y prepara el siguiente episodio con sus personajes." : "Aún no tienes series. Crea la primera."}</span>
+            <span className="text-sm text-slate-400">{seriesList.length ? `Abre cualquiera de tus ${seriesList.length} series, entra en sus episodios o crea el siguiente.` : "Aún no tienes series. Crea la primera."}</span>
           </button>
         </div>
         {!!bank.length && <>
@@ -218,18 +235,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
         {!!seriesList.length && <>
           <h3 className="mt-8 text-sm font-semibold uppercase tracking-wider text-slate-400">Tus series</h3>
           <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {seriesList.map((s: any) => (
-              <div key={s.id} className="rounded-xl bg-[#121826] p-4">
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-amber-300/80">{STYLES[s.style as StyleKey]?.label || "Serie"}</p>
-                <p className="mt-1 font-bold">{s.title}</p>
-                <p className="mt-1 line-clamp-2 text-sm text-slate-400">{s.last?.output?.summary || s.description}</p>
-                <div className="mt-3 flex items-center gap-2">
-                  <span className="text-xs text-slate-500">{s.eps.length} episodio(s)</span>
-                  <button type="button" onClick={() => { void deleteSeries(s); }} className="ml-auto text-xs text-slate-400 hover:text-red-300">Eliminar serie</button>
-                  <button onClick={() => { setSeriesId(s.id); setView("continuar"); }} className="rounded bg-amber-500 px-3 py-1.5 text-xs font-bold">Continuar</button>
-                </div>
-              </div>
-            ))}
+            {seriesList.map((s: any) => <SeriesCard key={s.id} s={s} chars={data.characters.filter((c: any) => c.seriesId === s.id)} onOpen={() => openSeries(s.id)} onDelete={() => { void deleteSeries(s); }} />)}
           </div>
         </>}
       </>}
@@ -273,67 +279,99 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
 
       {view === "continuar" && <>
         <Back />
-        <h2 className="text-xl font-bold">Continuar una serie</h2>
-        {!current ? (
-          <div className="mt-4 grid gap-3 md:grid-cols-2">
-            {seriesList.map((s: any) => <button key={s.id} onClick={() => setSeriesId(s.id)} className="choice-card"><span className="font-bold">{s.title}</span><span className="text-sm text-slate-400">{s.eps.length} episodio(s)</span></button>)}
-          </div>
-        ) : (
-          <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_360px]">
-            <div className="space-y-4">
+        <div className="flex flex-wrap items-end gap-3">
+          <div><p className="field-label !mb-1">Tus series</p><h2 className="text-xl font-bold">Elige una serie y entra en sus episodios</h2></div>
+          <button type="button" onClick={() => setView("nueva")} className="ml-auto rounded-lg border border-white/15 px-3 py-2 text-xs font-semibold text-slate-200 hover:border-amber-400/60 hover:text-white">＋ Nueva serie</button>
+        </div>
+        {/* Todas las series a la vista: se cambia de una a otra sin volver atrás. */}
+        <div role="tablist" aria-label="Series" className="series-strip mt-4">
+          {seriesList.map((s: any) => {
+            const active = s.id === current?.id;
+            return <button key={s.id} role="tab" aria-selected={active} onClick={() => openSeries(s.id)} className={`series-tab ${active ? "series-tab-active" : ""}`}>
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-300/80">{STYLES[s.style as StyleKey]?.label || "Serie"}</span>
+              <span className="block truncate font-bold">{s.title}</span>
+              <span className="text-xs text-slate-400">{s.eps.length} episodio{s.eps.length === 1 ? "" : "s"}{s.last ? ` · último: ${s.last.title}` : ""}</span>
+            </button>;
+          })}
+        </div>
+        {current && (
+          <div className="mt-5 grid gap-4 lg:grid-cols-[1fr_340px]">
+            <div className="space-y-4 min-w-0">
+              <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-[#1a2236] to-[#121826] p-5">
+                <div className="flex flex-wrap items-start gap-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-amber-300/80">{STYLES[current.style as StyleKey]?.label || "Serie"}</p>
+                    <h3 className="mt-1 text-2xl font-bold">{current.title}</h3>
+                    {current.description && <p className="mt-1 text-sm text-slate-300">{current.description}</p>}
+                  </div>
+                  <button type="button" onClick={async () => { if (await deleteSeries(current)) { setSeriesId(""); setView("inicio"); } }} className="text-xs text-slate-500 hover:text-red-300">Eliminar serie</button>
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2 text-xs">
+                  <span className="stat-chip">🎬 {current.eps.length} episodio{current.eps.length === 1 ? "" : "s"}</span>
+                  <span className="stat-chip">👥 {currentCast.length} personajes</span>
+                  <span className={`stat-chip ${missingCurrentMasters.length ? "!border-amber-400/40 !text-amber-200" : "!border-emerald-400/40 !text-emerald-200"}`}>{missingCurrentMasters.length ? `Fichas maestras: faltan ${missingCurrentMasters.length}` : "✓ Fichas maestras aprobadas"}</span>
+                </div>
+              </div>
               {currentNeedsRepair && <div className="rounded-xl border border-amber-400/30 bg-amber-400/10 p-4 text-sm text-amber-100">
                 <p className="font-bold">Esta serie necesita un guion y personajes validados antes de continuar.</p>
                 <p className="mt-1 text-xs leading-5">El borrador anterior se conserva. Gemini puede crear una serie nueva desde la misma idea, con apariencia y vestuario consistentes.</p>
                 <button onClick={() => { setIdea(current.description || current.title); setStyle(current.style); setView("nueva"); setNotice(""); }} className="mt-3 rounded-lg bg-amber-500 px-3 py-2 text-xs font-bold text-slate-950">Recrear serie con Gemini</button>
               </div>}
-              <div className="rounded-xl bg-[#121826] p-4">
-                <div className="flex items-center gap-2"><p className="font-bold">{current.title}</p><span className="ml-auto flex gap-3">{seriesList.length > 1 && <button onClick={() => setSeriesId("")} className="text-xs text-slate-400 hover:text-white">Cambiar serie</button>}<button type="button" onClick={async () => { if (await deleteSeries(current)) { setSeriesId(""); setView("inicio"); } }} className="text-xs text-slate-400 hover:text-red-300">Eliminar serie</button></span></div>
-                <p className="mt-1 text-sm text-slate-400">{current.description}</p>
-                <ol className="timeline mt-4">
-                  {current.eps.map((e: any, i: number) => (
-                    <li key={e.id}>
-                      <button onClick={() => openEpisode(current.id, e, i + 1)} className="text-left">
-                        <span className="text-xs font-semibold text-amber-300">Episodio {i + 1}</span>
-                        <span className="block text-sm font-medium">{e.title}{e.status === "Borrador" || e.output?.mode === "plantilla-local" ? " · Borrador" : ""}</span>
-                        <span className="block text-xs text-slate-400">{e.output?.summary || e.theme}</span>
-                      </button>
-                    </li>
-                  ))}
-                  {!current.eps.length && <li><span className="text-sm text-slate-400">Esta serie aún no tiene episodios.</span></li>}
-                </ol>
-              </div>
+
+              <section>
+                <h3 className="field-label">Episodios · haz clic para abrir</h3>
+                <div className="grid gap-3">
+                  {current.eps.map((e: any, i: number) => <EpisodeCard key={e.id} ep={e} part={i + 1} onOpen={(tab?: EpisodeTab) => openEpisode(current.id, e, i + 1, tab)} />)}
+                  {!current.eps.length && <p className="rounded-xl border border-dashed border-white/15 p-4 text-sm text-slate-400">Esta serie aún no tiene episodios. Crea el primero abajo.</p>}
+                </div>
+              </section>
+
               {!!currentSignals.length && <div className="rounded-xl border border-white/10 bg-[#151C2B] p-4"><h3 className="text-sm font-bold">Rendimiento de las partes</h3><p className="mt-1 text-xs text-slate-400">Vistas registradas de episodios vinculados, separadas por plataforma.</p><div className="mt-3 space-y-3">{currentSignals.map(signal => <div key={signal.platform} className="rounded-lg bg-black/20 p-3 text-xs"><b>{signal.platform}</b><p className="mt-1 text-slate-200">{signal.parts.map(p => `Parte ${p.part}: ${p.views.toLocaleString("es")} vistas`).join(" → ")}</p><p className={`mt-2 ${signal.suggestFreshStart ? "text-amber-200" : "text-slate-400"}`}>{signal.suggestFreshStart ? "Tres partes caen con ventanas comparables. Considera cerrar esta historia y probar una Parte 1 nueva." : signal.comparable ? "Sin señal suficiente para recomendar cerrar la serie." : "Las fechas de captura no permiten comparar las partes a la misma edad; no se recomienda cerrar la serie con estos datos."}</p></div>)}</div></div>}
-              {!!missingCurrentMasters.length && !currentNeedsRepair && <p className="rounded-xl border border-amber-400/25 bg-amber-400/10 p-3 text-xs text-amber-100">Antes de continuar, aprueba la ficha maestra de: {missingCurrentMasters.map(c => c.name).join(", ")}. Abre un episodio de la serie y entra en «1 · Biblia».</p>}
-              <div className="rounded-xl bg-[#121826] p-4">
-                <label htmlFor="generator-next-wish" className="field-label block">¿Qué quieres que pase en el episodio {current.eps.length + 1}? (opcional)</label>
-                <textarea id="generator-next-wish" value={wish} onChange={e => setWish(e.target.value)} placeholder="Déjalo vacío para proponer un giro." />
+
+              <section className="rounded-2xl border border-amber-400/25 bg-amber-400/[.05] p-5">
+                <div className="flex items-center gap-3">
+                  <span className="choice-icon !mb-0 bg-gradient-to-br from-amber-400 to-orange-600 text-black">＋</span>
+                  <div><h3 className="font-bold">Siguiente: episodio {current.eps.length + 1}</h3><p className="text-xs text-slate-400">Con los mismos personajes y siguiendo lo que pasó antes.</p></div>
+                </div>
+                {!!missingCurrentMasters.length && !currentNeedsRepair && <p className="mt-3 rounded-lg border border-amber-400/25 bg-amber-400/10 p-3 text-xs text-amber-100">Antes, aprueba la ficha maestra de: {missingCurrentMasters.map(c => c.name).join(", ")}. {current.eps.length > 0 && <button type="button" onClick={() => openEpisode(current.id, current.eps[0], 1, "elenco")} className="font-semibold text-amber-300 underline">Ir a la Biblia →</button>}</p>}
+                <label htmlFor="generator-next-wish" className="field-label mt-4 block">¿Qué quieres que pase? (opcional)</label>
+                <textarea id="generator-next-wish" value={wish} onChange={e => setWish(e.target.value)} placeholder="Déjalo vacío y la IA propone un giro." />
                 <div className="mt-3"><HookPicker online={mode === "supabase"} chosen={chosenHook} onChoose={setChosenHook} body={() => ({ wish, style: current.style, series: { title: current.title, logline: current.description }, characters: currentChars.map((c: any) => ({ name: c.name })), history: current.eps.map((e: any, i: number) => ({ part: i + 1, summary: e.output?.summary || e.theme })), learnings, bank: bankTop })} /></div>
                 <div className="mt-3 flex flex-wrap items-center gap-3">
                   <label htmlFor="generator-next-duration" className="sr-only">Duración del próximo episodio</label>
                   <select id="generator-next-duration" value={duration} onChange={e => setDuration(Number(e.target.value))} className="w-auto">{DURATIONS.map(d => <option key={d} value={d}>{d} s · {d / 8} escenas</option>)}</select>
-                  <button disabled={loading} onClick={continueStory} className="rounded bg-amber-500 px-5 py-2.5 font-bold">{loading ? "Escribiendo…" : `Crear episodio ${current.eps.length + 1}`}</button>
+                  <button disabled={loading} onClick={continueStory} className="rounded-lg bg-amber-500 px-5 py-2.5 font-bold text-slate-950 hover:bg-amber-400 disabled:opacity-60">{loading ? "Escribiendo…" : `Crear episodio ${current.eps.length + 1} →`}</button>
                 </div>
-              </div>
+              </section>
             </div>
-            <aside className="rounded-xl bg-[#121826] p-4 lg:self-start">
-              <p className="field-label">Personajes fijos ({currentChars.length})</p>
-              <ul className="space-y-2">
-                {currentChars.map((c: any) => (
-                  <li key={c.id} className="flex gap-2 text-sm">
-                    <span className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: c.subtitleColor }} />
-                    <span><b>{c.name}</b> <span className="text-slate-400">— {c.visualES}</span></span>
-                  </li>
-                ))}
+            <aside className="rounded-2xl border border-white/10 bg-[#121826] p-4 lg:sticky lg:top-4 lg:self-start">
+              <p className="field-label">Personajes fijos ({currentCast.length})</p>
+              <ul className="space-y-3">
+                {currentCast.map((c: any) => {
+                  const saved = currentChars.find((x: any) => x.name.toLowerCase() === String(c.name).toLowerCase());
+                  const ok = !!saved?.imageUrl && !!saved?.referenceApprovedAt;
+                  return <li key={c.name} className="flex gap-3">
+                    {saved?.imageUrl
+                      ? <img src={saved.imageUrl} alt={`Ficha de ${c.name}`} className="h-12 w-12 shrink-0 rounded-xl object-cover ring-2" style={{ ["--tw-ring-color" as any]: saved.subtitleColor || c.subtitleColor }} />
+                      : <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl text-lg font-bold text-slate-950" style={{ background: saved?.subtitleColor || c.subtitleColor || "#64748b" }}>{String(c.name).charAt(0)}</span>}
+                    <span className="min-w-0 text-sm">
+                      <b className="block">{c.name}</b>
+                      <span className={`text-[11px] ${ok ? "text-emerald-300" : "text-amber-300"}`}>{ok ? "✓ Ficha aprobada" : "Ficha pendiente"}</span>
+                      <span className="mt-0.5 block line-clamp-2 text-xs text-slate-400" title={saved?.visualES || c.visualES}>{saved?.visualES || c.visualES}</span>
+                    </span>
+                  </li>;
+                })}
               </ul>
-              <p className="mt-3 text-xs text-slate-500">Se usan idénticos en cada episodio. Edítalos en Personajes.</p>
+              <p className="mt-4 text-xs text-slate-500">Se usan idénticos en cada episodio. Edítalos en Personajes.</p>
             </aside>
           </div>
         )}
       </>}
 
       {view === "resultado" && result && <Result
-        episode={result.episode} episodeId={result.episodeId} seriesId={result.seriesId} part={result.part} seriesTitle={data.series.find((s: any) => s.id === result.seriesId)?.title} initialTab={focusTab}
-        onBack={() => setView("inicio")} onNext={() => { setSeriesId(result.seriesId); setView("continuar"); }}
+        episode={result.episode} episodeId={result.episodeId} seriesId={result.seriesId} part={result.part} seriesTitle={data.series.find((s: any) => s.id === result.seriesId)?.title} initialTab={openTab || focusTab}
+        backLabel={data.series.find((s: any) => s.id === result.seriesId)?.title}
+        onBack={() => { if (result.seriesId && data.series.some((s: any) => s.id === result.seriesId)) openSeries(result.seriesId); else setView("inicio"); }} onNext={() => { setSeriesId(result.seriesId); setView("continuar"); }}
         onRefreshPrompts={async () => {
           // Rehace los prompts con las reglas actuales, sin IA: el guion, las escenas y los personajes no cambian.
           const firstBible = data.episodes.find((e: any) => e.seriesId === result.seriesId && e.output?.seriesBible?.style)?.output?.seriesBible;
@@ -395,7 +433,7 @@ function DownloadText({ text, filename, label }: { text: string; filename: strin
 const Field = ({ label, value }: { label: string; value?: string }) => value ? <div><dt className="inline font-semibold text-slate-200">{label}: </dt><dd className="inline text-slate-300">{value}</dd></div> : null;
 const RefChips = ({ refs }: { refs?: string[] }) => <p className="mt-2 text-[11px] text-sky-200">Referencias a seleccionar (fuera del prompt): {(refs || []).length ? (refs || []).map(r => <span key={r} className="ml-1 rounded-full bg-sky-400/15 px-2 py-0.5">{r}</span>) : <span className="text-slate-400">ninguna</span>}</p>;
 
-function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialTab, onBack, onNext, onRecreate, onDelete, onRefreshPrompts }: any) {
+function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialTab, backLabel, onBack, onNext, onRecreate, onDelete, onRefreshPrompts }: any) {
   type Tab = "guion" | "elenco" | "imagenes" | "animacion" | "mesa" | "redes" | "plataformas" | "archivos";
   const { data, update } = useData();
   const cast: any[] = Array.isArray(out.cast) ? out.cast : [];
@@ -432,7 +470,7 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
   }
   const sceneId = (n: number) => `[${String(n).padStart(3, "0")}]`;
   return <>
-    <button onClick={onBack} className="mb-4 text-sm text-slate-400 hover:text-white">← Inicio</button>
+    <button onClick={onBack} className="mb-4 text-sm text-slate-400 hover:text-white">← {backLabel ? `Serie: ${backLabel}` : "Inicio"}</button>
     <div className="flex flex-wrap items-start gap-3">
       <div className="flex-1 min-w-[220px]">
         <p className="text-[11px] font-semibold uppercase tracking-wider text-amber-300/80">{seriesTitle} · Episodio {part}</p>
@@ -576,6 +614,51 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
       {(tab === "imagenes" || tab === "animacion" || tab === "mesa") && !productionReady && <p className="rounded-xl border border-amber-400/25 bg-amber-400/10 p-4 text-sm text-amber-100">Revisa la biblia y la versión de las fichas maestras antes de continuar.</p>}
     </div>
   </>;
+}
+
+// Tarjeta de serie del inicio: toda la tarjeta abre la serie.
+function SeriesCard({ s, chars, onOpen, onDelete }: { s: any; chars: any[]; onOpen: () => void; onDelete: () => void }) {
+  return <div className="group relative flex flex-col rounded-2xl border border-white/10 bg-[#121826] p-4 transition hover:-translate-y-0.5 hover:border-amber-400/50">
+    <button type="button" onClick={onOpen} className="absolute inset-0 rounded-2xl" aria-label={`Abrir la serie ${s.title}`} />
+    <p className="text-[11px] font-semibold uppercase tracking-wider text-amber-300/80">{STYLES[s.style as StyleKey]?.label || "Serie"}</p>
+    <p className="mt-1 text-lg font-bold">{s.title}</p>
+    <p className="mt-1 line-clamp-2 text-sm text-slate-400">{s.last?.output?.summary || s.description}</p>
+    <div className="mt-3 flex items-center gap-2">
+      <span className="flex -space-x-1.5">{chars.slice(0, 5).map((c: any) => c.imageUrl
+        ? <img key={c.id} src={c.imageUrl} alt="" title={c.name} className="h-7 w-7 rounded-full object-cover ring-2 ring-[#121826]" />
+        : <span key={c.id} title={c.name} className="grid h-7 w-7 place-items-center rounded-full text-[11px] font-bold text-slate-950 ring-2 ring-[#121826]" style={{ background: c.subtitleColor || "#64748b" }}>{String(c.name).charAt(0)}</span>)}</span>
+      <span className="text-xs text-slate-400">{s.eps.length} episodio{s.eps.length === 1 ? "" : "s"}</span>
+    </div>
+    <div className="pointer-events-none relative mt-auto flex items-center gap-3 pt-4">
+      <button type="button" onClick={onDelete} className="pointer-events-auto text-xs text-slate-500 hover:text-red-300">Eliminar</button>
+      <span className="ml-auto rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-bold text-slate-950 group-hover:bg-amber-400">Abrir serie →</span>
+    </div>
+  </div>;
+}
+
+// Tarjeta de episodio del centro de series: abrir entero o ir directo a una sección.
+function EpisodeCard({ ep, part, onOpen }: { ep: any; part: number; onOpen: (tab?: EpisodeTab) => void }) {
+  const out = ep.output || {};
+  const scenes = Array.isArray(out.scenes) ? out.scenes.length : 0;
+  const seconds = out.duration || scenes * 8;
+  const hook = Array.isArray(out.guionJson?.gancho) ? out.guionJson.gancho.join(" / ") : "";
+  const sections = EPISODE_SECTIONS.filter(([k]) => k === "guion" || (k === "redes" ? !!out.social : scenes > 0 && (k !== "elenco" || (out.cast || []).length > 0)));
+  return <article className="rounded-2xl border border-white/10 bg-[#121826] p-4 transition hover:border-amber-400/40">
+    <div className="flex flex-wrap items-start gap-3">
+      <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-amber-400/15 text-lg font-bold text-amber-300">{part}</span>
+      <div className="min-w-[200px] flex-1">
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Episodio {part}{scenes ? ` · ${scenes} escenas · ${seconds} s` : ""}{isDraft(ep) && <span className="ml-2 rounded-full bg-amber-400/15 px-2 py-0.5 normal-case tracking-normal text-amber-200">Borrador</span>}</p>
+        <h4 className="mt-0.5 font-bold">{ep.title}</h4>
+        <p className="mt-1 line-clamp-2 text-sm text-slate-400">{out.summary || ep.theme}</p>
+        {hook && <p className="mt-2 text-xs text-slate-300"><span className="text-slate-500">Gancho:</span> «{hook}»</p>}
+      </div>
+      <button type="button" onClick={() => onOpen()} className="w-full rounded-lg bg-amber-500 px-4 py-2 text-sm font-bold text-slate-950 hover:bg-amber-400 sm:w-auto">Abrir episodio →</button>
+    </div>
+    <div className="mt-3 border-t border-white/5 pt-3">
+      <p className="mb-2 text-[11px] text-slate-500">Dentro encontrarás · entra directo:</p>
+      <div className="flex flex-wrap gap-2">{sections.map(([k, label, hint]) => <button key={k} type="button" onClick={() => onOpen(k)} title={hint} className="section-chip">{STEP[k] && <span className="text-slate-500">{STEP[k]}·</span>}{label}</button>)}</div>
+    </div>
+  </article>;
 }
 
 function EpisodeArchive({ episodes, series, onOpen, onDelete }: any) {
