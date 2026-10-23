@@ -1,7 +1,7 @@
 // Producción del episodio: escenas de 8 s (una imagen de Flow + un clip de Seedance por escena),
 // prompts con formato fijo, guion.json para el montaje y las 4 fichas de plataforma.
 // Los prompts se construyen en el código (no los escribe la IA) para que siempre cumplan el formato.
-import { BASE_FORMULA, buildPlatformAdaptations, mergeModelPlatforms } from "./platforms";
+import { BASE_FORMULA, buildPlatformAdaptations, formatCoverText, mergeModelPlatforms, normalizeDescription, stylePublish } from "./platforms";
 import { CHRISTIAN_SCENE_GUARD, NARRATOR_COLOR, type StyleKey } from "./knowledge";
 import { dialectPronunciations, isFruitStyle, norm, type CastMember } from "./cast";
 import type { Scene } from "./types";
@@ -10,7 +10,7 @@ export const SCENE_SECONDS = 8;
 export const NARRATOR = "Narrador";
 // Súbelo cada vez que cambien las reglas de los prompts: los episodios guardados con una versión
 // anterior muestran «Actualizar prompts» (rehace los prompts sin IA y sin tocar el guion).
-export const PROMPT_RULES_VERSION = 2;
+export const PROMPT_RULES_VERSION = 3;
 // Sin esto, en los primeros planos el modelo de vídeo pasa del 3D animado a un actor real con la piel teñida.
 export const ANIMATION_STYLE_LOCK = "ESTILO FIJO: el mismo render 3D animado de la imagen de la escena durante todo el vídeo, también en los primeros planos y con lluvia o luz dura. Nunca acción real, nunca fotorrealista, nunca un actor o persona real; la cara, la piel de fruta, el pelo y las proporciones del personaje no cambian.";
 const clean = (v: unknown) => String(v ?? "").replace(/\s+/g, " ").trim();
@@ -150,7 +150,7 @@ ${voces}`;
 // Prompt de Dola (Seedance) con las escenas elegidas para la versión corta.
 function buildDolaPrompt(dolaScenes: { n: number; setting: string; speaker: string; line: string; emotion: string }[], cast: CastMember[], style: StyleKey, total: number, dolaDuration: number) {
   const castLine = cast.map(c => isFruitStyle(style) ? `${c.name}: personaje 3D animado con rostro humano y piel de ${c.fruit} (${c.headES}); ${c.clothing}` : `${c.name}: ${c.visualEN || c.visualES}; ${c.clothing}`).join(". ");
-  return `Usa Seedance 2.5. ${isFruitStyle(style) ? `Telenovela animada 3D (render CGI de película animada premium), vertical 9:16; personajes 3D animados de rostro humano con piel de su fruta, nunca una fruta entera como cabeza. ${ANIMATION_STYLE_LOCK}` : "Película romántica dominicana de los 90, 35 mm, vertical 9:16, personas reales."} ${total > dolaDuration ? `Adaptación de ${dolaDuration} s del episodio de ${total} s. Conserva el gancho y el cierre; elimina solo escenas intermedias.` : `Episodio completo de ${total} s.`}${style === "cristiana" ? ` ${CHRISTIAN_SCENE_GUARD}.` : ""} PERSONAJES: ${castLine}. ${dolaScenes.map((s, i) => `${i * SCENE_SECONDS}-${(i + 1) * SCENE_SECONDS}s [escena ${s.n}]: ${s.setting}. ${s.speaker === NARRATOR ? `Narrador en off: "${s.line}"` : `${s.speaker} dice con ${s.emotion}: "${s.line}"`}`).join(" ")} PRONUNCIACIÓN OBLIGATORIA: ${Array.from(new Set(cast.flatMap(c => c.pronunciations).concat(dialectPronunciations(dolaScenes.map(s => s.line).join(" "))))).join("; ") || "palabras completas con acentos correctos"}. VOCES: español latino neutro, cada palabra completa, nunca acento inglés; sincronización de labios solo para quien habla; sin subtítulos ni texto en pantalla.`;
+  return `Usa Seedance 2.5. ${isFruitStyle(style) ? `Telenovela animada 3D (render CGI de película animada premium), vertical 9:16; personajes 3D animados de rostro humano con piel de su fruta, nunca una fruta entera como cabeza. ${ANIMATION_STYLE_LOCK}` : "Película romántica dominicana de los 90, 35 mm, vertical 9:16, personas reales."} ${total > dolaDuration ? `Adaptación de ${dolaDuration} s del episodio de ${total} s. Conserva el gancho y el cierre; elimina solo escenas intermedias.` : `Episodio completo de ${total} s.`}${style === "cristiana" ? ` ${CHRISTIAN_SCENE_GUARD[0].toUpperCase()}${CHRISTIAN_SCENE_GUARD.slice(1)}.` : ""} PERSONAJES: ${castLine}. ${dolaScenes.map((s, i) => `${i * SCENE_SECONDS}-${(i + 1) * SCENE_SECONDS}s [escena ${s.n}]: ${s.setting}. ${s.speaker === NARRATOR ? `Narrador en off: "${s.line}"` : `${s.speaker} dice con ${s.emotion}: "${s.line}"`}`).join(" ")} PRONUNCIACIÓN OBLIGATORIA: ${Array.from(new Set(cast.flatMap(c => c.pronunciations).concat(dialectPronunciations(dolaScenes.map(s => s.line).join(" "))))).join("; ") || "palabras completas con acentos correctos"}. VOCES: español latino neutro, cada palabra completa, nunca acento inglés; sincronización de labios solo para quien habla; sin subtítulos ni texto en pantalla.`;
 }
 
 // Construye todo el paquete de producción del episodio a partir de lo que devolvió la IA.
@@ -222,7 +222,9 @@ export function buildProduction(raw: any, ctx: Ctx) {
   const dolaScenes = selectShortScenes(scenes, Math.floor(60 / SCENE_SECONDS));
   const dolaDuration = dolaScenes.length * SCENE_SECONDS;
   const dolaPrompt = buildDolaPrompt(dolaScenes, cast, style, total, dolaDuration);
-  const platformAdaptations = mergeModelPlatforms(buildPlatformAdaptations({ theme: ctx.idea || clean(raw?.title), seriesTitle: ctx.seriesTitle || clean(raw?.title), partNumber: ctx.partNumber || 1, previousSummary: ctx.previousSummary, hook }), raw?.platforms);
+  const shortTitle = `${ctx.seriesTitle || clean(raw?.title) || "Serie"} · Parte ${ctx.partNumber || 1}`;
+  const word = stylePublish(style).word(ctx.partNumber || 1);
+  const platformAdaptations = mergeModelPlatforms(buildPlatformAdaptations({ theme: ctx.idea || clean(raw?.title), seriesTitle: ctx.seriesTitle || clean(raw?.title), partNumber: ctx.partNumber || 1, previousSummary: ctx.previousSummary, hook, style }), raw?.platforms).map(p => ({ ...p, description: normalizeDescription(p.description, shortTitle, word, p.hashtags) }));
   const f = raw?.ficha || {};
   const ficha = {
     biblicalBase: clean(f.biblicalBase || raw?.biblicalBase),
@@ -259,7 +261,8 @@ export function buildProduction(raw: any, ctx: Ctx) {
     dolaPrompt, dolaDuration, dolaSceneNumbers: dolaScenes.map(s => s.n), dolaIsAdaptation: total > dolaDuration, duration: total,
     shortForLongPlatforms: total < 60 ? "Facebook y TikTok necesitan al menos 60 s: añade la tarjeta «Continuará…» de 3 s al final." : "",
     dialogueRules: "Palabras dominicanas completas con acentos (tíguere, yipeta, jevito, vaina, un chin, mi cualto). Nunca pa', vamo', e', ta'. Un solo personaje habla por escena.",
-    hook, coverText: clean(raw?.coverText) || hook[0], description: clean(raw?.description) || ctx.idea,
+    // Portada con formato fijo (zona segura arriba, «PARTE n» dorado abajo); la descripción, título en MAYÚSCULAS + palabra + hashtags.
+    hook, coverText: formatCoverText(ctx.seriesTitle || clean(raw?.title) || "Serie", cover.lines.join(" "), ctx.partNumber || 1), description: normalizeDescription(clean(raw?.description), shortTitle, word, stylePublish(style).tags),
     hashtags: Array.isArray(raw?.hashtags) && raw.hashtags.length ? raw.hashtags.map(clean).filter(Boolean).slice(0, 6) : ["#Frutinovelas", "#RD", "#Microdrama", "#Viral"],
     guionJson, baseFormula: BASE_FORMULA, platformAdaptations, platform_adaptations: platformAdaptations,
   };
@@ -269,20 +272,21 @@ export function buildProduction(raw: any, ctx: Ctx) {
 export function templateScenes(idea: string, cast: CastMember[], style: StyleKey, count: number) {
   const [a, b, c] = [cast[0], cast[1] || cast[0], cast[2] || cast[1] || cast[0]];
   const place = style === "cristiana" ? "frente al colegio, por la mañana" : style === "cine90" ? "una calle de Santo Domingo en 1994" : "una calle del barrio con colmado y motores";
+  // Ida y vuelta entre dos personajes, frases de 2 a 6 palabras (nunca discursos).
   const beats: [CastMember, string, string, string][] = [
-    [b, place, "desprecio", `¿Tú de verdad crees que alguien como tú me va a hacer cambiar de opinión?`],
-    [a, place, "dolor contenido", `Yo no tengo mucho, pero lo que siento es de verdad.`],
-    [c, "en la cocina de la casa", "preocupación", `Esto se va a saber, y cuando se sepa, se va a armar una vaina grande.`],
-    [a, "en la puerta de la casa, de noche", "nervios", `Mañana le digo la verdad delante de todo el mundo.`],
-    [b, "en la sala de la casa", "furia", `Si das un paso más, te olvidas de esta familia.`],
-    [c, "en la sala de la casa", "sorpresa", `Mira lo que encontré guardado en esta carta.`],
-    [a, "en la sala de la casa", "lágrimas", `Todo este tiempo me escondieron quién era yo de verdad.`],
-    [b, "en la sala de la casa", "arrepentimiento", `Yo solo quería protegerte, aunque lo hice de la peor manera.`],
-    [c, "en la puerta de la casa", "esperanza", `Todavía estamos a tiempo de arreglar esto.`],
-    [a, "en la calle, al amanecer", "determinación", `Hoy voy a decidir quién soy, cueste lo que cueste.`],
+    [b, place, "desprecio", `¿Tú aquí? ¡Vete ya!`],
+    [a, place, "dolor contenido", `Solo vine a verte.`],
+    [b, place, "furia", `Aquí no eres nadie.`],
+    [a, place, "lágrimas", `Lo mío es de verdad.`],
+    [c, "en la cocina de la casa", "sorpresa", `Mira lo que encontré.`],
+    [b, "en la cocina de la casa", "miedo", `¿Quién te dio eso?`],
+    [c, "en la cocina de la casa", "determinación", `Esta carta lo cambia todo.`],
+    [a, "en la sala de la casa", "nervios", `¿Me escondieron quién soy?`],
+    [b, "en la sala de la casa", "arrepentimiento", `Yo solo quería protegerte.`],
+    [a, "en la calle, al amanecer", "determinación", `Hoy se sabe la verdad.`],
   ];
   const out = beats.slice(0, Math.max(2, count - 1)).map(([m, setting, emotion, line]) => ({ speaker: m.name, setting, emotion, line }));
-  out.push({ speaker: NARRATOR, setting: "plano final de la calle", emotion: "intriga", line: `Lo que ${a.name} no sabe… es que la verdad apenas comienza.` });
+  out.push({ speaker: NARRATOR, setting: "plano final de la calle", emotion: "intriga", line: `Lo que ${a.name} no sabe… es que esa carta tiene otro nombre. ¿Quién la escribió?` });
   return { title: "Episodio 1", summary: idea, scenes: out };
 }
 

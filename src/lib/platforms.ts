@@ -20,6 +20,34 @@ export interface PlatformAdaptation {
   pinnedComment?: string;
   start?: string;   // cómo empieza el vídeo en esta plataforma
   extra?: string;   // acción extra recomendada
+  topic?: string;   // Facebook: tema que hay que elegir al publicar
+}
+
+// Por estilo: palabra para comentar, tema de Facebook y hashtags de nicho.
+const STYLE_PUBLISH: Record<string, { word: (part: number) => string; topic: string; tags: string[] }> = {
+  frutinovela: { word: p => `PARTE ${p + 1}`, topic: "Animación", tags: ["#Frutinovelas", "#DramaDominicano", "#TelenovelaDeFrutas", "#Microdrama", "#RD"] },
+  cristiana: { word: () => "AMÉN", topic: "Religión", tags: ["#Frutinovelas", "#Cristianos", "#Reflexión", "#Fe", "#DramaDominicano"] },
+  cine90: { word: () => "BUTACA", topic: "Películas", tags: ["#PeliculasQueNoExisten", "#Cine90", "#RomanceDominicano", "#Microdrama", "#RD"] },
+};
+export const stylePublish = (style?: string) => STYLE_PUBLISH[style || ""] || STYLE_PUBLISH.frutinovela;
+// Descripción: título corto en MAYÚSCULAS + palabra para comentar + 3-6 hashtags.
+export function formatDescription(title: string, word: string, hashtags: string[]) {
+  return `${title.toUpperCase()}\nComenta ${word} 👇\n${hashtags.slice(0, 6).join(" ")}`;
+}
+// La descripción que escribe la IA se completa hasta cumplir el formato: primera línea en MAYÚSCULAS,
+// la palabra para comentar y los hashtags (sin repetirlos si ya están).
+export function normalizeDescription(desc: string, title: string, word: string, hashtags: string[]) {
+  let d = String(desc || "").trim();
+  if (!d) return formatDescription(title, word, hashtags);
+  const first = d.split("\n")[0];
+  if (first !== first.toUpperCase()) d = `${title.toUpperCase()}\n${d}`;
+  if (!d.toLowerCase().includes(word.toLowerCase())) d += `\nComenta ${word} 👇`;
+  if (!/#\w/.test(d)) d += `\n${hashtags.slice(0, 6).join(" ")}`;
+  return d;
+}
+// Portada de serie: arriba, en la zona segura, nombre y frase de intriga; abajo «PARTE n» enorme en dorado.
+export function formatCoverText(seriesTitle: string, intrigue: string, part: number) {
+  return `ARRIBA (zona segura, 300-600 px de alto): ${seriesTitle.toUpperCase()} · ${intrigue}\nABAJO (1290-1640 px, dorado, enorme): PARTE ${part}`;
 }
 
 export const BASE_FORMULA_NAME = "FÓRMULA BASE (Instagram) — origen de las 4 adaptaciones";
@@ -55,6 +83,7 @@ export function formatAdaptationForCopy(a: PlatformAdaptation): string {
     a.pinnedComment ? `Comentario fijado: ${a.pinnedComment}` : "",
     a.start ? `Inicio: ${a.start}` : "",
     a.extra ? `Extra: ${a.extra}` : "",
+    a.topic ? `Tema al publicar (obligatorio): ${a.topic}` : "",
     `Métricas a vigilar: ${a.metricsToWatch.join(", ")}`,
     `Checklist: ${a.checklist.join(" | ")}`,
   ].filter(Boolean).join("\n");
@@ -66,11 +95,15 @@ export function buildPlatformAdaptations(input: any): PlatformAdaptation[] {
   const part: number = Number(input?.partNumber || input?.episodeNumber || 1);
   const hook1: string = input?.hook?.[0] || "El conflicto comienza aquí";
   const isContinuation = Boolean(input?.previousSummary);
+  const sp = stylePublish(input?.style);
+  const word = sp.word(part);
+  const cover = formatCoverText(seriesTitle, input?.hook?.join(" ") || hook1, part);
+  const shortTitle = `${seriesTitle} · Parte ${part}`;
   const slug = seriesTitle.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
   const instagram: PlatformAdaptation = {
     platform: "Instagram",
-    recommendedDuration: "Corte de 45-75 s del máster (sin saludos ni relleno; empieza en el conflicto)",
+    recommendedDuration: "Corte de 25-46 s del máster, en un solo corte sin relleno (empieza en el conflicto)",
     start: "Gancho de texto",
     extra: "Historia «Disponible en unos minutos» con sticker",
     pinnedComment: "Comenta PARTE 2 y te la subo 👇",
@@ -81,13 +114,13 @@ export function buildPlatformAdaptations(input: any): PlatformAdaptation[] {
       "Estética cinematográfica, primeros planos de reacciones",
       'Cerrar con "Continuará..." y fijar el comentario "¿Parte 2?"',
     ],
-    coverText: `Diseño de serie igual en todas las partes — ${hook1}`,
+    coverText: cover,
     title: `${seriesTitle} — Parte ${part} | ${theme}`,
-    description: `¿De verdad hizo eso? 👀 ${theme}. Comenta PARTE 2 si quieres la continuación.`,
-    hashtags: ["#Frutinovelas", "#DramaDominicano", "#ReelsRD", "#Microdrama", "#TelenovelaDeFrutas"],
+    description: formatDescription(shortTitle, word, sp.tags.slice(0, 5)),
+    hashtags: sp.tags.slice(0, 5),
     bestTime: "7-9 p. m. (hora RD)",
     frequency: "1 Reel por episodio (versión base)",
-    cta: "Comenta PARTE 2",
+    cta: `Comenta ${word}`,
     metricsToWatch: ["compartidos", "guardados", "seguidores ganados"],
     checklist: ['Activar la etiqueta "Información de IA" / contenido generado con IA al publicar', "Portada con cara en primer plano + 1 frase de intriga", "3-5 hashtags de nicho (no más)", "Archivo propio de Instagram, no reutilizar el de TikTok/Facebook/Shorts"],
     fileName: `${slug}-parte-${part}-instagram-corte.mp4`,
@@ -98,6 +131,7 @@ export function buildPlatformAdaptations(input: any): PlatformAdaptation[] {
     recommendedDuration: "Máster de 60-90 s (mínimo 60 s para monetizar)",
     start: "Gancho de texto",
     extra: "Compartir en 3 grupos dominicanos con una frase propia",
+    topic: sp.topic,
     pinnedComment: "¿Quién tiene la culpa? La Parte " + (part + 1) + " sale pronto 👇",
     editingChanges: [
       "Montaje más largo que Instagram: diálogo sin pausas, sin recortar la escalada",
@@ -105,16 +139,18 @@ export function buildPlatformAdaptations(input: any): PlatformAdaptation[] {
       "Subida NATIVA a Facebook, nunca compartir/exportar desde Instagram (penaliza alcance y deja marcas)",
       "Dejar aire emotivo en la revelación con el objeto para que la audiencia comente",
       'Cerrar con "Continuará..." + pregunta de debate',
+      "Pedir el «me gusta» dentro del vídeo, en la frase final (llamada de la tarjeta de cierre)",
     ],
-    coverText: `Cara en primer plano + frase de intriga: ${hook1}`,
+    coverText: cover,
     title: `${seriesTitle} — Parte ${part}: ${theme}`,
-    description: `${theme}. ${hook1} ¿Qué habrías hecho tú? Comenta tu opinión. Continuará...`,
-    hashtags: ["#Frutinovelas", "#Dominicanos"],
+    description: formatDescription(shortTitle, word, sp.tags.slice(0, 3)),
+    hashtags: sp.tags.slice(0, 3),
     bestTime: "19:00-22:00 (7-10 pm, hora RD)",
     frequency: "1 publicación al día",
     cta: "¿Quién tiene la culpa? Comenta y comparte en tu grupo",
     metricsToWatch: ["tiempo promedio de reproducción", "vistas de 1 minuto", "ingresos estimados"],
     checklist: [
+      `Elegir el TEMA del vídeo al publicar: ${sp.topic}`,
       "Video subido nativo a Facebook (nunca desde Instagram)",
       "Gancho visible 5-8 segundos",
       "Descripción emotiva / de debate lista",
@@ -141,10 +177,10 @@ export function buildPlatformAdaptations(input: any): PlatformAdaptation[] {
       "Narrador SOLO en la última frase",
       "Dejar 2-3 comentarios semilla para responder en video",
     ],
-    coverText: `PARTE ${part} — ${seriesTitle}`,
+    coverText: cover,
     title: `${seriesTitle} — Parte ${part}`,
     description: `frutinovela | telenovela de frutas | drama dominicano — ${theme}. Parte ${part} de ${seriesTitle}. Sígueme y entra a la playlist de la serie para verla en orden. Continuará...`,
-    hashtags: ["#frutinovela", "#telenoveladefrutas", "#dramadominicano", "#parati", "#novelas"],
+    hashtags: [...sp.tags.slice(0, 4), "#parati"],
     bestTime: "12-2 p. m. o 7-10 p. m. (hora RD)",
     frequency: "1-2 publicaciones al día",
     cta: "Sigue la serie en la playlist y comenta: te respondo en video",
@@ -169,7 +205,7 @@ export function buildPlatformAdaptations(input: any): PlatformAdaptation[] {
     coverText: `Fotograma más fuerte — ${hook1}`,
     title: shortsTitle,
     description: `${theme} — ${seriesTitle}, Parte ${part}. Mira la siguiente parte en el video relacionado. #shorts`,
-    hashtags: ["#shorts", "#frutinovelas"],
+    hashtags: ["#shorts", ...sp.tags.slice(0, 2)],
     bestTime: "Cualquier hora",
     frequency: "1 Short por episodio (versión en bucle)",
     cta: "Mira la Parte " + (part + 1) + " en el video relacionado",
@@ -193,7 +229,9 @@ export function mergeModelPlatforms(base: PlatformAdaptation[], model: any): Pla
     const m = byPlatform.get(a.platform);
     if (!m) return a;
     const tags = Array.isArray(m.hashtags) ? m.hashtags.map((t: unknown) => String(t).trim()).filter(Boolean).map((t: string) => (t.startsWith("#") ? t : "#" + t)) : [];
-    return { ...a, title: str(m.title) || a.title, description: str(m.description) || a.description, hashtags: tags.length ? tags : a.hashtags,
-      bestTime: str(m.hour) || a.bestTime, cta: str(m.cta) || a.cta, pinnedComment: str(m.pinnedComment) || a.pinnedComment };
+    // 3-6 hashtags: si la IA da menos de 3 se completan con los de la plantilla.
+    const merged = Array.from(new Set([...tags, ...(tags.length < 3 ? a.hashtags : [])])).slice(0, 6);
+    return { ...a, title: str(m.title) || a.title, description: str(m.description) || a.description, hashtags: merged.length ? merged : a.hashtags,
+      bestTime: str(m.hour) || a.bestTime, cta: str(m.cta) || a.cta, pinnedComment: str(m.pinnedComment) || a.pinnedComment, topic: a.topic ? str(m.topic) || a.topic : undefined };
   });
 }

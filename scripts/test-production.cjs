@@ -17,7 +17,8 @@ const { templateSeries, generateSeries, generateNextEpisode } = require("../src/
 const { normalizeCast } = require("../src/lib/cast.ts");
 const GENERIC = /^(protagonista|antagonista|personaje)/i;
 const FORBIDDEN = /\b(santos?|virgen|vírgen|altar(es)?|velas? votivas?|rosarios?)\b/i;
-const GUARD = "sin imágenes de santos ni de la Virgen, sin altares";
+const { CHRISTIAN_SCENE_GUARD } = require("../src/lib/knowledge.ts");
+const GUARD = CHRISTIAN_SCENE_GUARD.slice(CHRISTIAN_SCENE_GUARD.indexOf("Sin imágenes"));
 
 function checkFruitEpisode(r, label, fruitsExpected = []) {
   assert.ok(r.characters.length >= 3 && r.characters.length <= 6, `${label}: elenco de 3 a 6 (${r.characters.length})`);
@@ -51,10 +52,24 @@ function checkFruitEpisode(r, label, fruitsExpected = []) {
   assert.ok(r.episode.platformAdaptations.every(p => p.title && p.description && p.bestTime && p.cta && p.pinnedComment), `${label}: publicación incompleta`);
   for (const name of new Set(s.map(x => x.speaker))) assert.ok(r.episode.guionJson.colores[name], `${label}: sin color para ${name}`);
 }
+// Reglas profesionales (auditoría @dreamfall.art): portada, tema de Facebook, Instagram corto, descripción y diálogo corto.
+function checkPublish(r, label, part = 1, strictDialogue = true) {
+  const ep = r.episode;
+  assert.match(ep.coverText, new RegExp(String.raw`^ARRIBA \(zona segura, 300-600 px de alto\): .+\nABAJO \(1290-1640 px, dorado, enorme\): PARTE ${part}$`), `${label}: coverText «${ep.coverText}»`);
+  const fb = ep.platformAdaptations.find(p => p.platform === "Facebook");
+  assert.ok(fb.topic && fb.checklist[0].startsWith("Elegir el TEMA"), `${label}: Facebook sin tema`);
+  assert.match(ep.platformAdaptations.find(p => p.platform === "Instagram").recommendedDuration, /25-46 s/);
+  for (const p of ep.platformAdaptations) assert.ok(p.hashtags.length >= 2 && p.hashtags.length <= 6, `${label}: ${p.platform} con ${p.hashtags.length} hashtags`);
+  const words = ep.scenes.filter(s => s.speaker !== "Narrador").map(s => s.line.split(/\s+/).length);
+  const short = words.filter(n => n <= 6).length / words.length;
+  if (strictDialogue) assert.ok(short >= 0.99, `${label}: diálogo largo (${words.join(",")})`);
+  return { short, words };
+}
 function checkChristian(r, label) {
   for (const sc of r.episode.scenes) {
     assert.doesNotMatch(`${sc.setting} ${sc.line}`, FORBIDDEN, `${label}: escena ${sc.n} menciona algo prohibido`);
-    assert.doesNotMatch(sc.animationPrompt.replace(GUARD, "").replace(/sin imágenes de santos ni de la virgen, sin altares/i, ""), FORBIDDEN, `${label}: prompt ${sc.n} prohibido`);
+    assert.doesNotMatch(sc.animationPrompt.replace(GUARD, ""), FORBIDDEN, `${label}: prompt ${sc.n} prohibido`);
+    assert.ok(sc.imagePromptFlow.includes("Iglesia (si aparece): evangélica sencilla") && sc.imagePromptFlow.includes(GUARD), `${label}: imagen ${sc.n} sin la regla cristiana completa`);
     assert.ok(sc.animationPrompt.toLowerCase().includes(GUARD.toLowerCase()), `${label}: escena ${sc.n} sin la prohibición explícita`);
   }
   assert.match(r.episode.scenes.at(-1).line, /escribe am[eé]n/i, `${label}: el final no pide "Escribe AMÉN"`);
@@ -71,6 +86,9 @@ function checkChristian(r, label) {
   checkFruitEpisode(t2, "plantilla cristiana", ["aguacate"]);
   checkChristian(t2, "plantilla cristiana");
   const t3 = templateSeries({ idea: "Una cantante reconoce al hombre que la dejó en el altar", style: "cine90", duration: 90 });
+  checkPublish(t1, "plantilla frutinovela"); checkPublish(t2, "plantilla cristiana"); checkPublish(t3, "plantilla cine90");
+  assert.equal(t2.episode.platformAdaptations.find(p => p.platform === "Facebook").topic, "Religión");
+  assert.match(t2.episode.description, /^.+\nComenta AMÉN 👇\n(#\S+ ?){3,6}$/, "descripción con formato");
   assert.ok(t3.characters.every(c => !c.fruit), "cine90 sin frutas");
   assert.ok(t3.episode.scenes[0].imagePromptFlow.startsWith("Cinematic 1990s"), "cine90: imagen en inglés");
   // Lote para Flow: instrucción + fichas [P01..] + escenas [001..], con identificadores de 5 caracteres.

@@ -167,6 +167,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
         series: { title: current.title, logline: current.description }, bible, style: bible.style, partNumber: part, wish, duration, account, learnings, chosenHook,
         characters: currentCast.map((c: any) => ({ name: c.name, role: c.role, fruit: c.fruit, fruitEmoji: c.fruitEmoji, headES: c.headES, visualES: c.visualES, visualEN: c.visualEN, clothing: c.clothing, voice: c.voice, subtitleColor: c.subtitleColor, speechStyle: c.speechStyle, pronunciations: c.pronunciations, flowPrompt: c.flowPrompt })),
         history: eps.map((e: any, i: number) => ({ part: i + 1, title: e.title, summary: e.output?.summary || e.theme })),
+        signatureSong: [...eps].reverse().find((e: any) => e.output?.social?.music)?.output?.social?.music || "",
       };
       const res = await call("/api/next-episode", body, () => templateNext(body)); if (!res) return;
       for (const c of res.data.newCharacters || []) await insert("characters", { ...c, seriesId: current.id });
@@ -410,6 +411,7 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
   const referencesReady = !!cast.length && master.every(c => !!c?.imageUrl && !!c?.referenceApprovedAt);
   const snapshotValid = !!out.referenceVersions && master.every((c, i) => Number(c?.referenceVersion || 1) === Number(out.referenceVersions[String(cast[i].name).toLowerCase()]));
   const productionReady = referencesReady && snapshotValid;
+  const episodeStyle: string = out.seriesBible?.style || (/escribe am[eé]n/i.test(scenes.at(-1)?.line || "") ? "cristiana" : cast.some(c => c.fruit) ? "frutinovela" : "cine90");
   const promptsOutdated = scenes.length > 0 && Number(out.promptsVersion || 1) < PROMPT_RULES_VERSION;
   const [refreshing, setRefreshing] = useState(false);
   async function refresh() { setRefreshing(true); try { await onRefreshPrompts?.(); } finally { setRefreshing(false); } }
@@ -570,7 +572,7 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
         </div>
         <p className="text-xs text-slate-500">guion.json es el archivo para el montaje con subtitular.py. El .md trae la ficha del episodio, el guion por escenas, las 3 fases y el paquete de redes.</p>
       </div>}
-      {tab === "mesa" && productionReady && <SceneDesk key={episodeId} episodeId={episodeId} scenes={scenes} guion={out.guionJson || {}} title={`${seriesTitle || "serie"} ${part}`} referencesReady={referencesReady} referenceSignature={referenceSignature} />}
+      {tab === "mesa" && productionReady && <SceneDesk key={episodeId} episodeId={episodeId} scenes={scenes} guion={out.guionJson || {}} title={`${seriesTitle || "serie"} ${part}`} referencesReady={referencesReady} referenceSignature={referenceSignature} style={episodeStyle} part={part} />}
       {(tab === "imagenes" || tab === "animacion" || tab === "mesa") && !productionReady && <p className="rounded-xl border border-amber-400/25 bg-amber-400/10 p-4 text-sm text-amber-100">Revisa la biblia y la versión de las fichas maestras antes de continuar.</p>}
     </div>
   </>;
