@@ -21,6 +21,8 @@ guion.json:
 Opcionales:
   "marca": "dola" | "pavo"   quita la marca de agua de esa herramienta (reescala antes los clips con otra resolución)
   "delogo": "x=..:y=..:w=..:h=.."   coordenadas propias si la marca es otra
+  "logo": true (por defecto)   encima de la zona borrada va la marca FrutiEnganchados (marca/frutienganchados.png),
+                               del tamaño justo para taparla: no se nota el difuminado
   "recortar": true (por defecto)   quita el silencio muerto al inicio y al final de cada clip con diálogo
                                    (los clips de IA traen medio segundo o más): el vídeo fluye sin pausas.
   "tarjetas": [{"antes": 3, "texto": "Horas después..."}]   tarjeta negra de 1,6 s antes del clip 3 (índice desde 0)
@@ -374,8 +376,38 @@ if G.get("cierre"):
          "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", "3", "-vf", vf + ",format=yuv420p",
          "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", end])
     segmento(end)
+# Marca FrutiEnganchados sobre la zona borrada (la cubre entera con unos píxeles de margen).
+LOGO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "marca", "frutienganchados.png")
+zona = None
+preset = MARCAS.get(str(G.get("marca", "")).lower())
+if G.get("logo", True) is not False and os.path.exists(LOGO) and (preset or G.get("delogo")):
+    if preset:
+        W0, H0 = (int(v) for v in preset["res"].split(":"))
+        zx, zy, zw, zh = (int(kv.split("=")[1]) for kv in preset["delogo"].split(":"))
+    else:
+        W0, H0 = (int(v) for v in subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height",
+                                                    "-of", "csv=p=0", clips[0]], capture_output=True, text=True).stdout.strip().split(","))
+        zx, zy, zw, zh = (int(kv.split("=")[1]) for kv in str(G["delogo"]).split(":"))
+    f = max(1080 / W0, 1920 / H0)   # mismo escalado y recorte centrado que los clips
+    ox, oy = (W0 * f - 1080) / 2, (H0 * f - 1920) / 2
+    zona = (zx * f - ox, zy * f - oy, zw * f, zh * f)
 MUSICA = G.get("musica_archivo") if G.get("musica_archivo") and os.path.exists(G["musica_archivo"]) else ""
-fc += f"{cat}concat=n={n}:v=1:a=1[vc][{'voz' if MUSICA else 'a'}];[vc]"
+fc += f"{cat}concat=n={n}:v=1:a=1[vc][{'voz' if MUSICA else 'a'}];"
+if zona:
+    zx, zy, zw, zh = zona
+    lw, lh = (int(v) for v in subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=width,height", "-of", "csv=p=0", LOGO],
+                                             capture_output=True, text=True).stdout.strip().split(","))
+    alto = zh + 14                                  # alto justo para tapar la marca (+7 px arriba y abajo)
+    ancho = max(zw + 24, alto * lw / lh)
+    alto = ancho * lh / lw
+    x = min(1080 - ancho - 4, zx + zw + 14 - ancho)  # alineada a la derecha de la marca (+14 px: tapa el borde del difuminado)
+    y = zy + zh / 2 - alto / 2
+    shutil.copy(LOGO, "marca.png")
+    li = n + (1 if MUSICA else 0)                   # entrada del logo (después de la música si la hay)
+    fc += f"[{li}:v]scale={int(ancho)}:{int(alto)}[logo];[vc][logo]overlay={int(x)}:{int(y)}[vm];[vm]"
+    progreso(69, f"Marca FrutiEnganchados sobre la marca de {G.get('marca') or 'agua'} ({int(ancho)}×{int(alto)} px)")
+else:
+    fc += "[vc]"
 # El gancho sale en los 3 primeros segundos del episodio nuevo (después de «Anteriormente...» si lo hay).
 H0 = RECAP_S
 alpha = f"alpha='if(lt(t,{H0 + 2.6:.2f}),1,max(0,1-(t-{H0 + 2.6:.2f})/0.4))':enable='between(t,{H0:.2f},{H0 + 3:.2f})'"
@@ -395,7 +427,7 @@ if MUSICA:
     # Música de fondo (p. ej. de Muse): en bucle hasta el final, entra y sale con fundido y baja
     # sola cuando alguien habla (sidechain con las voces), para que el diálogo se entienda siempre.
     vol = min(0.4, max(0.05, float(G.get("musica_volumen") or 0.18)))
-    inputs += ["-stream_loop", "-1", "-i", MUSICA]
+    inputs += ["-stream_loop", "-1", "-i", MUSICA]   # entrada n (el logo, si lo hay, va después)
     fc += (f";[{n}:a]aresample=48000,aformat=channel_layouts=stereo,atrim=0:{total:.2f},volume={vol},"
            f"afade=t=in:d=1,afade=t=out:st={max(0, total - 2.5):.2f}:d=2.5[mus];"
            f"[voz]asplit[voz1][voz2];[mus][voz1]sidechaincompress=threshold=0.02:ratio=6:attack=15:release=450[musb];"
@@ -405,6 +437,8 @@ VCODEC = (["-c:v", "h264_nvenc", "-preset", "p5", "-rc", "vbr", "-cq", "19", "-b
           if os.environ.get("VIDEO_ENCODER") == "h264_nvenc"
           else ["-c:v", "libx264", "-crf", "17", "-preset", os.environ.get("X264_PRESET", "medium")])
 mmss = lambda x: f"{int(x // 60)}:{int(x % 60):02d}"
+if zona:
+    inputs += ["-i", "marca.png"]   # imagen fija: overlay la repite hasta el final
 progreso(70, f"Codificando el vídeo final 1080x1920 ({mmss(total)}) con {'la GPU (NVENC)' if VCODEC[1] == 'h264_nvenc' else 'x264'}")
 enc = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-nostats", "-progress", "pipe:1", *inputs, "-filter_complex", fc, "-map", "[v]", "-map", "[a]",
      *VCODEC, "-pix_fmt", "yuv420p",
