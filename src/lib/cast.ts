@@ -14,8 +14,12 @@ export function accentOf(member?: Partial<CastMember> | null): string {
   const m = /acento\s*:?\s*([^.;,\n]+)/i.exec(`${member?.speechStyle || ""}. ${member?.voice || ""}`);
   return m ? m[1].trim().toLowerCase() : "";
 }
-export function accentPrompt(member: Partial<CastMember> | null | undefined, lang: "es" | "en" = "es"): string {
+export function accentPrompt(member: Partial<CastMember> | null | undefined, lang: "es" | "en" = "es", style?: string): string {
   const a = accentOf(member);
+  // Cristiana: vocabulario neutro y global, sin jerga; la voz, con un acento dominicano suave.
+  if (style === "cristiana" && (!a || /neutr|dominican/.test(a))) return lang === "es"
+    ? "Acento dominicano suave y claro, con vocabulario neutro y respetuoso (sin jerga ni vulgaridades); cada palabra completa; nunca acento inglés"
+    : "Soft, clear Dominican accent with neutral, respectful vocabulary; every word complete; never English accent";
   if (/dominican/.test(a)) return lang === "es"
     ? "Acento DOMINICANO marcado y auténtico (español caribeño de Santo Domingo, de la calle): ritmo rápido y cantado, la s final y la r suaves; nunca neutro, mexicano, venezolano ni de España. Cada palabra se entiende entera"
     : "Strong, authentic DOMINICAN Spanish accent (Caribbean street Spanish from Santo Domingo): fast sing-song rhythm, soft final s and soft r; never neutral, Mexican, Venezuelan or Spain accent. Every word clearly understood";

@@ -126,6 +126,7 @@ REGLAS CRISTIANAS (público pentecostal/evangélico):
 - La iglesia es evangélica sencilla: púlpito de madera, cruz lisa sin cristo, Biblia, bancos.
 - PROHIBIDO poner santos, vírgenes, altares, velas votivas, rosarios o cuadros religiosos, ni en la iglesia ni en la casa. Esto se evita al generar (va dentro de cada prompt de escena), nunca se difumina después.
 - Estructura: pecado u orgullo -> caída -> regreso a Dios o a la familia -> frase final del narrador -> "Escribe AMÉN".
+- Lenguaje: español neutro y global (para todo el público hispano), respetuoso, sin jerga dominicana ni vulgaridades; la voz con acento dominicano suave.
 `.trim();
 // Va dentro de CADA prompt de escena cristiana (público pentecostal). «Si aparece» evita que el
 // generador ponga un púlpito en escenas de casa o de calle.

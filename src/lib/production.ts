@@ -17,7 +17,8 @@ export function timeJump(text: string) {
 export const NARRATOR = "Narrador";
 // Súbelo cada vez que cambien las reglas de los prompts: los episodios guardados con una versión
 // anterior muestran «Actualizar prompts» (rehace los prompts sin IA y sin tocar el guion).
-export const PROMPT_RULES_VERSION = 9;
+export const PROMPT_RULES_VERSION = 10;
+// v10: cristiana con vocabulario neutro y global (sin jerga ni groserías) y acento dominicano suave.
 // v9: escenas sin hablante en cámara (Narrador): o salen los personajes presentes con sus fichas, o el lugar
 // va VACÍO. Antes el generador rellenaba con frutas inventadas (cabeza de fruta entera) que no son el elenco.
 const EMPTY_ES = "NADIE en la escena: el lugar está vacío, sin personas, sin público y sin personajes ni frutas con cara; solo el decorado y los objetos";
@@ -125,9 +126,24 @@ function rawScenes(raw: any): any[] {
   return out;
 }
 
-function pronunciationFor(speakerMember: CastMember | undefined, line: string) {
+function pronunciationFor(speakerMember: CastMember | undefined, line: string, style?: StyleKey) {
   const list = Array.from(new Set([...(speakerMember?.pronunciations || []), ...dialectPronunciations(line)]));
-  return list.length ? list.join("; ") : "tíguere = TÍ-gue-re, nunca tigre; yipeta = yi-PE-ta; vaina = VAI-na, nunca baila; Piña = PI-ña; mi cualto con L";
+  if (list.length) return list.join("; ");
+  return style === "cristiana" ? "cada palabra completa y clara, con sus tildes" : "tíguere = TÍ-gue-re, nunca tigre; yipeta = yi-PE-ta; vaina = VAI-na, nunca baila; Piña = PI-ña; mi cualto con L";
+}
+
+// Cristiana: lenguaje neutro y global. Cambia la jerga dominicana por su equivalente y quita groserías.
+const NEUTRAL_WORDS: [RegExp, string][] = [
+  [/\byipetas?\b/gi, "camioneta"], [/\bvainas?\b/gi, "cosa"], [/\btígueres?\b|\btigueres?\b/gi, "muchacho"], [/\bjevitos?\b/gi, "joven"],
+  [/\bjevitas?\b/gi, "joven"], [/\bun chin\b/gi, "un poco"], [/\b(mi|lo|los) cualtos?( mío| míos)?\b/gi, "mi dinero"], [/\bpariguayos?\b/gi, "tonto"],
+  [/\bmotoconchos?\b/gi, "mototaxi"], [/\bcolmados?\b/gi, "tienda"],
+  [/\b(coño|carajo|mierda|pendej[oa]s?|maldit[oa]s?|cabr[oó]n(es)?|diablos?)\b[,!¡]*\s*/gi, ""],
+];
+export function neutralize(text: string) {
+  let s = String(text || "");
+  for (const [re, rep] of NEUTRAL_WORDS) s = s.replace(re, rep);
+  s = s.replace(/\s{2,}/g, " ").replace(/^\s*[,.]\s*/, "").trim();
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 // Variedad visual obligatoria: cada escena abre con un encuadre y movimiento distintos al anterior.
@@ -184,15 +200,15 @@ VOICES: ${voice} No subtitles or on-screen text.`;
     ? `${shot.es} de la escena, ${shot.move}. Desde 0,3 s, sin pausa previa y con acercamiento lento, el narrador dice en voz en off: "${s.line}" Justo al terminar: 1 s sosteniendo la imagen; después la misma toma sigue sin cortes.`
     : `${shot.es}, ${shot.move}; ${member!.name} ya está en plena emoción (${s.emotion}) desde el primer fotograma. Desde 0,3 s, sin pausa previa, ${member!.name} dice con ${s.emotion}, mientras la cámara hace un dolly lento hacia su cara: "${s.line}" Justo al terminar la frase: 1 s de primer plano de ${member!.name} sosteniendo la emoción; después la misma toma sigue sin cortes.`;
   const voces = narrator
-    ? `VOCES: Narrador: voz masculina profunda y cálida, en off. ${accentPrompt(null)}. Nadie mueve los labios. Sin subtítulos ni texto en pantalla.`
-    : `VOCES: ${member!.name}: ${member!.voice}. ${accentPrompt(member)}. Solo habla ${member!.name}; sincronización de labios solo para quien habla. Sin subtítulos ni texto en pantalla.`;
+    ? `VOCES: Narrador: voz masculina profunda y cálida, en off. ${accentPrompt(null, "es", style)}. Nadie mueve los labios. Sin subtítulos ni texto en pantalla.`
+    : `VOCES: ${member!.name}: ${member!.voice}. ${accentPrompt(member, "es", style)}. Solo habla ${member!.name}; sincronización de labios solo para quien habla. Sin subtítulos ni texto en pantalla.`;
   return `Telenovela animada 3D (render CGI de película animada premium), vertical 9:16, 8 segundos. Anima a partir de la imagen de la escena como primer fotograma.
 ${ANIMATION_STYLE_LOCK}
 Referencias: imagen 1 = escena${member ? `; imagen 2 = ficha de ${member.name}` : others.map((o, k) => `; imagen ${k + 2} = ficha de ${o.name}`).join("")}.
 PERSONAJES: ${personajes}
 ESCENA: ${s.location ? `${s.location} (el mismo decorado que las demás escenas en este lugar). ` : ""}${s.setting}.${guard}
 TOMAS: ${tomas}
-PRONUNCIACIÓN OBLIGATORIA: ${pronunciationFor(member, s.line)}.
+PRONUNCIACIÓN OBLIGATORIA: ${pronunciationFor(member, s.line, style)}.
 ${voces}
 ${SOUND_ES}${kissNote(s, "es")}`;
 }
@@ -232,7 +248,7 @@ export function buildProduction(raw: any, ctx: Ctx) {
     if (a.split(" ").length < 5 || b.split(" ").length < 5) return [s];
     return [{ ...s, line: a }, { ...s, line: b }];
   });
-  if (style === "cristiana") base = base.map(s => ({ ...s, setting: stripForbidden(s.setting), line: stripForbidden(s.line) }));
+  if (style === "cristiana") base = base.map(s => ({ ...s, setting: stripForbidden(s.setting), line: neutralize(stripForbidden(s.line)) }));
   // Cristiana: el final pide "Escribe AMÉN" en boca del narrador.
   if (style === "cristiana" && !base.some(s => /escribe am[eé]n/i.test(s.line))) {
     const last = base[base.length - 1];
@@ -312,7 +328,7 @@ export function buildProduction(raw: any, ctx: Ctx) {
     cast, scenes, scriptBlocks, prompts: scenes.map(s => s.animationPrompt), promptsVersion: PROMPT_RULES_VERSION,
     dolaPrompt, dolaDuration, dolaSceneNumbers: dolaScenes.map(s => s.n), dolaIsAdaptation: total > dolaDuration, duration: total, editDuration: Math.round(scenes.length * EDIT_SECONDS),
     shortForLongPlatforms: total < 60 ? "Facebook y TikTok necesitan al menos 60 s: añade la tarjeta «Continuará…» de 3 s al final." : "",
-    dialogueRules: "Palabras dominicanas completas con acentos (tíguere, yipeta, jevito, vaina, un chin, mi cualto). Nunca pa', vamo', e', ta'. Un solo personaje habla por escena.",
+    dialogueRules: style === "cristiana" ? "Español neutro y global, respetuoso y sin jerga ni vulgaridades; con acento dominicano suave. Un solo personaje habla por escena." : "Palabras dominicanas completas con acentos (tíguere, yipeta, jevito, vaina, un chin, mi cualto). Nunca pa', vamo', e', ta'. Un solo personaje habla por escena.",
     // Portada con formato fijo (zona segura arriba, «PARTE n» dorado abajo); la descripción, título en MAYÚSCULAS + palabra + hashtags.
     hook, coverText: formatCoverText(ctx.seriesTitle || clean(raw?.title) || "Serie", cover.lines.join(" "), ctx.partNumber || 1), description: normalizeDescription(clean(raw?.description), shortTitle, word, stylePublish(style).tags),
     hashtags: Array.isArray(raw?.hashtags) && raw.hashtags.length ? raw.hashtags.map(clean).filter(Boolean).slice(0, 6) : ["#Frutinovelas", "#RD", "#Microdrama", "#Viral"],
