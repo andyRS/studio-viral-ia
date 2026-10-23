@@ -17,14 +17,24 @@ export function timeJump(text: string) {
 export const NARRATOR = "Narrador";
 // Súbelo cada vez que cambien las reglas de los prompts: los episodios guardados con una versión
 // anterior muestran «Actualizar prompts» (rehace los prompts sin IA y sin tocar el guion).
-export const PROMPT_RULES_VERSION = 8;
+export const PROMPT_RULES_VERSION = 9;
+// v9: escenas sin hablante en cámara (Narrador): o salen los personajes presentes con sus fichas, o el lugar
+// va VACÍO. Antes el generador rellenaba con frutas inventadas (cabeza de fruta entera) que no son el elenco.
+const EMPTY_ES = "NADIE en la escena: el lugar está vacío, sin personas, sin público y sin personajes ni frutas con cara; solo el decorado y los objetos";
+const EMPTY_EN = "NOBODY in the scene: the place is empty, no people, no audience, no characters; only the set and the objects";
 // v8: lugar fijo por secuencia: las escenas seguidas en el mismo sitio comparten la misma descripción del
 // lugar en los prompts, para que el decorado no salte de un colmado a un centro comercial entre planos.
 const firstClause = (t: string) => String(t || "").split(/[.,;:]/)[0].trim();
 const words = (t: string) => new Set(norm(t).split(/\s+/).filter(w => w.length > 3));
+// Una escena no puede ser «pantalla oscura con texto»: el generador de vídeo inventa algo (y el texto lo
+// pone el montaje). Se convierte en un plano del objeto clave en el mismo lugar que la escena anterior.
+const TEXT_CARD = /pantalla (oscura|negra)|fondo (negro|oscuro)|texto (central|en pantalla)|t[ií]tulo de la serie|\blogo\b|black screen|title card/i;
 export function assignLocations<T extends { setting: string; transition?: string; location?: string }>(scenes: T[]): T[] {
   let prev = "";
-  return scenes.map(sc => {
+  return scenes.map(sc0 => {
+    const sc = TEXT_CARD.test(`${sc0.setting} ${sc0.location || ""}`)
+      ? { ...sc0, location: prev || "", setting: "plano detalle del objeto clave de la historia en este mismo lugar, luz dramática, nadie en cuadro" }
+      : sc0;
     let loc = String(sc.location || "").trim();
     if (!loc) {
       const guess = firstClause(sc.setting);
@@ -141,22 +151,24 @@ const stripId = (t: string) => String(t || "").replace(/^\[(?:P\d{2}|\d{3})\]\s*
 function imagePrompt(s: { setting: string; speaker: string; emotion: string; location?: string }, member: CastMember | undefined, others: CastMember[], style: StyleKey, i: number) {
   const shot = shotFor(i);
   if (!isFruitStyle(style)) {
-    const who = member ? `${member.name} (${member.visualEN || member.visualES}; outfit: ${member.clothing})` : "the scene";
-    return `Cinematic 1990s Dominican romance film still, 35mm grain, warm golden light, vertical 9:16. Reference: character sheet of ${member?.name || "the cast"}. ${s.location ? `Fixed location (identical in every scene set here: same set, time of day and light): ${s.location}. ` : ""}Scene: ${s.setting}. ${who}, ${s.emotion}, ${shot.en}.${others.length ? ` Also present: ${others.map(o => o.name).join(", ")}.` : ""} Real people, no text, no watermark.`;
+    const who = member ? `${member.name} (${member.visualEN || member.visualES}; outfit: ${member.clothing})`
+      : others.length ? others.map(o => `${o.name} (${o.visualEN || o.visualES}; outfit: ${o.clothing})`).join("; ") : EMPTY_EN;
+    return `Cinematic 1990s Dominican romance film still, 35mm grain, warm golden light, vertical 9:16. ${member || others.length ? `Reference: character sheet of ${[member, ...others].filter(Boolean).map(m => m!.name).join(", ")}.` : ""} ${s.location ? `Fixed location (identical in every scene set here: same set, time of day and light): ${s.location}. ` : ""}Scene: ${s.setting}. ${who}, ${s.emotion}, ${shot.en}.${member && others.length ? ` Also present: ${others.map(o => o.name).join(", ")}.` : ""} Real people, no text, no watermark.`;
   }
   const guard = style === "cristiana" ? ` ${CHRISTIAN_SCENE_GUARD[0].toUpperCase()}${CHRISTIAN_SCENE_GUARD.slice(1)}.` : "";
-  const who = member ? `${member.name} (piel de ${member.fruit}: ${member.headES}; ${member.clothing}) con expresión ${s.emotion}` : `sin personaje hablando`;
-  return `Imagen 3D cinematográfica realista (película animada premium), vertical 9:16. Encuadre: ${shot.es}. Referencia: ficha de ${member?.name || "los personajes"}. ${s.location ? `LUGAR FIJO (idéntico en todas las escenas de este sitio: mismo decorado, misma hora y misma luz): ${s.location}. ` : ""}Escena: ${s.setting}. ${who}.${others.length ? ` También en escena: ${others.map(o => `${o.name} (piel de ${o.fruit})`).join(", ")}.` : ""} Personajes de rostro humano realista con piel de su fruta, idénticos a sus fichas; nunca una fruta entera como cabeza.${guard} Sin texto, sin letreros, sin marca de agua.`;
+  const who = member ? `${member.name} (piel de ${member.fruit}: ${member.headES}; ${member.clothing}) con expresión ${s.emotion}`
+    : others.length ? `${others.map(o => `${o.name} (piel de ${o.fruit}: ${o.headES}; ${o.clothing})`).join("; ")}, con expresión ${s.emotion}, sin hablar` : EMPTY_ES;
+  return `Imagen 3D cinematográfica realista (película animada premium), vertical 9:16. Encuadre: ${shot.es}. ${member || others.length ? `Referencia: ficha de ${[member, ...others].filter(Boolean).map(m => m!.name).join(", ")}.` : "Sin fichas: no aparece ningún personaje."} ${s.location ? `LUGAR FIJO (idéntico en todas las escenas de este sitio: mismo decorado, misma hora y misma luz): ${s.location}. ` : ""}Escena: ${s.setting}. ${who}.${member && others.length ? ` También en escena: ${others.map(o => `${o.name} (piel de ${o.fruit})`).join(", ")}.` : ""}${member || others.length ? " Personajes de rostro humano realista con piel de su fruta, idénticos a sus fichas; nunca una fruta entera como cabeza." : " Ninguna persona ni fruta con cara en el fondo."}${guard} Sin texto, sin letreros, sin marca de agua.`;
 }
 
-function animationPrompt(s: { setting: string; speaker: string; line: string; emotion: string; location?: string }, member: CastMember | undefined, style: StyleKey, i: number) {
+function animationPrompt(s: { setting: string; speaker: string; line: string; emotion: string; location?: string }, member: CastMember | undefined, style: StyleKey, i: number, others: CastMember[] = []) {
   const narrator = s.speaker === NARRATOR;
   const shot = shotFor(i);
   if (!isFruitStyle(style)) {
     const voice = narrator ? `Off-screen narrator voice; nobody moves their lips.` : `Only ${member!.name} speaks; lip sync only for ${member!.name}. Voice: ${member!.voice}.`;
     return `1990s Dominican romance film, 35mm grain, warm golden light, vertical 9:16, 8 seconds. Animate from the scene image as the first frame.
-References: image 1 = scene${member ? `; image 2 = character sheet of ${member.name}` : ""}.
-CHARACTERS: ${member ? `${member.name}: ${member.visualEN || member.visualES}; outfit: ${member.clothing}. Real people.` : "No one speaks on camera."}
+References: image 1 = scene${member ? `; image 2 = character sheet of ${member.name}` : others.length ? others.map((o, k) => `; image ${k + 2} = character sheet of ${o.name}`).join("") : ""}.
+CHARACTERS: ${member ? `${member.name}: ${member.visualEN || member.visualES}; outfit: ${member.clothing}. Real people.` : others.length ? `${others.map(o => `${o.name}: ${o.visualEN || o.visualES}; outfit: ${o.clothing}`).join(". ")}. Real people, identical to their sheets; nobody speaks on camera.` : `${EMPTY_EN}. Nobody appears at any moment.`}
 SCENE: ${s.location ? `${s.location} (same set as the other scenes here). ` : ""}${s.setting}.
 SHOTS: ${shot.en}, ${shot.moveEn}. From 0.3 s, with no pause before, ${narrator ? "slow push-in while the narrator says" : `${member!.name}, already in full ${s.emotion}, says while the camera dollies slowly toward the face`} (in Spanish, exact words): "${s.line}" Right after the line: 1 s ${narrator ? "holding on the scene" : `close-up of ${member!.name} holding the emotion`}, then the same shot continues without cuts.
 ${SOUND_EN}${kissNote(s, "en")}
@@ -166,7 +178,8 @@ VOICES: ${voice} No subtitles or on-screen text.`;
   const guard = style === "cristiana" ? ` ${CHRISTIAN_SCENE_GUARD[0].toUpperCase()}${CHRISTIAN_SCENE_GUARD.slice(1)}.` : "";
   const personajes = member
     ? `${member.name}: personaje 3D animado con rostro y cuerpo humanos y piel de ${member.fruit} (${member.headES}); ${member.clothing}. Idéntico a su ficha (imagen 2) en cada toma: misma cara, mismo color de piel, mismo pelo y misma ropa; nunca una fruta entera como cabeza.`
-    : "Personajes 3D animados con rostro humano y piel de fruta, idénticos a sus fichas; nunca una fruta entera como cabeza; nadie habla a cámara.";
+    : others.length ? `${others.map(o => `${o.name}: personaje 3D animado con rostro y cuerpo humanos y piel de ${o.fruit} (${o.headES}); ${o.clothing}`).join(". ")}. Idénticos a sus fichas; nunca una fruta entera como cabeza; nadie habla a cámara.`
+    : `${EMPTY_ES}. No aparece nadie en ningún momento del vídeo.`;
   const tomas = narrator
     ? `${shot.es} de la escena, ${shot.move}. Desde 0,3 s, sin pausa previa y con acercamiento lento, el narrador dice en voz en off: "${s.line}" Justo al terminar: 1 s sosteniendo la imagen; después la misma toma sigue sin cortes.`
     : `${shot.es}, ${shot.move}; ${member!.name} ya está en plena emoción (${s.emotion}) desde el primer fotograma. Desde 0,3 s, sin pausa previa, ${member!.name} dice con ${s.emotion}, mientras la cámara hace un dolly lento hacia su cara: "${s.line}" Justo al terminar la frase: 1 s de primer plano de ${member!.name} sosteniendo la emoción; después la misma toma sigue sin cortes.`;
@@ -175,7 +188,7 @@ VOICES: ${voice} No subtitles or on-screen text.`;
     : `VOCES: ${member!.name}: ${member!.voice}. ${accentPrompt(member)}. Solo habla ${member!.name}; sincronización de labios solo para quien habla. Sin subtítulos ni texto en pantalla.`;
   return `Telenovela animada 3D (render CGI de película animada premium), vertical 9:16, 8 segundos. Anima a partir de la imagen de la escena como primer fotograma.
 ${ANIMATION_STYLE_LOCK}
-Referencias: imagen 1 = escena${member ? `; imagen 2 = ficha de ${member.name}` : ""}.
+Referencias: imagen 1 = escena${member ? `; imagen 2 = ficha de ${member.name}` : others.map((o, k) => `; imagen ${k + 2} = ficha de ${o.name}`).join("")}.
 PERSONAJES: ${personajes}
 ESCENA: ${s.location ? `${s.location} (el mismo decorado que las demás escenas en este lugar). ` : ""}${s.setting}.${guard}
 TOMAS: ${tomas}
@@ -243,7 +256,7 @@ export function buildProduction(raw: any, ctx: Ctx) {
       // Referencias canónicas: se muestran FUERA del prompt (el prompt va limpio para copiar).
       references: present.map(n => `Ficha de ${n}`),
       imagePromptFlow: imagePrompt(s, member, others, style, i),
-      animationPrompt: animationPrompt(s, member, style, i),
+      animationPrompt: animationPrompt(s, member, style, i, others),
     };
   });
 
@@ -372,7 +385,7 @@ export function refreshPrompts(out: any, style: StyleKey) {
     const member = byName.get(s.speaker);
     const others = (Array.isArray(s.characters) ? s.characters : []).map((n: string) => byName.get(n)).filter((m: CastMember | undefined): m is CastMember => !!m && m !== member);
     const idx = Number(s.n) ? Number(s.n) - 1 : i;
-    return { ...s, imagePromptFlow: imagePrompt(s, member, others, style, idx), animationPrompt: animationPrompt(s, member, style, idx) };
+    return { ...s, imagePromptFlow: imagePrompt(s, member, others, style, idx), animationPrompt: animationPrompt(s, member, style, idx, others) };
   });
   const total = scenes.length * SCENE_SECONDS;
   const dolaNums: number[] = Array.isArray(out?.dolaSceneNumbers) && out.dolaSceneNumbers.length ? out.dolaSceneNumbers : selectShortScenes(scenes, Math.floor(60 / SCENE_SECONDS)).map((s: any) => s.n);
