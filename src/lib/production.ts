@@ -8,6 +8,8 @@ import type { Scene } from "./types";
 
 export const SCENE_SECONDS = 8;
 export const NARRATOR = "Narrador";
+// Sin esto, en los primeros planos el modelo de vídeo pasa del 3D animado a un actor real con la piel teñida.
+export const ANIMATION_STYLE_LOCK = "ESTILO FIJO: el mismo render 3D animado de la imagen de la escena durante todo el vídeo, también en los primeros planos y con lluvia o luz dura. Nunca acción real, nunca fotorrealista, nunca un actor o persona real; la cara, la piel de fruta, el pelo y las proporciones del personaje no cambian.";
 const clean = (v: unknown) => String(v ?? "").replace(/\s+/g, " ").trim();
 
 // 8 a 16 escenas de 8 s según la duración pedida.
@@ -124,15 +126,16 @@ VOICES: ${voice} No subtitles or on-screen text.`;
   }
   const guard = style === "cristiana" ? ` ${CHRISTIAN_SCENE_GUARD[0].toUpperCase()}${CHRISTIAN_SCENE_GUARD.slice(1)}.` : "";
   const personajes = member
-    ? `${member.name}: rostro y cuerpo humanos realistas con piel de ${member.fruit} (${member.headES}); ${member.clothing}. Igual a su ficha en cada toma; nunca una fruta entera como cabeza.`
-    : "Personajes de rostro humano realista con piel de fruta, iguales a sus fichas; nunca una fruta entera como cabeza; nadie habla a cámara.";
+    ? `${member.name}: personaje 3D animado con rostro y cuerpo humanos y piel de ${member.fruit} (${member.headES}); ${member.clothing}. Idéntico a su ficha (imagen 2) en cada toma: misma cara, mismo color de piel, mismo pelo y misma ropa; nunca una fruta entera como cabeza.`
+    : "Personajes 3D animados con rostro humano y piel de fruta, idénticos a sus fichas; nunca una fruta entera como cabeza; nadie habla a cámara.";
   const tomas = narrator
     ? `0–2 s: ${shot.es} de la escena, ${shot.move}. 2–6 s: acercamiento lento mientras el narrador dice en voz en off: "${s.line}" 6–8 s: plano general que se sostiene en silencio.`
     : `0–2 s: ${shot.es}, ${shot.move}; ${member!.name} reacciona con ${s.emotion}. 2–5 s: plano medio con dolly lento hacia ${member!.name}, que dice con ${s.emotion}: "${s.line}" 5–8 s: primer plano de ${member!.name} sosteniendo la emoción al terminar la frase, cámara fija.`;
   const voces = narrator
     ? `VOCES: Narrador: voz masculina profunda y cálida, en off. Español latino neutro, cada palabra completa, nunca acento inglés. Nadie mueve los labios. Sin subtítulos ni texto en pantalla.`
     : `VOCES: ${member!.name}: ${member!.voice}. Español latino neutro, cada palabra completa, nunca acento inglés. Solo habla ${member!.name}; sincronización de labios solo para quien habla. Sin subtítulos ni texto en pantalla.`;
-  return `Telenovela animada 3D cinematográfica realista (película animada premium), vertical 9:16, 8 segundos. Anima a partir de la imagen de la escena como primer fotograma.
+  return `Telenovela animada 3D (render CGI de película animada premium), vertical 9:16, 8 segundos. Anima a partir de la imagen de la escena como primer fotograma.
+${ANIMATION_STYLE_LOCK}
 Referencias: imagen 1 = escena${member ? `; imagen 2 = ficha de ${member.name}` : ""}.
 PERSONAJES: ${personajes}
 ESCENA: ${s.setting}.${guard}
@@ -210,7 +213,7 @@ export function buildProduction(raw: any, ctx: Ctx) {
   const dolaScenes = selectShortScenes(scenes, Math.floor(60 / SCENE_SECONDS));
   const dolaDuration = dolaScenes.length * SCENE_SECONDS;
   const castLine = cast.map(c => isFruitStyle(style) ? `${c.name}: rostro humano realista con piel de ${c.fruit} (${c.headES}); ${c.clothing}` : `${c.name}: ${c.visualEN || c.visualES}; ${c.clothing}`).join(". ");
-  const dolaPrompt = `Usa Seedance 2.5. ${isFruitStyle(style) ? "Telenovela animada 3D cinematográfica realista, vertical 9:16; personajes de rostro humano realista con piel de su fruta, nunca una fruta entera como cabeza." : "Película romántica dominicana de los 90, 35 mm, vertical 9:16, personas reales."} ${total > dolaDuration ? `Adaptación de ${dolaDuration} s del episodio de ${total} s. Conserva el gancho y el cierre; elimina solo escenas intermedias.` : `Episodio completo de ${total} s.`}${style === "cristiana" ? ` ${CHRISTIAN_SCENE_GUARD}.` : ""} PERSONAJES: ${castLine}. ${dolaScenes.map((s, i) => `${i * SCENE_SECONDS}-${(i + 1) * SCENE_SECONDS}s [escena ${s.n}]: ${s.setting}. ${s.speaker === NARRATOR ? `Narrador en off: "${s.line}"` : `${s.speaker} dice con ${s.emotion}: "${s.line}"`}`).join(" ")} PRONUNCIACIÓN OBLIGATORIA: ${Array.from(new Set(cast.flatMap(c => c.pronunciations).concat(dialectPronunciations(dolaScenes.map(s => s.line).join(" "))))).join("; ") || "palabras completas con acentos correctos"}. VOCES: español latino neutro, cada palabra completa, nunca acento inglés; sincronización de labios solo para quien habla; sin subtítulos ni texto en pantalla.`;
+  const dolaPrompt = `Usa Seedance 2.5. ${isFruitStyle(style) ? `Telenovela animada 3D (render CGI de película animada premium), vertical 9:16; personajes 3D animados de rostro humano con piel de su fruta, nunca una fruta entera como cabeza. ${ANIMATION_STYLE_LOCK}` : "Película romántica dominicana de los 90, 35 mm, vertical 9:16, personas reales."} ${total > dolaDuration ? `Adaptación de ${dolaDuration} s del episodio de ${total} s. Conserva el gancho y el cierre; elimina solo escenas intermedias.` : `Episodio completo de ${total} s.`}${style === "cristiana" ? ` ${CHRISTIAN_SCENE_GUARD}.` : ""} PERSONAJES: ${castLine}. ${dolaScenes.map((s, i) => `${i * SCENE_SECONDS}-${(i + 1) * SCENE_SECONDS}s [escena ${s.n}]: ${s.setting}. ${s.speaker === NARRATOR ? `Narrador en off: "${s.line}"` : `${s.speaker} dice con ${s.emotion}: "${s.line}"`}`).join(" ")} PRONUNCIACIÓN OBLIGATORIA: ${Array.from(new Set(cast.flatMap(c => c.pronunciations).concat(dialectPronunciations(dolaScenes.map(s => s.line).join(" "))))).join("; ") || "palabras completas con acentos correctos"}. VOCES: español latino neutro, cada palabra completa, nunca acento inglés; sincronización de labios solo para quien habla; sin subtítulos ni texto en pantalla.`;
   const platformAdaptations = mergeModelPlatforms(buildPlatformAdaptations({ theme: ctx.idea || clean(raw?.title), seriesTitle: ctx.seriesTitle || clean(raw?.title), partNumber: ctx.partNumber || 1, previousSummary: ctx.previousSummary, hook }), raw?.platforms);
   const f = raw?.ficha || {};
   const ficha = {

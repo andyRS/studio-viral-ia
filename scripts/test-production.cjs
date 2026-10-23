@@ -38,6 +38,8 @@ function checkFruitEpisode(r, label, fruitsExpected = []) {
     assert.match(sc.animationPrompt, /primer fotograma/, `${label}: escena ${sc.n} sin "primer fotograma"`);
     assert.match(sc.animationPrompt, /PRONUNCIACIÓN OBLIGATORIA/, `${label}: escena ${sc.n} sin PRONUNCIACIÓN`);
     assert.match(sc.animationPrompt, /nunca una fruta entera como cabeza/);
+    assert.match(sc.animationPrompt, /ESTILO FIJO: .*Nunca acción real, nunca fotorrealista/, `${label}: escena ${sc.n} sin bloqueo de estilo`);
+    assert.doesNotMatch(sc.animationPrompt, /\brealistas?\b/i, `${label}: escena ${sc.n} pide realismo en el vídeo`);
     assert.ok(sc.imagePromptFlow && sc.line, `${label}: escena ${sc.n} incompleta`);
     assert.doesNotMatch(sc.line, /\b(pa|vamo|ta|e)'/, `${label}: contracción en "${sc.line}"`);
   }
