@@ -39,20 +39,21 @@
 
   // Escribe el prompt: si ya hay texto, se selecciona SOLO el contenido del cuadro y se reemplaza.
   // (Con el cuadro vacío, «seleccionar todo + borrar» deja al editor de Flow sin sitio para pegar.)
+  const normalizePrompt = (value) => (value || "").replace(/\s+/g, " ").trim();
   async function setPromptText(text) {
-    const box = promptBox(); if (!box) return "";
+    const box = promptBox(); if (!box) return false;
     box.focus();
     if (box.innerText.trim()) window.getSelection().selectAllChildren(box);
     const dt = new DataTransfer(); dt.setData("text/plain", text); paste(box, dt);
     await sleep(400);
-    if (box.innerText.trim() !== text.trim()) {             // plan B si Flow ignora el pegado
-      box.focus(); if (box.innerText.trim()) window.getSelection().selectAllChildren(box);
-      document.execCommand("insertText", false, text); await sleep(300);
-    }
-    return box.innerText.trim();
+    // Flow normaliza los saltos de línea. Un segundo método de inserción aquí duplicaba
+    // el prompt cuando el primer pegado sí había funcionado pero su texto no era idéntico.
+    return normalizePrompt(box.innerText) === normalizePrompt(text);
   }
   async function clearText() {
     const box = promptBox(); if (!box || !box.innerText.trim()) return;
+    const clear = [...document.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === "Borrar instrucción");
+    if (clear) { clear.click(); await sleep(200); if (!box.innerText.trim()) return; }
     box.focus(); window.getSelection().selectAllChildren(box); document.execCommand("delete"); await sleep(200);
   }
 
@@ -86,7 +87,7 @@
     const b = blocker(); if (b) throw Object.assign(new Error(b), { pause: true });
     if (!promptBox()) throw new Error("No encuentro el cuadro del prompt. Abre un proyecto de Flow.");
     await attachRefs(scene.refs || []);
-    if ((await setPromptText(scene.prompt)) !== scene.prompt.trim()) throw new Error("El prompt quedó incompleto en Flow; revisa el cuadro antes de generar.");
+    if (!(await setPromptText(scene.prompt))) throw new Error("El prompt quedó incompleto en Flow; revisa el cuadro antes de generar.");
     if (state.mode !== "auto") return "listo";            // modo asistido: tú pulsas generar
     let gen = generateButton();
     for (let t = 0; t < 20 && (!gen || gen.disabled); t++) { await sleep(250); gen = generateButton(); }

@@ -14,7 +14,9 @@ Instalar
 2. En Chrome abre chrome://extensions
 3. Activa «Modo de desarrollador» (arriba a la derecha).
 4. Pulsa «Cargar descomprimida» y elige la carpeta.
-5. Recarga Estudio Viral: el botón «Enviar a Flow» se activará.
+5. En Estudio Viral y en flow.google.com, abre el icono de la extensión y elige
+   «Puede leer y cambiar datos de sitios» → «Siempre en este sitio».
+6. Recarga ambas pestañas. El botón «Enviar a Flow» y el panel en Flow aparecerán.
 
 Usar
 1. En Estudio Viral aprueba las fichas (1 · Biblia) y pulsa «Enviar a Flow» (2 · Imágenes).

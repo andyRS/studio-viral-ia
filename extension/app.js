@@ -1,7 +1,7 @@
 // Estudio Viral → Flow · puente en la app.
 // Recibe el lote que manda la página (window.postMessage) y lo guarda para la pestaña de Flow.
 (() => {
-  const announce = () => window.postMessage({ source: "ev-extension", type: "EV_EXTENSION_READY", version: "1.0.0" }, window.location.origin);
+  const announce = () => window.postMessage({ source: "ev-extension", type: "EV_EXTENSION_READY", version: "1.0.2" }, window.location.origin);
   announce();
   window.addEventListener("message", (event) => {
     // Solo mensajes de esta misma página (nunca de iframes u otros orígenes).
