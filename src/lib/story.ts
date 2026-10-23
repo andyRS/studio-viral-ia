@@ -59,20 +59,28 @@ function miPedido(input: any, style: StyleKey, duration: number, count: number, 
 - Estilo: ${STYLES[style].label}
 - Idea: ${String(input.idea || input.wish || "").trim() || "decide tú lo que más enganche"}
 - Tipo: ${tipo}
-- Duración del máster: ${count * 8} s (${count} escenas de 8 s)
+- Duración del vídeo montado: unos ${duration} s (${count} escenas; cada clip se genera de 8 s y el montaje lo recorta a su frase y reacción)
 - Notas: ${String(input.notes || "").trim() || "ninguna"}`;
 }
 
 const CAST_FIELDS = (style: StyleKey) => isFruitStyle(style)
-  ? `{"name":"nombre dominicano con la fruta (p. ej. Platanito, Don Coco)","fruit":"plátano","fruitEmoji":"🍌","role":"protagonista humilde","headES":"piel amarillo plátano con suaves pintas marrones; pequeño tallo verde de plátano asomando en el peinado; pelo negro rizado corto, ojos color miel (descríbelo PROPIO para cada personaje según su fruta, edad y sexo)","clothing":"ropa fija, elegante y de manga larga, con un color propio reconocible, y accesorios","voice":"edad, tono y manera de hablar","speechStyle":"","subtitleColor":"FFE14D","pronunciations":["palabra = SÍ-la-bas, nunca X"]}`
-  : `{"name":"nombre propio","role":"protagonista","visualES":"apariencia física fija","visualEN":"same appearance in English","clothing":"vestuario fijo de los 90, elegante y de manga larga, con un color propio reconocible","voice":"edad, tono y manera de hablar","subtitleColor":"FF9A1F","pronunciations":[]}`;
+  ? `{"name":"nombre dominicano con la fruta (p. ej. Platanito, Don Coco)","fruit":"plátano","fruitEmoji":"🍌","role":"protagonista humilde","headES":"piel amarillo plátano con suaves pintas marrones; pequeño tallo verde de plátano asomando en el peinado; pelo negro rizado corto, ojos color miel (descríbelo PROPIO para cada personaje según su fruta, edad y sexo)","clothing":"ropa fija, elegante y de manga larga, con un color propio reconocible, y accesorios","voice":"edad, tono y manera de hablar, siempre con acento dominicano","speechStyle":"","subtitleColor":"FFE14D","pronunciations":["palabra = SÍ-la-bas, nunca X"]}`
+  : `{"name":"nombre propio","role":"protagonista","visualES":"apariencia física fija","visualEN":"same appearance in English","clothing":"vestuario fijo de los 90, elegante y de manga larga, con un color propio reconocible","voice":"edad, tono y manera de hablar, siempre con acento dominicano","subtitleColor":"FF9A1F","pronunciations":[]}`;
 
 function sceneBrief(style: StyleKey, count: number) {
   const st = STYLES[style];
   return `FORMATO DE ENTREGA (la app construye los prompts de imagen y animación con tus campos: NO los escribas). Usa los hechos concretos de la idea (relaciones, oficio, lugar, objeto que revela, desenlace).
 ESTILO VISUAL: ${st.visual}
 ESTILO DE VOZ: ${st.voice}
-ESCENAS: exactamente ${count} escenas de 8 segundos. En cada escena habla UN SOLO personaje con una frase CORTA de 2 a 6 palabras (nunca discursos): el diálogo va en ida y vuelta, alternando entre los dos personajes del conflicto escena tras escena; el resto de los 8 s es actuación. Escena 1 = gancho visual y conflicto visible desde el segundo 0. Cada escena avanza la historia con información nueva; nada de repetir frases ni escenas. Incluye la revelación con un objeto y un triángulo o personaje cuestionable que obligue a opinar. La última escena, y SOLO esa (una sola escena, nunca partida en dos), es del Narrador (hasta 14 palabras) y deja una pregunta abierta: "Lo que X no sabe... es que..."${style === "cristiana" ? ' y después el Narrador pide "Escribe AMÉN"' : ""}.
+ESCENAS: exactamente ${count} escenas. En cada escena habla UN SOLO personaje con UNA frase natural de 4 a 12 palabras, como se habla de verdad (nunca discursos ni frases de relleno). El diálogo es una conversación rápida de ida y vuelta: cada frase responde a la anterior, como en una pelea, un coqueteo o una confesión real; en el vídeo montado sale una frase cada 3-4 segundos, sin silencios. Escena 1 = gancho visual y conflicto visible desde el segundo 0. Cada escena avanza la historia con información nueva; nada de repetir frases ni escenas. Incluye la revelación con un objeto y un triángulo o personaje cuestionable que obligue a opinar. La última escena, y SOLO esa (una sola escena, nunca partida en dos), es del Narrador (hasta 14 palabras) y deja una pregunta abierta: "Lo que X no sabe... es que..."${style === "cristiana" ? ' y después el Narrador pide "Escribe AMÉN"' : ""}.
+TÉCNICAS DE LOS VIRALES (obligatorias, son las que hacen que el público no deje de mirar):
+1. Arranca en mitad del conflicto: la frase 1 ya es una acusación, una tentación o un secreto; nada de presentaciones.
+2. Ironía dramática: muy pronto el público sabe un secreto que la víctima NO sabe (una infidelidad, una mentira, un billete, un embarazo) y la ve hablar sin saberlo.
+3. Algo nuevo cada 3 o 4 escenas: un mensaje, una llamada, un objeto, una prueba o una revelación que sube lo que está en juego.
+4. El móvil cuenta la historia: al menos una escena es un chat de WhatsApp o una videollamada en pantalla (en "setting" describe la pantalla y quién aparece; quien habla lo dice en voz alta).
+5. Saltos de tiempo marcados: si pasa el tiempo antes de una escena, su "transition" es la tarjeta («Horas después...», «Días después...»).
+6. Antes del final, el personaje con el secreto queda a solas (espejo, baño, cama) y confiesa en voz alta su miedo o su culpa con una cuenta atrás concreta («regresa en dos semanas»).
+7. Nada se resuelve del todo: cada respuesta abre una pregunta nueva y el final deja al público pidiendo la parte siguiente.
 VESTUARIO: elegante y de manga larga; nunca bikinis, toallas, escotes ni tirantes.
 PUBLICACIÓN: cada "description" = título corto en MAYÚSCULAS + la palabra para comentar (${style === "cristiana" ? "AMÉN" : style === "cine90" ? "BUTACA" : "PARTE 2"}) + 3 a 6 hashtags. En "platforms.facebook.topic" indica el tema que hay que elegir al publicar (${style === "cristiana" ? "Religión" : style === "cine90" ? "Películas" : "Animación"}). En "social.music" propone la canción de firma de la serie (la misma en todas las partes, elegida en la biblioteca de sonidos de la plataforma).
 DIÁLOGO: palabras dominicanas escritas completas y con acentos (tíguere, yipeta, jevito, vaina, un chin, mi cualto / lo cualto mío); NUNCA contracciones (pa', vamo', e', ta').

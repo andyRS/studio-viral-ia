@@ -9,17 +9,17 @@ export const STYLES = {
   frutinovela: {
     label: "Frutinovela 3D (humor dominicano)",
     visual: `Telenovela animada 3D premium, vertical 9:16. ${FRUIT_LOOK}`,
-    voice: "Diálogo con palabras del dialecto dominicano escritas completas (tíguere, yipeta, jevito, vaina, mi cualto, lo cualto mío) y acento latino neutro.",
+    voice: "Diálogo con palabras del dialecto dominicano escritas completas (tíguere, yipeta, jevito, vaina, mi cualto, lo cualto mío) y acento dominicano auténtico (caribeño, de la calle), con cada palabra entera.",
   },
   cristiana: {
     label: "Frutinovela cristiana (redención)",
     visual: `Telenovela animada 3D premium, vertical 9:16. ${FRUIT_LOOK} Luz cálida, emoción, lágrimas, abrazos.`,
-    voice: "Español latino neutro, cálido y respetuoso. Puede usar alguna palabra dominicana suave. Sin humor burlón sobre la fe.",
+    voice: "Acento dominicano auténtico, cálido y respetuoso. Puede usar alguna palabra dominicana suave. Sin humor burlón sobre la fe.",
   },
   cine90: {
     label: "Cine romántico de los 90 (realista)",
     visual: "Película romántica de los años 90 en República Dominicana, grano de 35 mm, luz cálida dorada, vestuario y peinados de los 90, vertical 9:16, personas reales.",
-    voice: "Español latino neutro, elegante, frases cortas y emotivas.",
+    voice: "Acento dominicano auténtico y elegante, frases cortas y emotivas.",
   },
 } as const;
 export type StyleKey = keyof typeof STYLES;
@@ -52,7 +52,7 @@ Lo que más engancha, por orden: madre negada o humillada; amor prohibido por cl
 Identidad dominicana: barrio contra Piantini, motoconchista, colmado, yipeta, remesas, Nueva York, Los Mina, la Virgen de la Altagracia en boca de los personajes (en las historias que no son cristianas), chimi.
 
 ## 3. Reglas de diálogo
-- Español latino neutro con palabras dominicanas escritas completas: tíguere, yipeta, jevito, vaina, un chin, pariguayo, mi cualto / lo cualto mío (nunca "mis cuartos").
+- Acento dominicano auténtico (nunca neutro, mexicano ni venezolano) con palabras dominicanas escritas completas: tíguere, yipeta, jevito, vaina, un chin, pariguayo, mi cualto / lo cualto mío (nunca "mis cuartos").
 - Todos los acentos y signos (á é í ó ú ñ ¿ ¡).
 - Nunca contracciones (pa', vamo', e', ta', na'): la voz IA se traba.
 - Frases de 2 a 6 palabras, en ida y vuelta entre dos personajes (escenas alternas), nunca discursos. Un solo hablante por escena de 8 s; el resto de la escena es actuación y silencio.

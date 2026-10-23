@@ -16,7 +16,7 @@ import SceneDesk from "./SceneDesk";
 import { STYLES, type StyleKey } from "@/lib/knowledge";
 import { templateSeries, templateNext } from "@/lib/story";
 import { isGenericName } from "@/lib/cast";
-import { buildFlowBatch, refreshPrompts, PROMPT_RULES_VERSION } from "@/lib/production";
+import { buildFlowBatch, refreshPrompts, PROMPT_RULES_VERSION, sceneCountFor } from "@/lib/production";
 import { seriesSignals } from "@/lib/seriesSignals";
 import { stylePublish, formatDescription } from "@/lib/platforms";
 
@@ -50,7 +50,7 @@ function publishPack(out: any, style: string, part: number) {
     return { platform, text, hashtags: hashtags.join(" "), extra: platform === "Facebook" ? (a?.topic || sp.topic ? `Tema al publicar: ${a?.topic || sp.topic}` : "") : (a?.bestTime ? `Mejor hora: ${a.bestTime}` : "") };
   });
 }
-// Duración del máster (prompt maestro): 8 a 16 escenas de 8 s; 64-128 s.
+// Duración del vídeo montado; cada escena queda en ~4,5 s tras el recorte (ritmo viral).
 const DURATIONS = [64, 72, 80, 88, 96, 104, 128];
 
 const IDEAS: Record<StyleKey, string[]> = {
@@ -286,8 +286,8 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
           <div className="grid gap-3 sm:grid-cols-2">
             <div><label htmlFor="generator-account" className="field-label block">Cuenta principal</label>
               <select id="generator-account" value={account?.id || ""} onChange={e => setAccountId(e.target.value)}>{data.accounts.map((a: any) => <option key={a.id} value={a.id}>{a.name} · {a.platform}</option>)}</select></div>
-            <div><label htmlFor="generator-duration" className="field-label block">Duración del máster</label>
-              <select id="generator-duration" value={duration} onChange={e => setDuration(Number(e.target.value))}>{DURATIONS.map(d => <option key={d} value={d}>{d} s · {d / 8} escenas</option>)}</select></div>
+            <div><label htmlFor="generator-duration" className="field-label block">Duración del vídeo montado</label>
+              <select id="generator-duration" value={duration} onChange={e => setDuration(Number(e.target.value))}>{DURATIONS.map(d => <option key={d} value={d}>{d} s · {sceneCountFor(d)} escenas</option>)}</select></div>
           </div>
           <div><label htmlFor="generator-notes" className="field-label block">Notas opcionales</label>
             <input id="generator-notes" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Ej.: que la abuela se llame Doña Guanábana, que pase en Navidad…" /></div>
@@ -359,7 +359,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
                 <div className="mt-3"><HookPicker online={mode === "supabase"} chosen={chosenHook} onChoose={setChosenHook} body={() => ({ wish, style: current.style, series: { title: current.title, logline: current.description }, characters: currentChars.map((c: any) => ({ name: c.name })), history: current.eps.map((e: any, i: number) => ({ part: i + 1, summary: e.output?.summary || e.theme })), learnings, bank: bankTop })} /></div>
                 <div className="mt-3 flex flex-wrap items-center gap-3">
                   <label htmlFor="generator-next-duration" className="sr-only">Duración del próximo episodio</label>
-                  <select id="generator-next-duration" value={duration} onChange={e => setDuration(Number(e.target.value))} className="w-auto">{DURATIONS.map(d => <option key={d} value={d}>{d} s · {d / 8} escenas</option>)}</select>
+                  <select id="generator-next-duration" value={duration} onChange={e => setDuration(Number(e.target.value))} className="w-auto">{DURATIONS.map(d => <option key={d} value={d}>{d} s · {sceneCountFor(d)} escenas</option>)}</select>
                   <button disabled={loading} onClick={continueStory} className="rounded-lg bg-amber-500 px-5 py-2.5 font-bold text-slate-950 hover:bg-amber-400 disabled:opacity-60">{loading ? "Escribiendo…" : `Crear episodio ${current.eps.length + 1} →`}</button>
                 </div>
               </section>
@@ -482,7 +482,8 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
   async function refresh() { setRefreshing(true); try { await onRefreshPrompts?.(); } finally { setRefreshing(false); } }
   const referenceSignature = master.map(c => `${c?.id || "missing"}:${c?.referenceVersion || 0}`).join("|");
   const missingMasters = cast.filter((_, i) => !master[i]?.imageUrl || !master[i]?.referenceApprovedAt).map(c => c.name);
-  const fullDuration = out.duration || scenes.length * 8 || (out.scriptBlocks || []).length * 15;
+  // Duración del vídeo montado (clips recortados a su frase); los episodios antiguos muestran la de sus clips.
+  const fullDuration = out.editDuration || out.duration || scenes.length * 8 || (out.scriptBlocks || []).length * 15;
   const dolaDuration = out.dolaDuration || 60;
   const sec = scenes.length ? 8 : 15;
   const lote = useMemo(() => buildFlowBatch(out), [out]);
