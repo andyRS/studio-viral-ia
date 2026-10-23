@@ -18,6 +18,7 @@ import { templateSeries, templateNext } from "@/lib/story";
 import { isGenericName } from "@/lib/cast";
 import { buildFlowBatch, refreshPrompts, PROMPT_RULES_VERSION } from "@/lib/production";
 import { seriesSignals } from "@/lib/seriesSignals";
+import { stylePublish, formatDescription } from "@/lib/platforms";
 
 type View = "inicio" | "nueva" | "continuar" | "resultado";
 type EpisodeTab = "guion" | "elenco" | "imagenes" | "animacion" | "mesa" | "redes" | "plataformas" | "archivos";
@@ -32,6 +33,23 @@ const EPISODE_SECTIONS: [EpisodeTab, string, string][] = [
 ];
 const STEP: Partial<Record<EpisodeTab, number>> = { elenco: 1, imagenes: 2, animacion: 3, mesa: 4 };
 const isDraft = (e: any) => e.status === "Borrador" || e.output?.mode === "plantilla-local";
+// Un episodio queda «Terminado» (y bloqueado) al descargar su vídeo final.
+const FINISHED = "Terminado";
+const isFinished = (e: any) => e?.status === FINISHED;
+// Cliffhanger con el que cerró un episodio: lo retoma la parte siguiente.
+const cliffhangerOf = (out: any) => String(out?.ficha?.cierre || (Array.isArray(out?.scenes) && out.scenes.length ? out.scenes[out.scenes.length - 1].line : "") || "").trim();
+// Texto corto y hashtags para Facebook y TikTok: la adaptación guardada o, si no hay, la fórmula del estilo.
+function publishPack(out: any, style: string, part: number) {
+  const ad: any[] = out?.platformAdaptations || out?.platform_adaptations || [];
+  const sp = stylePublish(style);
+  const title = String(out?.social?.title || out?.title || "").trim();
+  return (["Facebook", "TikTok"] as const).map(platform => {
+    const a = ad.find(x => x?.platform === platform);
+    const hashtags: string[] = a?.hashtags?.length ? a.hashtags : sp.tags;
+    const text = String(a?.description || (platform === "TikTok" && out?.social?.tiktokDescription ? `${out.social.tiktokDescription}\n${hashtags.slice(0, 5).join(" ")}` : formatDescription(title, sp.word(part), hashtags))).replace(/#[^\s#]+/g, "").replace(/[ \t]+\n/g, "\n").trim();
+    return { platform, text, hashtags: hashtags.join(" "), extra: platform === "Facebook" ? (a?.topic || sp.topic ? `Tema al publicar: ${a?.topic || sp.topic}` : "") : (a?.bestTime ? `Mejor hora: ${a.bestTime}` : "") };
+  });
+}
 // Duración del máster (prompt maestro): 8 a 16 escenas de 8 s; 64-128 s.
 const DURATIONS = [64, 72, 80, 88, 96, 104, 128];
 
@@ -180,7 +198,8 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
       const body = {
         series: { title: current.title, logline: current.description }, bible, style: bible.style, partNumber: part, wish, duration, account, learnings, chosenHook,
         characters: currentCast.map((c: any) => ({ name: c.name, role: c.role, fruit: c.fruit, fruitEmoji: c.fruitEmoji, headES: c.headES, visualES: c.visualES, visualEN: c.visualEN, clothing: c.clothing, voice: c.voice, subtitleColor: c.subtitleColor, speechStyle: c.speechStyle, pronunciations: c.pronunciations, flowPrompt: c.flowPrompt })),
-        history: eps.map((e: any, i: number) => ({ part: i + 1, title: e.title, summary: e.output?.summary || e.theme })),
+        // El último cierre (cliffhanger) va explícito: la parte nueva arranca justo ahí y termina con un gancho aún más fuerte.
+        history: eps.map((e: any, i: number) => ({ part: i + 1, title: e.title, summary: e.output?.summary || e.theme, cliffhanger: cliffhangerOf(e.output) })),
         signatureSong: [...eps].reverse().find((e: any) => e.output?.social?.music)?.output?.social?.music || "",
       };
       const res = await call("/api/next-episode", body, () => templateNext(body)); if (!res) return;
@@ -333,6 +352,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
                   <span className="choice-icon !mb-0 bg-gradient-to-br from-amber-400 to-orange-600 text-black">＋</span>
                   <div><h3 className="font-bold">Siguiente: episodio {current.eps.length + 1}</h3><p className="text-xs text-slate-400">Con los mismos personajes y siguiendo lo que pasó antes.</p></div>
                 </div>
+                {current.last && cliffhangerOf(current.last.output) && <p className="mt-3 rounded-lg border border-white/10 bg-black/20 p-3 text-sm text-slate-300"><span className="text-xs font-semibold uppercase tracking-wider text-amber-300">La parte {current.eps.length} terminó con</span><br /><i>«{cliffhangerOf(current.last.output)}»</i><br /><span className="text-xs text-slate-400">El episodio {current.eps.length + 1} lo retoma en la primera escena y cierra con un gancho nuevo para que pidan la siguiente parte.</span></p>}
                 {!!missingCurrentMasters.length && !currentNeedsRepair && <p className="mt-3 rounded-lg border border-amber-400/25 bg-amber-400/10 p-3 text-xs text-amber-100">Antes, aprueba la ficha maestra de: {missingCurrentMasters.map(c => c.name).join(", ")}. {current.eps.length > 0 && <button type="button" onClick={() => openEpisode(current.id, current.eps[0], 1, "elenco")} className="font-semibold text-amber-300 underline">Ir a Personajes canónicos →</button>}</p>}
                 <label htmlFor="generator-next-wish" className="field-label mt-4 block">¿Qué quieres que pase? (opcional)</label>
                 <textarea id="generator-next-wish" value={wish} onChange={e => setWish(e.target.value)} placeholder="Déjalo vacío y la IA propone un giro." />
@@ -370,6 +390,9 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
 
       {view === "resultado" && result && <Result
         episode={result.episode} episodeId={result.episodeId} seriesId={result.seriesId} part={result.part} seriesTitle={data.series.find((s: any) => s.id === result.seriesId)?.title} initialTab={openTab || focusTab}
+        status={data.episodes.find((e: any) => e.id === result.episodeId)?.status}
+        onFinish={async () => { if (result.episodeId && !isFinished(data.episodes.find((e: any) => e.id === result.episodeId))) await update("episodes", result.episodeId, { status: FINISHED }); }}
+        onUnlock={async () => { if (result.episodeId && window.confirm("¿Desbloquear este episodio para volver a editarlo?")) await update("episodes", result.episodeId, { status: "Guion" }); }}
         backLabel={data.series.find((s: any) => s.id === result.seriesId)?.title}
         onBack={() => { if (result.seriesId && data.series.some((s: any) => s.id === result.seriesId)) openSeries(result.seriesId); else setView("inicio"); }} onNext={() => { setSeriesId(result.seriesId); setView("continuar"); }}
         onRefreshPrompts={async () => {
@@ -433,13 +456,17 @@ function DownloadText({ text, filename, label }: { text: string; filename: strin
 const Field = ({ label, value }: { label: string; value?: string }) => value ? <div><dt className="inline font-semibold text-slate-200">{label}: </dt><dd className="inline text-slate-300">{value}</dd></div> : null;
 const RefChips = ({ refs }: { refs?: string[] }) => <p className="mt-2 text-[11px] text-sky-200">Referencias a seleccionar (fuera del prompt): {(refs || []).length ? (refs || []).map(r => <span key={r} className="ml-1 rounded-full bg-sky-400/15 px-2 py-0.5">{r}</span>) : <span className="text-slate-400">ninguna</span>}</p>;
 
-function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialTab, backLabel, onBack, onNext, onRecreate, onDelete, onRefreshPrompts }: any) {
+function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialTab, status, onFinish, onUnlock, backLabel, onBack, onNext, onRecreate, onDelete, onRefreshPrompts }: any) {
   type Tab = "guion" | "elenco" | "imagenes" | "animacion" | "mesa" | "redes" | "plataformas" | "archivos";
   const { data, update } = useData();
   const cast: any[] = Array.isArray(out.cast) ? out.cast : [];
   const scenes: any[] = Array.isArray(out.scenes) ? out.scenes : [];
   const ficha = out.ficha || null; const social = out.social || null;
   const [tab, setTab] = useState<Tab>("guion");
+  const finished = status === FINISHED;
+  // Terminado: se puede ver, publicar y descargar textos, pero no editar fichas, prompts ni la mesa.
+  const lockedTab = finished && (tab === "elenco" || tab === "imagenes" || tab === "animacion" || tab === "mesa");
+  const pack = useMemo(() => publishPack(out, out.seriesBible?.style || (cast.some((c: any) => c.fruit) ? "frutinovela" : "cine90"), part), [out, part]);
   const [reviewed, setReviewed] = useState(false);
   useEffect(() => { setReviewed(false); setTab(initialTab || "guion"); }, [out, initialTab]);
   const fromAI = !!out.mode && out.mode !== "plantilla-local" && out.mode !== "gemini-borrador" && cast.length >= 2;
@@ -477,7 +504,7 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
         <h2 className="text-xl font-bold">{out.title || `Episodio ${part}`}</h2>
         {out.summary && <p className="mt-1 text-sm text-slate-400">{out.summary}</p>}
       </div>
-      <span className="flex items-center gap-3">{scenes.length > 0 && <button type="button" onClick={refresh} disabled={refreshing} title="Rehace los prompts de imagen, animación y Dola con las reglas actuales, sin IA y sin tocar el guion" className="text-xs text-slate-400 hover:text-amber-300 disabled:opacity-50">{refreshing ? "Actualizando…" : "Actualizar prompts"}</button>}{episodeId && <button type="button" onClick={onDelete} className="text-xs text-slate-400 hover:text-red-300">Eliminar episodio</button>}
+      <span className="flex items-center gap-3">{finished && <span className="rounded-full border border-emerald-400/40 bg-emerald-400/10 px-3 py-1 text-xs font-semibold text-emerald-200">🔒 Terminado</span>}{!finished && scenes.length > 0 && <button type="button" onClick={refresh} disabled={refreshing} title="Rehace los prompts de imagen, animación y Dola con las reglas actuales, sin IA y sin tocar el guion" className="text-xs text-slate-400 hover:text-amber-300 disabled:opacity-50">{refreshing ? "Actualizando…" : "Actualizar prompts"}</button>}{episodeId && !finished && <button type="button" onClick={onDelete} className="text-xs text-slate-400 hover:text-red-300">Eliminar episodio</button>}
       <button onClick={onNext} className="rounded bg-amber-500 px-4 py-2 text-sm font-bold">Crear episodio {part + 1} →</button></span>
     </div>
     <div className={`mt-4 rounded-xl border p-4 text-sm ${fromAI ? "border-emerald-400/25 bg-emerald-400/[.07] text-emerald-100" : "border-amber-400/30 bg-amber-400/[.08] text-amber-100"}`}>
@@ -486,11 +513,34 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
       {!fromAI && <button onClick={onRecreate} className="mt-3 rounded-lg bg-amber-500 px-3 py-2 text-xs font-bold text-slate-950 hover:bg-amber-400">Recrear con la IA</button>}
       {out.shortForLongPlatforms && <p className="mt-2 text-xs">{out.shortForLongPlatforms}</p>}
     </div>
-    {promptsOutdated && <div className="mt-3 flex flex-wrap items-center gap-3 rounded-xl border border-sky-400/30 bg-sky-400/10 p-3 text-xs text-sky-100"><span className="flex-1 min-w-[220px]">Hay reglas nuevas para los prompts (p. ej. mantener el estilo 3D de la imagen en todo el vídeo). Este episodio tiene los prompts de una versión anterior.</span><button type="button" onClick={refresh} disabled={refreshing} className="rounded-lg bg-sky-400 px-3 py-1.5 font-bold text-slate-950 hover:bg-sky-300 disabled:opacity-50">{refreshing ? "Actualizando…" : "Actualizar prompts"}</button></div>}
+    {finished && <section className="mt-4 rounded-2xl border border-emerald-400/30 bg-gradient-to-br from-emerald-400/10 to-transparent p-5">
+      <div className="flex flex-wrap items-start gap-3">
+        <div className="min-w-[220px] flex-1">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-300">Parte {part} terminada · vídeo descargado</p>
+          <h3 className="mt-1 text-lg font-bold">Ahora publica y crea la Parte {part + 1}</h3>
+          {cliffhangerOf(out) && <p className="mt-1 text-sm text-slate-300">El público se quedó con: <i>«{cliffhangerOf(out)}»</i>. La Parte {part + 1} arranca justo ahí y cierra con un gancho aún más fuerte.</p>}
+        </div>
+        <span className="flex flex-col items-end gap-2">
+          <button type="button" onClick={onNext} className="rounded-lg bg-amber-500 px-5 py-2.5 font-bold text-slate-950 hover:bg-amber-400">Crear Parte {part + 1} →</button>
+          <button type="button" onClick={onUnlock} className="text-xs text-slate-400 hover:text-white">Desbloquear para editar</button>
+        </span>
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-2">{pack.map(p => <div key={p.platform} className="rounded-xl border border-white/10 bg-[#121826] p-4">
+        <p className="font-bold">{p.platform === "Facebook" ? "📘" : "🎵"} {p.platform}</p>
+        <p className="mt-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Texto corto</p>
+        <p className="mt-1 whitespace-pre-line text-sm">{p.text}</p>
+        <p className="mt-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Hashtags</p>
+        <p className="mt-1 text-sm text-sky-200">{p.hashtags}</p>
+        {p.extra && <p className="mt-2 text-xs text-slate-400">{p.extra}</p>}
+        <div className="mt-3 flex flex-wrap gap-2"><CopyButton text={p.text} label="Copiar texto" /><CopyButton text={p.hashtags} label="Copiar hashtags" /></div>
+      </div>)}</div>
+    </section>}
+    {promptsOutdated && !finished && <div className="mt-3 flex flex-wrap items-center gap-3 rounded-xl border border-sky-400/30 bg-sky-400/10 p-3 text-xs text-sky-100"><span className="flex-1 min-w-[220px]">Hay reglas nuevas para los prompts (p. ej. mantener el estilo 3D de la imagen en todo el vídeo). Este episodio tiene los prompts de una versión anterior.</span><button type="button" onClick={refresh} disabled={refreshing} className="rounded-lg bg-sky-400 px-3 py-1.5 font-bold text-slate-950 hover:bg-sky-300 disabled:opacity-50">{refreshing ? "Actualizando…" : "Actualizar prompts"}</button></div>}
     {scenes.length > 0 && cast.length >= 2 && !referencesReady && <div className="mt-3 rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 text-xs text-amber-100">Faltan fichas maestras aprobadas: {missingMasters.join(", ")}. Súbelas y apruébalas en «1 · Personajes canónicos» antes de producir.</div>}
     {scenes.length > 0 && cast.length >= 2 && referencesReady && !snapshotValid && <div className="mt-3 rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 text-xs text-amber-100">La ficha maestra cambió desde que se creó este guion, o el episodio es anterior al control de versiones. Regenera el episodio para alinear prompts y personajes.</div>}
     <div className="tabs mt-5">{tabs.map(([k, l]) => <button key={k} onClick={() => setTab(k)} disabled={(k === "imagenes" || k === "animacion" || k === "mesa") && !productionReady} className={`${tab === k ? "tab-active" : ""} disabled:cursor-not-allowed disabled:opacity-40`}>{l}</button>)}</div>
-    <div className="mt-4">
+    {lockedTab && <p className="mt-4 rounded-xl border border-emerald-400/25 bg-emerald-400/[.06] p-3 text-xs text-emerald-100">🔒 Episodio terminado: esta sección queda de solo lectura. Pulsa «Desbloquear para editar» arriba si necesitas cambiar algo.</p>}
+    <fieldset disabled={lockedTab} className={`mt-4 min-w-0 ${lockedTab ? "opacity-70" : ""}`}>
       {tab === "guion" && <div className="space-y-3">
         {ficha && <section className="rounded-2xl border border-amber-400/20 bg-gradient-to-br from-amber-400/10 to-transparent p-4">
           <h3 className="font-bold text-white">Ficha del episodio</h3>
@@ -610,9 +660,9 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
         </div>
         <p className="text-xs text-slate-500">guion.json es el archivo para el montaje con subtitular.py. El .md trae la ficha del episodio, el guion por escenas, las 3 fases y el paquete de redes.</p>
       </div>}
-      {tab === "mesa" && productionReady && <SceneDesk key={episodeId} episodeId={episodeId} scenes={scenes} guion={out.guionJson || {}} title={`${seriesTitle || "serie"} ${part}`} referencesReady={referencesReady} referenceSignature={referenceSignature} style={episodeStyle} part={part} />}
+      {tab === "mesa" && productionReady && <SceneDesk key={episodeId} onDownloaded={onFinish} episodeId={episodeId} scenes={scenes} guion={out.guionJson || {}} title={`${seriesTitle || "serie"} ${part}`} referencesReady={referencesReady} referenceSignature={referenceSignature} style={episodeStyle} part={part} />}
       {(tab === "imagenes" || tab === "animacion" || tab === "mesa") && !productionReady && <p className="rounded-xl border border-amber-400/25 bg-amber-400/10 p-4 text-sm text-amber-100">Revisa los personajes canónicos y la versión de sus fichas maestras antes de continuar.</p>}
-    </div>
+    </fieldset>
   </>;
 }
 
@@ -647,7 +697,7 @@ function EpisodeCard({ ep, part, onOpen }: { ep: any; part: number; onOpen: (tab
     <div className="flex flex-wrap items-start gap-3">
       <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-amber-400/15 text-lg font-bold text-amber-300">{part}</span>
       <div className="min-w-[200px] flex-1">
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Episodio {part}{scenes ? ` · ${scenes} escenas · ${seconds} s` : ""}{isDraft(ep) && <span className="ml-2 rounded-full bg-amber-400/15 px-2 py-0.5 normal-case tracking-normal text-amber-200">Borrador</span>}</p>
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Episodio {part}{scenes ? ` · ${scenes} escenas · ${seconds} s` : ""}{isDraft(ep) && <span className="ml-2 rounded-full bg-amber-400/15 px-2 py-0.5 normal-case tracking-normal text-amber-200">Borrador</span>}{isFinished(ep) && <span className="ml-2 rounded-full bg-emerald-400/15 px-2 py-0.5 normal-case tracking-normal text-emerald-200">🔒 Terminado</span>}</p>
         <h4 className="mt-0.5 font-bold">{ep.title}</h4>
         <p className="mt-1 line-clamp-2 text-sm text-slate-400">{out.summary || ep.theme}</p>
         {hook && <p className="mt-2 text-xs text-slate-300"><span className="text-slate-500">Gancho:</span> «{hook}»</p>}

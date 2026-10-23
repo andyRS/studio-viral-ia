@@ -79,7 +79,7 @@ export function musePrompt(style: string, seconds: number, cues: string[]) {
   ].join("\n");
 }
 
-export default function MontajePanel({ guion, title, filesOverride, style = "frutinovela", part = 1, musicCues = [], seconds = 0 }: { guion: any; title: string; filesOverride?: File[]; style?: string; part?: number; musicCues?: string[]; seconds?: number }) {
+export default function MontajePanel({ guion, title, filesOverride, style = "frutinovela", part = 1, musicCues = [], seconds = 0, onDownloaded }: { guion: any; title: string; filesOverride?: File[]; style?: string; part?: number; musicCues?: string[]; seconds?: number; onDownloaded?: () => void }) {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const files = filesOverride ?? selectedFiles;
   const [watermark, setWatermark] = useState<Watermark>("none");
@@ -264,7 +264,8 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
     {error && <p className="rounded border border-red-500/30 bg-red-500/10 p-2 text-sm text-red-200">{error}</p>}
     {video && <div className="space-y-2">
       <video src={video} controls className="max-h-[70vh] rounded" />
-      <a href={video} download={fname} className="inline-block rounded bg-emerald-500 px-4 py-2 text-sm font-bold text-black">Descargar {fname}</a>
+      <a href={video} download={fname} onClick={() => onDownloaded?.()} className="inline-block rounded bg-emerald-500 px-4 py-2 text-sm font-bold text-black">Descargar {fname}</a>
+      {onDownloaded && <p className="text-xs text-slate-400">Al descargarlo, este episodio queda terminado y bloqueado, y se abre el paso para crear la parte siguiente.</p>}
     </div>}
   </div>;
 }
