@@ -9,7 +9,7 @@ export interface Character { id:string; seriesId:string; name:string; imageUrl?:
   fruit?:string;        // "plátano", "aguacate"… (obligatorio en frutinovela/cristiana)
   fruitEmoji?:string;   // 🍌 🥑 🥥 …
   role?:string;         // protagonista, rival, madre…
-  headES?:string;       // descripción fija de la cabeza de fruta
+  headES?:string;       // aspecto fijo: piel con color y textura de su fruta + detalle de fruta
   voice?:string;        // "mujer mayor, voz cálida y temblorosa"
   flowPrompt?:string;   // prompt de ficha para Flow
 }

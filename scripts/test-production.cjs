@@ -25,7 +25,8 @@ function checkFruitEpisode(r, label, fruitsExpected = []) {
     assert.ok(c.fruit && c.fruitEmoji && c.headES, `${label}: ${c.name} sin fruta/emoji/cabeza`);
     assert.ok(!GENERIC.test(c.name), `${label}: nombre genérico ${c.name}`);
     assert.match(c.subtitleColor, /^#[0-9A-F]{6}$/);
-    assert.match(c.flowPrompt, /Personaje 3D estilo Pixar.*Nunca cara humana/s, `${label}: flowPrompt de ${c.name}`);
+    assert.match(c.flowPrompt, /Personaje 3D cinematográfico realista.*rostro y cuerpo humanos.*piel de .*Nunca una fruta entera como cabeza/s, `${label}: flowPrompt de ${c.name}`);
+    assert.doesNotMatch(c.flowPrompt + c.visualES, /nunca cara humana|cabeza (es )?entera de/i, `${label}: ${c.name} conserva la regla antigua`);
   }
   assert.equal(new Set(r.characters.map(c => c.subtitleColor)).size, r.characters.length, `${label}: colores repetidos`);
   for (const f of fruitsExpected) assert.ok(r.characters.some(c => c.fruit.includes(f)), `${label}: falta ${f} (${r.characters.map(c => c.fruit)})`);
@@ -36,7 +37,7 @@ function checkFruitEpisode(r, label, fruitsExpected = []) {
     assert.doesNotMatch(sc.animationPrompt, /Seedance/, `${label}: escena ${sc.n} menciona Seedance`);
     assert.match(sc.animationPrompt, /primer fotograma/, `${label}: escena ${sc.n} sin "primer fotograma"`);
     assert.match(sc.animationPrompt, /PRONUNCIACIÓN OBLIGATORIA/, `${label}: escena ${sc.n} sin PRONUNCIACIÓN`);
-    assert.match(sc.animationPrompt, /nunca cara humana/);
+    assert.match(sc.animationPrompt, /nunca una fruta entera como cabeza/);
     assert.ok(sc.imagePromptFlow && sc.line, `${label}: escena ${sc.n} incompleta`);
     assert.doesNotMatch(sc.line, /\b(pa|vamo|ta|e)'/, `${label}: contracción en "${sc.line}"`);
   }

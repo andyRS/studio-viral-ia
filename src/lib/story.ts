@@ -64,7 +64,7 @@ function miPedido(input: any, style: StyleKey, duration: number, count: number, 
 }
 
 const CAST_FIELDS = (style: StyleKey) => isFruitStyle(style)
-  ? `{"name":"nombre dominicano con la fruta (p. ej. Platanito, Don Coco)","fruit":"plátano","fruitEmoji":"🍌","role":"protagonista humilde","headES":"cabeza de fruta: forma, color, textura, hojas o semilla, ojos y boca expresivos","clothing":"ropa fija de manga larga y accesorios","voice":"edad, tono y manera de hablar","speechStyle":"","subtitleColor":"FFE14D","pronunciations":["palabra = SÍ-la-bas, nunca X"]}`
+  ? `{"name":"nombre dominicano con la fruta (p. ej. Platanito, Don Coco)","fruit":"plátano","fruitEmoji":"🍌","role":"protagonista humilde","headES":"piel amarillo plátano con suaves pintas marrones; pequeño tallo verde de plátano asomando en el peinado; pelo negro rizado corto, ojos color miel (descríbelo PROPIO para cada personaje según su fruta, edad y sexo)","clothing":"ropa fija de manga larga y accesorios","voice":"edad, tono y manera de hablar","speechStyle":"","subtitleColor":"FFE14D","pronunciations":["palabra = SÍ-la-bas, nunca X"]}`
   : `{"name":"nombre propio","role":"protagonista","visualES":"apariencia física fija","visualEN":"same appearance in English","clothing":"vestuario fijo de los 90","voice":"edad, tono y manera de hablar","subtitleColor":"FF9A1F","pronunciations":[]}`;
 
 function sceneBrief(style: StyleKey, count: number) {
@@ -203,7 +203,7 @@ export async function generateNextEpisode(input: any) {
   try {
     const count = sceneCountFor(duration);
     const castSheet = existing.map(c => isFruitStyle(style)
-      ? `- ${c.name} (${c.role}): cabeza entera de ${c.fruit} — ${c.headES}. Ropa: ${c.clothing}. Voz: ${c.voice}.`
+      ? `- ${c.name} (${c.role}): piel de ${c.fruit} — ${c.headES}. Ropa: ${c.clothing}. Voz: ${c.voice}.`
       : `- ${c.name} (${c.role}): ${c.visualES}. Ropa: ${c.clothing}. Voz: ${c.voice}.`).join("\n");
     const system = `${styleRules(style)}${extraContext(input)}\n\n${sceneBrief(style, count)}\n\n${miPedido(input, style, duration, count, "continuacion")}\n\nTAREA: escribe el EPISODIO ${input.partNumber} de la serie "${input.series?.title}", continuando exactamente donde terminó el anterior (retoma su cliffhanger en la escena 1; si es para TikTok/Facebook puede abrir con "Anteriormente...").
 ELENCO FIJO (reutilízalo SIN cambiar nombre, fruta ni ropa):

@@ -105,8 +105,8 @@ function imagePrompt(s: { setting: string; speaker: string; emotion: string }, m
     return `Cinematic 1990s Dominican romance film still, 35mm grain, warm golden light, vertical 9:16. Reference: character sheet of ${member?.name || "the cast"}. Scene: ${s.setting}. ${who}, ${s.emotion}, ${shot.en}.${others.length ? ` Also present: ${others.map(o => o.name).join(", ")}.` : ""} Real people, no text, no watermark.`;
   }
   const guard = style === "cristiana" ? ` ${CHRISTIAN_SCENE_GUARD[0].toUpperCase()}${CHRISTIAN_SCENE_GUARD.slice(1)}.` : "";
-  const who = member ? `${member.name} (cabeza entera de ${member.fruit}; ${member.clothing}) con expresión ${s.emotion}` : `sin personaje hablando`;
-  return `Imagen 3D estilo Pixar premium, vertical 9:16. Encuadre: ${shot.es}. Referencia: ficha de ${member?.name || "los personajes"}. Escena: ${s.setting}. ${who}.${others.length ? ` También en escena: ${others.map(o => `${o.name} (cabeza de ${o.fruit})`).join(", ")}.` : ""} Cabeza de fruta en cada personaje, nunca cara humana.${guard} Sin texto, sin letreros, sin marca de agua.`;
+  const who = member ? `${member.name} (piel de ${member.fruit}: ${member.headES}; ${member.clothing}) con expresión ${s.emotion}` : `sin personaje hablando`;
+  return `Imagen 3D cinematográfica realista (película animada premium), vertical 9:16. Encuadre: ${shot.es}. Referencia: ficha de ${member?.name || "los personajes"}. Escena: ${s.setting}. ${who}.${others.length ? ` También en escena: ${others.map(o => `${o.name} (piel de ${o.fruit})`).join(", ")}.` : ""} Personajes de rostro humano realista con piel de su fruta, idénticos a sus fichas; nunca una fruta entera como cabeza.${guard} Sin texto, sin letreros, sin marca de agua.`;
 }
 
 function animationPrompt(s: { setting: string; speaker: string; line: string; emotion: string }, member: CastMember | undefined, style: StyleKey, i: number) {
@@ -124,15 +124,15 @@ VOICES: ${voice} No subtitles or on-screen text.`;
   }
   const guard = style === "cristiana" ? ` ${CHRISTIAN_SCENE_GUARD[0].toUpperCase()}${CHRISTIAN_SCENE_GUARD.slice(1)}.` : "";
   const personajes = member
-    ? `${member.name}: su cabeza es entera de ${member.fruit} (${member.headES}); ${member.clothing}. Cabeza de fruta en cada toma, nunca cara humana.`
-    : "Personajes con cabeza de fruta, nunca cara humana; nadie habla a cámara.";
+    ? `${member.name}: rostro y cuerpo humanos realistas con piel de ${member.fruit} (${member.headES}); ${member.clothing}. Igual a su ficha en cada toma; nunca una fruta entera como cabeza.`
+    : "Personajes de rostro humano realista con piel de fruta, iguales a sus fichas; nunca una fruta entera como cabeza; nadie habla a cámara.";
   const tomas = narrator
     ? `0–2 s: ${shot.es} de la escena, ${shot.move}. 2–6 s: acercamiento lento mientras el narrador dice en voz en off: "${s.line}" 6–8 s: plano general que se sostiene en silencio.`
     : `0–2 s: ${shot.es}, ${shot.move}; ${member!.name} reacciona con ${s.emotion}. 2–5 s: plano medio con dolly lento hacia ${member!.name}, que dice con ${s.emotion}: "${s.line}" 5–8 s: primer plano de ${member!.name} sosteniendo la emoción al terminar la frase, cámara fija.`;
   const voces = narrator
     ? `VOCES: Narrador: voz masculina profunda y cálida, en off. Español latino neutro, cada palabra completa, nunca acento inglés. Nadie mueve los labios. Sin subtítulos ni texto en pantalla.`
     : `VOCES: ${member!.name}: ${member!.voice}. Español latino neutro, cada palabra completa, nunca acento inglés. Solo habla ${member!.name}; sincronización de labios solo para quien habla. Sin subtítulos ni texto en pantalla.`;
-  return `Telenovela animada 3D premium estilo Pixar, vertical 9:16, 8 segundos. Anima a partir de la imagen de la escena como primer fotograma.
+  return `Telenovela animada 3D cinematográfica realista (película animada premium), vertical 9:16, 8 segundos. Anima a partir de la imagen de la escena como primer fotograma.
 Referencias: imagen 1 = escena${member ? `; imagen 2 = ficha de ${member.name}` : ""}.
 PERSONAJES: ${personajes}
 ESCENA: ${s.setting}.${guard}
@@ -209,8 +209,8 @@ export function buildProduction(raw: any, ctx: Ctx) {
   // Dola: versión corta sin perder el último giro, narrador ni cliffhanger.
   const dolaScenes = selectShortScenes(scenes, Math.floor(60 / SCENE_SECONDS));
   const dolaDuration = dolaScenes.length * SCENE_SECONDS;
-  const castLine = cast.map(c => isFruitStyle(style) ? `${c.name}: cabeza entera de ${c.fruit} (${c.headES}); ${c.clothing}` : `${c.name}: ${c.visualEN || c.visualES}; ${c.clothing}`).join(". ");
-  const dolaPrompt = `Usa Seedance 2.5. ${isFruitStyle(style) ? "Telenovela animada 3D premium estilo Pixar, vertical 9:16; cabeza de fruta en cada toma, nunca cara humana." : "Película romántica dominicana de los 90, 35 mm, vertical 9:16, personas reales."} ${total > dolaDuration ? `Adaptación de ${dolaDuration} s del episodio de ${total} s. Conserva el gancho y el cierre; elimina solo escenas intermedias.` : `Episodio completo de ${total} s.`}${style === "cristiana" ? ` ${CHRISTIAN_SCENE_GUARD}.` : ""} PERSONAJES: ${castLine}. ${dolaScenes.map((s, i) => `${i * SCENE_SECONDS}-${(i + 1) * SCENE_SECONDS}s [escena ${s.n}]: ${s.setting}. ${s.speaker === NARRATOR ? `Narrador en off: "${s.line}"` : `${s.speaker} dice con ${s.emotion}: "${s.line}"`}`).join(" ")} PRONUNCIACIÓN OBLIGATORIA: ${Array.from(new Set(cast.flatMap(c => c.pronunciations).concat(dialectPronunciations(dolaScenes.map(s => s.line).join(" "))))).join("; ") || "palabras completas con acentos correctos"}. VOCES: español latino neutro, cada palabra completa, nunca acento inglés; sincronización de labios solo para quien habla; sin subtítulos ni texto en pantalla.`;
+  const castLine = cast.map(c => isFruitStyle(style) ? `${c.name}: rostro humano realista con piel de ${c.fruit} (${c.headES}); ${c.clothing}` : `${c.name}: ${c.visualEN || c.visualES}; ${c.clothing}`).join(". ");
+  const dolaPrompt = `Usa Seedance 2.5. ${isFruitStyle(style) ? "Telenovela animada 3D cinematográfica realista, vertical 9:16; personajes de rostro humano realista con piel de su fruta, nunca una fruta entera como cabeza." : "Película romántica dominicana de los 90, 35 mm, vertical 9:16, personas reales."} ${total > dolaDuration ? `Adaptación de ${dolaDuration} s del episodio de ${total} s. Conserva el gancho y el cierre; elimina solo escenas intermedias.` : `Episodio completo de ${total} s.`}${style === "cristiana" ? ` ${CHRISTIAN_SCENE_GUARD}.` : ""} PERSONAJES: ${castLine}. ${dolaScenes.map((s, i) => `${i * SCENE_SECONDS}-${(i + 1) * SCENE_SECONDS}s [escena ${s.n}]: ${s.setting}. ${s.speaker === NARRATOR ? `Narrador en off: "${s.line}"` : `${s.speaker} dice con ${s.emotion}: "${s.line}"`}`).join(" ")} PRONUNCIACIÓN OBLIGATORIA: ${Array.from(new Set(cast.flatMap(c => c.pronunciations).concat(dialectPronunciations(dolaScenes.map(s => s.line).join(" "))))).join("; ") || "palabras completas con acentos correctos"}. VOCES: español latino neutro, cada palabra completa, nunca acento inglés; sincronización de labios solo para quien habla; sin subtítulos ni texto en pantalla.`;
   const platformAdaptations = mergeModelPlatforms(buildPlatformAdaptations({ theme: ctx.idea || clean(raw?.title), seriesTitle: ctx.seriesTitle || clean(raw?.title), partNumber: ctx.partNumber || 1, previousSummary: ctx.previousSummary, hook }), raw?.platforms);
   const f = raw?.ficha || {};
   const ficha = {

@@ -2,15 +2,18 @@
 // Se inyecta en TODOS los prompts del modelo de lenguaje, así cada historia
 // nueva o continuación nace con estas reglas.
 
+// Aspecto de los personajes de frutinovela: humanos realistas con piel de fruta (referencias del usuario, oct. 2026).
+export const FRUIT_LOOK = "Personajes de fruta con aspecto realista: rostro y cuerpo humanos con proporciones reales, estilo 3D cinematográfico de película animada premium (tipo Disney/Pixar realista), ojos grandes y expresivos, cabello humano real; la PIEL tiene el color y la textura de su fruta (p. ej. fresa: piel roja con semillitas doradas y tiara de hojas verdes) y un detalle de la fruta en el peinado o la cabeza. Mismo nivel de realismo en mujeres, hombres, jóvenes y mayores. Nunca una fruta entera como cabeza, nunca personas normales sin piel de fruta, nunca máscaras.";
+
 export const STYLES = {
   frutinovela: {
     label: "Frutinovela 3D (humor dominicano)",
-    visual: "Telenovela animada 3D premium estilo Pixar, vertical 9:16. Todos los personajes tienen la cabeza entera de una fruta con cara expresiva, nunca cara humana.",
+    visual: `Telenovela animada 3D premium, vertical 9:16. ${FRUIT_LOOK}`,
     voice: "Diálogo con palabras del dialecto dominicano escritas completas (tíguere, yipeta, jevito, vaina, mi cualto, lo cualto mío) y acento latino neutro.",
   },
   cristiana: {
     label: "Frutinovela cristiana (redención)",
-    visual: "Telenovela animada 3D premium estilo Pixar, vertical 9:16. Personajes con cabeza de fruta, nunca cara humana. Luz cálida, emoción, lágrimas, abrazos.",
+    visual: `Telenovela animada 3D premium, vertical 9:16. ${FRUIT_LOOK} Luz cálida, emoción, lágrimas, abrazos.`,
     voice: "Español latino neutro, cálido y respetuoso. Puede usar alguna palabra dominicana suave. Sin humor burlón sobre la fe.",
   },
   cine90: {
@@ -53,7 +56,7 @@ Identidad dominicana: barrio contra Piantini, motoconchista, colmado, yipeta, re
 - Frases de 6-14 palabras, una por escena y un solo hablante por escena.
 
 ## 4. Estilos
-- Frutinovela (FrutiEnganchados): telenovela 3D estilo Pixar; cada personaje tiene la cabeza entera de una fruta y cuerpo humano con ropa; nunca cara humana. La fruta encaja con el rol: plátano el humilde, coco el rico estricto, aguacate la madre, chinola o limón la joven orgullosa, manzana el niño rico, piña la suegra chismosa, guayaba la amiga leal, mango el galán, fresa la muchacha bonita. Humor dominicano dentro del drama.
+- Frutinovela (FrutiEnganchados): telenovela 3D estilo Pixar; personajes de rostro y cuerpo humanos realistas cuya piel tiene el color y la textura de su fruta, con un detalle de la fruta en el peinado; nunca una fruta entera como cabeza. La fruta encaja con el rol: plátano el humilde, coco el rico estricto, aguacate la madre, chinola o limón la joven orgullosa, manzana el niño rico, piña la suegra chismosa, guayaba la amiga leal, mango el galán, fresa la muchacha bonita. Humor dominicano dentro del drama.
 - Frutinovela cristiana: público pentecostal/evangélico. Estructura: orgullo o pecado → caída → arrepentimiento → oración o abrazo → frase final → "Escribe AMÉN". La iglesia es evangélica sencilla (púlpito de madera, cruz lisa, Biblia, bancos); nunca santos, vírgenes, altares, velas votivas ni rosarios, tampoco en la casa. Sin burla de la fe.
 - Cine de los 90 (@peliculasquenoexisten.rd): personas reales, grano de 35 mm, luz dorada, vestuario de los 90; elegante y romántico.
 - Siempre prohibido: escenas sexuales o sugerentes, vestidos de tirantes, marcas, famosos y personajes con derechos de autor.
@@ -75,31 +78,31 @@ Puntúate del 1 al 10 en: gancho del segundo 0-1, claridad sin contexto, escalad
 `.trim();
 
 // ---------- ELENCO DE FRUTAS (frutinovela y cristiana) ----------
-// Catálogo fruta -> rol típico, emoji, color de subtítulo (hex sin #) y cabeza por defecto.
+// Catálogo fruta -> rol típico, emoji, color de subtítulo (hex sin #) y aspecto por defecto (piel + detalle de fruta).
 // Lo usan las reglas que lee la IA y el código que repara o crea el elenco sin IA.
 export interface FruitInfo { fruit: string; emoji: string; color: string; roles: string[]; head: string }
 export const FRUIT_CATALOG: FruitInfo[] = [
-  { fruit: "plátano", emoji: "🍌", color: "FFE14D", roles: ["humilde", "motoconchista", "protagonista", "pobre", "trabajador", "novio"], head: "plátano verde alargado y curvo, cáscara lisa con pintas marrones, tallito arriba como copete, ojos grandes y brillantes, boca amplia y expresiva" },
-  { fruit: "coco", emoji: "🥥", color: "D9A066", roles: ["rico", "papá", "padre", "estricto", "jefe", "millonario"], head: "coco redondo marrón con fibras peludas, tres puntitos como cejas fruncidas, ojos serios, bigote de fibra, sombrero panamá" },
-  { fruit: "aguacate", emoji: "🥑", color: "5BC94A", roles: ["madre", "mamá", "trabajadora", "vendedora", "abuela"], head: "aguacate verde oscuro con piel rugosa, ojos cálidos y cansados, mejillas suaves, boca dulce y temblorosa" },
-  { fruit: "chinola", emoji: "🍋", color: "FFD23F", roles: ["joven", "orgullosa", "hija", "rebelde", "estudiante"], head: "chinola amarilla redonda con piel lisa y brillante, ojos grandes delineados, boca con gesto orgulloso" },
-  { fruit: "limón", emoji: "🍋", color: "FFD23F", roles: ["joven", "orgullosa", "ácida", "celosa"], head: "limón verde brillante con puntas redondeadas, ojos pícaros, boca fruncida y ácida" },
-  { fruit: "manzana", emoji: "🍎", color: "FF4D6D", roles: ["niño rico", "arrogante", "hijo rico", "rival"], head: "manzana roja brillante con tallo y una hoja verde, ojos altivos, sonrisa arrogante" },
-  { fruit: "piña", emoji: "🍍", color: "F2C14E", roles: ["chismosa", "suegra", "vecina", "señora"], head: "piña dorada con escamas en rombo y corona de hojas verdes como peinado, ojos curiosos, boca exagerada de chisme" },
-  { fruit: "guayaba", emoji: "🍐", color: "FF6B81", roles: ["amiga", "leal", "confidente", "hermana"], head: "guayaba verde clara redondeada con piel lisa, ojos alegres, sonrisa leal" },
-  { fruit: "mango", emoji: "🥭", color: "FF9A1F", roles: ["galán", "enamorado", "conquistador"], head: "mango ovalado rojo y amarillo con piel brillante, hojita arriba, ojos seductores, sonrisa de galán" },
-  { fruit: "fresa", emoji: "🍓", color: "FF4D6D", roles: ["muchacha bonita", "novia", "princesa", "bonita"], head: "fresa roja brillante con semillitas doradas y corona de hojas verdes, ojos grandes con pestañas, boca rosada" },
-  { fruit: "coco joven", emoji: "🥥", color: "B6F08A", roles: ["niño", "hijo", "nieto", "pequeño"], head: "coco verde tierno y redondo, piel lisa, ojos enormes e inocentes, boca pequeña" },
-  { fruit: "guanábana", emoji: "🍈", color: "B6F08A", roles: ["abuela", "anciana", "sabia"], head: "guanábana verde con espinitas suaves, ojos sabios con arrugas, sonrisa tierna" },
+  { fruit: "plátano", emoji: "🍌", color: "FFE14D", roles: ["humilde", "motoconchista", "protagonista", "pobre", "trabajador", "novio"], head: "piel amarillo plátano con suaves pintas marrones; pequeño tallo verde de plátano asomando en el peinado" },
+  { fruit: "coco", emoji: "🥥", color: "D9A066", roles: ["rico", "papá", "padre", "estricto", "jefe", "millonario"], head: "piel marrón coco con fina textura fibrosa, cejas y bigote con textura de fibra de coco; sombrero panamá" },
+  { fruit: "aguacate", emoji: "🥑", color: "5BC94A", roles: ["madre", "mamá", "trabajadora", "vendedora", "abuela"], head: "piel verde aguacate oscuro ligeramente rugosa; pequeña semilla de aguacate como broche en el moño" },
+  { fruit: "chinola", emoji: "🍋", color: "FFD23F", roles: ["joven", "orgullosa", "hija", "rebelde", "estudiante"], head: "piel amarillo chinola con moteado sutil; flor de chinola en el cabello" },
+  { fruit: "limón", emoji: "🍋", color: "FFD23F", roles: ["joven", "orgullosa", "ácida", "celosa"], head: "piel verde limón brillante con poros finos; hojita de limón en el peinado" },
+  { fruit: "manzana", emoji: "🍎", color: "FF4D6D", roles: ["niño rico", "arrogante", "hijo rico", "rival"], head: "piel roja manzana brillante y lisa; tallito con hoja de manzana como mechón en el cabello" },
+  { fruit: "piña", emoji: "🍍", color: "F2C14E", roles: ["chismosa", "suegra", "vecina", "señora"], head: "piel dorada con patrón sutil de escamas de piña; corona de hojas de piña como tocado" },
+  { fruit: "guayaba", emoji: "🍐", color: "FF6B81", roles: ["amiga", "leal", "confidente", "hermana"], head: "piel rosa guayaba con pecas verdes suaves; hojita de guayaba en el cabello" },
+  { fruit: "mango", emoji: "🥭", color: "FF9A1F", roles: ["galán", "enamorado", "conquistador"], head: "piel degradada rojo-amarillo de mango, satinada; hojita de mango junto a la oreja" },
+  { fruit: "fresa", emoji: "🍓", color: "FF4D6D", roles: ["muchacha bonita", "novia", "princesa", "bonita"], head: "piel roja fresa con semillitas doradas; tiara de hojas verdes de fresa" },
+  { fruit: "coco joven", emoji: "🥥", color: "B6F08A", roles: ["niño", "hijo", "nieto", "pequeño"], head: "piel verde tierno lisa de coco joven; mechón con textura de fibra clara" },
+  { fruit: "guanábana", emoji: "🍈", color: "B6F08A", roles: ["abuela", "anciana", "sabia"], head: "piel verde guanábana con pequitas en relieve suave; flor blanca en el moño canoso" },
 ];
 export const NARRATOR_COLOR = "FFFFFF";
 
 export const FRUIT_CAST_RULES = `
 REGLAS DEL ELENCO DE FRUTAS (obligatorias):
-- Todo personaje tiene la cabeza ENTERA de una fruta con cara expresiva (ojos y boca integrados en la fruta), cuerpo humano con ropa y manos. NUNCA cara humana.
+- Aspecto (obligatorio): ${FRUIT_LOOK}
 - La fruta encaja con el personaje: plátano = el humilde del barrio, el motoconchista; coco = el rico, el papá estricto (sombrero panamá); aguacate = la madre trabajadora; chinola o limón = la joven orgullosa; manzana = el niño rico y arrogante; piña = la señora chismosa o la suegra; guayaba = la amiga leal; mango = el galán; fresa = la muchacha bonita.
 - Nombres dominicanos con la fruta: Platanito, Coquita, Don Coco, Doña Aguacate, Manguito, Guayabita, Julián Manzana, Doña Piña. Nunca "Protagonista", "Antagonista" ni nombres solo humanos.
-- Las mujeres tienen cabello humano realista sobre la cabeza de fruta. Nada de vestidos de tirantes: siempre manga larga. No usar personajes de marcas.
+- Todos tienen cabello humano realista. Nada de vestidos de tirantes: siempre manga larga. No usar personajes de marcas.
 - La ropa de cada personaje es FIJA en toda la serie.
 - Colores de subtítulo (hex sin #) por fruta: plátano FFE14D, coco D9A066, aguacate 5BC94A, chinola FFD23F, manzana FF4D6D, piña F2C14E, guayaba FF6B81, mango FF9A1F, fresa FF4D6D, coco joven B6F08A, narrador FFFFFF. Si dos personajes coinciden en color, usa otro distinto.
 `.trim();

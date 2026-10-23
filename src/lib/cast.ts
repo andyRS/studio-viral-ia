@@ -66,13 +66,15 @@ export function flowPromptFor(c: Pick<CastMember, "name" | "fruit" | "headES" | 
     return `Photorealistic 1990s Dominican romance film character sheet, full body, standing, neutral grey background, vertical 9:16, 35mm film grain, warm light. ${c.visualEN || c.visualES}. Outfit: ${c.clothing}. Real human, natural skin, no text.`;
   }
   const trait = c.role ? `${c.role}` : "expresiva";
-  return `Personaje 3D estilo Pixar premium, cuerpo entero, de pie, fondo gris neutro, vertical 9:16. Su cabeza es entera de ${c.fruit}: ${c.headES}. ${c.clothing.charAt(0).toUpperCase()}${c.clothing.slice(1)}. Expresión: ${trait}. Cuerpo humano con manos. Nunca cara humana. Sin texto.`;
+  return `Personaje 3D cinematográfico realista (película animada premium tipo Disney/Pixar realista), cuerpo entero, de pie, fondo gris neutro, vertical 9:16. ${c.name}: rostro y cuerpo humanos con proporciones reales, ojos grandes y expresivos, cabello humano real; piel de ${c.fruit}: ${c.headES}. ${c.clothing.charAt(0).toUpperCase()}${c.clothing.slice(1)}. Expresión: ${trait}. Nunca una fruta entera como cabeza, nunca una persona normal sin piel de fruta. Sin texto.`;
 }
 
 // Normaliza el elenco. Si al de frutas le falta la fruta o tiene un nombre genérico, la asigna
 // en el código según el rol y completa cabeza, emoji, color y ficha de Flow.
 export function normalizeCast(list: unknown, style: StyleKey, opts: { taken?: CastMember[] } = {}): CastMember[] {
-  const rows = Array.isArray(list) ? list.filter(r => r && typeof r === "object") : [];
+  // El narrador es una voz en off ("Narrador"), no un personaje del elenco.
+  const NARRATOR_ROW = /narrador|narradora|voz en off|gu[ií]a de la historia/i;
+  const rows = Array.isArray(list) ? list.filter((r: any) => r && typeof r === "object" && !NARRATOR_ROW.test(`${clean(r.name)} ${clean(r.role)} ${clean(r.headES)}`)) : [];
   const taken = opts.taken || [];
   const usedFruits = new Set<string>(taken.map(c => fruitInfo(c.fruit)?.fruit || "").filter(Boolean));
   const usedNames = new Set<string>(taken.map(c => norm(c.name)));
@@ -109,7 +111,9 @@ export function normalizeCast(list: unknown, style: StyleKey, opts: { taken?: Ca
     usedNames.add(norm(name));
 
     const fruitName_ = fruitStory ? fruit!.fruit : undefined;
-    const headES = fruitStory ? (clean(row.headES) || fruit!.head) : undefined;
+    // Si la IA copió la plantilla o no describió el aspecto, se usa el del catálogo de esa fruta.
+    const rawHead = clean(row.headES);
+    const headES = fruitStory ? (rawHead.length < 15 || /^aspecto:|color y la textura de su fruta|rasgos humanos realistas, cabello, ojos/i.test(rawHead) ? fruit!.head : rawHead) : undefined;
     const female = FEMALE.test(norm(context));
     const clothing = clean(row.clothing) || (female ? "blusa de manga larga y falda por debajo de la rodilla" : "camisa de manga larga y pantalón de tela");
     let hex = clean(row.subtitleColor).replace("#", "").toUpperCase();
@@ -117,9 +121,8 @@ export function normalizeCast(list: unknown, style: StyleKey, opts: { taken?: Ca
     if (usedColors.has(hex)) hex = PALETTE.find(p => !usedColors.has(p)) || hex;
     usedColors.add(hex);
 
-    const hair = fruitStory && female ? " Cabello humano realista sobre la cabeza de fruta." : "";
     const visualES = fruitStory
-      ? `Cabeza entera de ${fruitName_}: ${headES}.${hair} Cuerpo humano con manos; nunca cara humana.`
+      ? `Rostro y cuerpo humanos realistas con piel de ${fruitName_}: ${headES}. Cabello humano real, ojos expresivos.`
       : clean(row.visualES) || "Persona dominicana de los 90 con rasgos naturales.";
     const voice = clean(row.voice) || (female ? "mujer, voz cálida y expresiva" : "hombre, voz firme y cercana");
     const pronunciations = Array.from(new Set([
@@ -131,7 +134,7 @@ export function normalizeCast(list: unknown, style: StyleKey, opts: { taken?: Ca
       visualES, visualEN: clean(row.visualEN), clothing, voice, speechStyle: clean(row.speechStyle) || voice,
       subtitleColor: `#${hex}`, pronunciations, flowPrompt: "",
     };
-    member.flowPrompt = clean(row.flowPrompt) && /nunca cara humana|real human/i.test(row.flowPrompt) ? clean(row.flowPrompt) : flowPromptFor(member, style);
+    member.flowPrompt = clean(row.flowPrompt) && /piel de|real human/i.test(row.flowPrompt) && !/nunca cara humana|cabeza (es )?entera/i.test(row.flowPrompt) ? clean(row.flowPrompt) : flowPromptFor(member, style);
     return member;
   });
 }
