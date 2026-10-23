@@ -8,6 +8,25 @@ export interface CastMember {
   subtitleColor: string; pronunciations: string[]; flowPrompt: string;
 }
 
+// Acento de cada personaje, como en los virales: el contraste (uno marcado, el resto neutro) lo hace
+// memorable. Se lee de «Acento: …» en su forma de hablar o su voz; sin indicarlo, latino neutro.
+export function accentOf(member?: Partial<CastMember> | null): string {
+  const m = /acento\s*:?\s*([^.;,\n]+)/i.exec(`${member?.speechStyle || ""}. ${member?.voice || ""}`);
+  return m ? m[1].trim().toLowerCase() : "";
+}
+export function accentPrompt(member: Partial<CastMember> | null | undefined, lang: "es" | "en" = "es"): string {
+  const a = accentOf(member);
+  if (/dominican/.test(a)) return lang === "es"
+    ? "Acento DOMINICANO marcado y auténtico (español caribeño de Santo Domingo, de la calle): ritmo rápido y cantado, la s final y la r suaves; nunca neutro, mexicano, venezolano ni de España. Cada palabra se entiende entera"
+    : "Strong, authentic DOMINICAN Spanish accent (Caribbean street Spanish from Santo Domingo): fast sing-song rhythm, soft final s and soft r; never neutral, Mexican, Venezuelan or Spain accent. Every word clearly understood";
+  if (!a || /neutr/.test(a)) return lang === "es"
+    ? "Español latino neutro y claro, cada palabra completa, nunca acento inglés"
+    : "Clear neutral Latin American Spanish, every word complete, never English accent";
+  return lang === "es"
+    ? `Acento ${a} marcado y auténtico, cada palabra se entiende entera; nunca acento inglés`
+    : `Strong, authentic ${a} Spanish accent, every word clearly understood; never English accent`;
+}
+
 // Colores de reserva cuando dos personajes coinciden (hex sin #).
 export const PALETTE = ["FF9A1F", "C08BFF", "5BC94A", "FF4D6D", "FFD23F", "4DD0E1", "B6F08A", "D9A066", "FF6B81", "F2C14E"];
 

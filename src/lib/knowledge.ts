@@ -9,17 +9,17 @@ export const STYLES = {
   frutinovela: {
     label: "Frutinovela 3D (humor dominicano)",
     visual: `Telenovela animada 3D premium, vertical 9:16. ${FRUIT_LOOK}`,
-    voice: "Diálogo con palabras del dialecto dominicano escritas completas (tíguere, yipeta, jevito, vaina, mi cualto, lo cualto mío) y acento dominicano auténtico (caribeño, de la calle), con cada palabra entera.",
+    voice: "Diálogo con palabras del dialecto dominicano escritas completas (tíguere, yipeta, jevito, vaina, mi cualto, lo cualto mío) y acento según el personaje (dominicano marcado para el tíguere o el pícaro; latino neutro para el resto), con cada palabra entera.",
   },
   cristiana: {
     label: "Frutinovela cristiana (redención)",
     visual: `Telenovela animada 3D premium, vertical 9:16. ${FRUIT_LOOK} Luz cálida, emoción, lágrimas, abrazos.`,
-    voice: "Acento dominicano auténtico, cálido y respetuoso. Puede usar alguna palabra dominicana suave. Sin humor burlón sobre la fe.",
+    voice: "Español latino neutro, cálido y respetuoso (un personaje puede tener acento dominicano marcado). Puede usar alguna palabra dominicana suave. Sin humor burlón sobre la fe.",
   },
   cine90: {
     label: "Cine romántico de los 90 (realista)",
     visual: "Película romántica de los años 90 en República Dominicana, grano de 35 mm, luz cálida dorada, vestuario y peinados de los 90, vertical 9:16, personas reales.",
-    voice: "Acento dominicano auténtico y elegante, frases cortas y emotivas.",
+    voice: "Español latino neutro y elegante (un personaje puede tener acento dominicano marcado), frases cortas y emotivas.",
   },
 } as const;
 export type StyleKey = keyof typeof STYLES;
@@ -52,7 +52,7 @@ Lo que más engancha, por orden: madre negada o humillada; amor prohibido por cl
 Identidad dominicana: barrio contra Piantini, motoconchista, colmado, yipeta, remesas, Nueva York, Los Mina, la Virgen de la Altagracia en boca de los personajes (en las historias que no son cristianas), chimi.
 
 ## 3. Reglas de diálogo
-- Acento dominicano auténtico (nunca neutro, mexicano ni venezolano) con palabras dominicanas escritas completas: tíguere, yipeta, jevito, vaina, un chin, pariguayo, mi cualto / lo cualto mío (nunca "mis cuartos").
+- Acento como rasgo del personaje (uno o dos con acento dominicano marcado, el resto latino neutro) y palabras dominicanas escritas completas: tíguere, yipeta, jevito, vaina, un chin, pariguayo, mi cualto / lo cualto mío (nunca "mis cuartos").
 - Todos los acentos y signos (á é í ó ú ñ ¿ ¡).
 - Nunca contracciones (pa', vamo', e', ta', na'): la voz IA se traba.
 - Frases de 2 a 6 palabras, en ida y vuelta entre dos personajes (escenas alternas), nunca discursos. Un solo hablante por escena de 8 s; el resto de la escena es actuación y silencio.
@@ -67,8 +67,9 @@ Identidad dominicana: barrio contra Piantini, motoconchista, colmado, yipeta, re
 - Frutinovela (FrutiEnganchados): telenovela 3D estilo Pixar; personajes de rostro y cuerpo humanos realistas cuya piel tiene el color y la textura de su fruta, con un detalle de la fruta en el peinado; nunca una fruta entera como cabeza. La fruta encaja con el rol: plátano el humilde, coco el rico estricto, aguacate la madre, chinola o limón la joven orgullosa, manzana el niño rico, piña la suegra chismosa, guayaba la amiga leal, mango el galán, fresa la muchacha bonita. Humor dominicano dentro del drama.
 - Frutinovela cristiana: público pentecostal/evangélico. Estructura: orgullo o pecado → caída → arrepentimiento → oración o abrazo → frase final → "Escribe AMÉN". La iglesia es evangélica sencilla (púlpito de madera, cruz lisa, Biblia, bancos); nunca santos, vírgenes, altares, velas votivas ni rosarios, tampoco en la casa. Sin burla de la fe.
 - Cine de los 90 (@peliculasquenoexisten.rd): personas reales, grano de 35 mm, luz dorada, vestuario de los 90; elegante y romántico.
-- Vestuario elegante y de manga larga. Nada de bikinis, toallas, escotes ni vestidos de tirantes: los generadores lo bloquean y Meta no lo monetiza.
-- Siempre prohibido: escenas sexuales o sugerentes, marcas, famosos y personajes con derechos de autor.
+- Vestuario (frutinovela y cine de los 90): a la moda y atractivo según el personaje, como en los virales. La chica coqueta o seductora es una mujer adulta de figura curvilínea y estilo moderno (top corto, camiseta de tirantes, shorts o jeans ajustados, vestido ceñido); el galán, camiseta ajustada o camisa abierta al cuello. Traje de baño solo si la escena es en piscina, playa o jacuzzi. En la frutinovela cristiana, vestuario recatado y de manga larga.
+- Romance y seducción sí: miradas, coqueteo, abrazos y besos en la boca cuando el guion lo pida (breves y románticos). Así cautivan sin pasarse.
+- Siempre prohibido: desnudos, ropa interior o lencería, toallas, sexo explícito, menores en escenas románticas, marcas, famosos y personajes con derechos de autor. Ojo: Meta puede limitar la monetización de escenas en traje de baño.
 
 ## 5. Un máster, todas las plataformas
 Se produce un solo vídeo máster de 60-90 s que sirve tal cual para Facebook y TikTok; de él salen los cortes para Instagram Reels (25-46 s, en un corte sin relleno que empieza en el conflicto) y YouTube Shorts (máster o corte de hasta 90 s). Facebook y TikTok: mínimo 60 s (Facebook confirmó que más de 60 s rinde muchísimo más). Se sube nativo y sin marca de agua a cada plataforma y se activa la etiqueta de contenido IA. Exportar a 1080x1920 como mínimo; lo ideal es 1440x2560.
@@ -114,7 +115,7 @@ REGLAS DEL ELENCO DE FRUTAS (obligatorias):
 - Aspecto (obligatorio): ${FRUIT_LOOK}
 - La fruta encaja con el personaje: plátano = el humilde del barrio, el motoconchista; coco = el rico, el papá estricto (sombrero panamá); aguacate = la madre trabajadora; chinola o limón = la joven orgullosa; manzana = el niño rico y arrogante; piña = la señora chismosa o la suegra; guayaba = la amiga leal; mango = el galán; fresa = la muchacha bonita.
 - Nombres dominicanos con la fruta: Platanito, Coquita, Don Coco, Doña Aguacate, Manguito, Guayabita, Julián Manzana, Doña Piña. Nunca "Protagonista", "Antagonista" ni nombres solo humanos.
-- Todos tienen cabello humano realista. Vestuario elegante y siempre de manga larga: nada de bikinis, toallas, escotes ni tirantes. No usar personajes de marcas.
+- Todos tienen cabello humano realista. Vestuario según la regla de Vestuario del estilo (atractivo y a la moda en frutinovela; recatado y de manga larga en cristiana); nunca lencería ni toallas. No usar personajes de marcas.
 - La ropa de cada personaje es FIJA en toda la serie y tiene un color propio reconocible.
 - Colores de subtítulo (hex sin #) por fruta: plátano FFE14D, coco D9A066, aguacate 5BC94A, chinola FFD23F, manzana FF4D6D, piña F2C14E, guayaba FF6B81, mango FF9A1F, fresa FF4D6D, coco joven B6F08A, narrador FFFFFF. Si dos personajes coinciden en color, usa otro distinto.
 `.trim();

@@ -3,7 +3,7 @@
 // Los prompts se construyen en el código (no los escribe la IA) para que siempre cumplan el formato.
 import { BASE_FORMULA, buildPlatformAdaptations, formatCoverText, mergeModelPlatforms, normalizeDescription, stylePublish } from "./platforms";
 import { CHRISTIAN_SCENE_GUARD, NARRATOR_COLOR, type StyleKey } from "./knowledge";
-import { dialectPronunciations, isFruitStyle, norm, type CastMember } from "./cast";
+import { accentOf, accentPrompt, dialectPronunciations, isFruitStyle, norm, type CastMember } from "./cast";
 import type { Scene } from "./types";
 
 export const SCENE_SECONDS = 8;
@@ -17,10 +17,11 @@ export function timeJump(text: string) {
 export const NARRATOR = "Narrador";
 // Súbelo cada vez que cambien las reglas de los prompts: los episodios guardados con una versión
 // anterior muestran «Actualizar prompts» (rehace los prompts sin IA y sin tocar el guion).
-export const PROMPT_RULES_VERSION = 5;
-// v5: acento dominicano (caribeño, de la calle, con su ritmo) en todas las voces, sin perder ninguna palabra.
-const ACCENT_ES = "Acento DOMINICANO auténtico (español caribeño de Santo Domingo, como se habla en la calle): ritmo rápido y cantado, entonación caribeña, la s final suave y la r suave; NUNCA acento neutro, mexicano, venezolano, español de España ni inglés. Aun así cada palabra se entiende entera";
-const ACCENT_EN = "Authentic DOMINICAN Spanish accent (Caribbean Spanish from Santo Domingo, street-natural): fast, sing-song Caribbean rhythm, soft final s and soft r; NEVER neutral, Mexican, Venezuelan, Spain or English accent. Every word still clearly understood";
+export const PROMPT_RULES_VERSION = 7;
+// v7: si la escena tiene un beso, que sea en la boca (breve y romántico).
+const kissNote = (s: { setting: string; line: string }, lang: "es" | "en") => /\bbes(o|a|an|ar|ando|os)\b|\bkiss/i.test(`${s.setting} ${s.line}`)
+  ? (lang === "es" ? " BESO: en la boca, de frente y bien visible, breve y romántico; nunca sexual." : " KISS: on the lips, clearly visible, brief and romantic; never sexual.") : "";
+// v6: acento por personaje (accentPrompt): marcado para quien lo tenga en su ficha, neutro para el resto.
 // Ritmo viral (v4): la voz empieza en el primer segundo, sin silencios de entrada ni de salida, ambiente
 // continuo y sin música dentro del clip (la música va en el montaje; si cada clip trae la suya, salta en cada corte).
 const SOUND_ES = "SONIDO: la voz empieza en el primer segundo, sin silencio de entrada ni de salida; ambiente del lugar continuo de principio a fin; SIN música de fondo (la música se añade en la edición).";
@@ -141,8 +142,8 @@ References: image 1 = scene${member ? `; image 2 = character sheet of ${member.n
 CHARACTERS: ${member ? `${member.name}: ${member.visualEN || member.visualES}; outfit: ${member.clothing}. Real people.` : "No one speaks on camera."}
 SCENE: ${s.setting}.
 SHOTS: ${shot.en}, ${shot.moveEn}. From 0.3 s, with no pause before, ${narrator ? "slow push-in while the narrator says" : `${member!.name}, already in full ${s.emotion}, says while the camera dollies slowly toward the face`} (in Spanish, exact words): "${s.line}" Right after the line: 1 s ${narrator ? "holding on the scene" : `close-up of ${member!.name} holding the emotion`}, then the same shot continues without cuts.
-${SOUND_EN}
-PRONUNCIATION: ${ACCENT_EN}.
+${SOUND_EN}${kissNote(s, "en")}
+PRONUNCIATION: ${narrator ? accentPrompt(null, "en") : accentPrompt(member, "en")}.
 VOICES: ${voice} No subtitles or on-screen text.`;
   }
   const guard = style === "cristiana" ? ` ${CHRISTIAN_SCENE_GUARD[0].toUpperCase()}${CHRISTIAN_SCENE_GUARD.slice(1)}.` : "";
@@ -153,8 +154,8 @@ VOICES: ${voice} No subtitles or on-screen text.`;
     ? `${shot.es} de la escena, ${shot.move}. Desde 0,3 s, sin pausa previa y con acercamiento lento, el narrador dice en voz en off: "${s.line}" Justo al terminar: 1 s sosteniendo la imagen; después la misma toma sigue sin cortes.`
     : `${shot.es}, ${shot.move}; ${member!.name} ya está en plena emoción (${s.emotion}) desde el primer fotograma. Desde 0,3 s, sin pausa previa, ${member!.name} dice con ${s.emotion}, mientras la cámara hace un dolly lento hacia su cara: "${s.line}" Justo al terminar la frase: 1 s de primer plano de ${member!.name} sosteniendo la emoción; después la misma toma sigue sin cortes.`;
   const voces = narrator
-    ? `VOCES: Narrador: voz masculina dominicana, profunda y cálida, en off. ${ACCENT_ES}. Nadie mueve los labios. Sin subtítulos ni texto en pantalla.`
-    : `VOCES: ${member!.name}: ${member!.voice}. ${ACCENT_ES}. Solo habla ${member!.name}; sincronización de labios solo para quien habla. Sin subtítulos ni texto en pantalla.`;
+    ? `VOCES: Narrador: voz masculina profunda y cálida, en off. ${accentPrompt(null)}. Nadie mueve los labios. Sin subtítulos ni texto en pantalla.`
+    : `VOCES: ${member!.name}: ${member!.voice}. ${accentPrompt(member)}. Solo habla ${member!.name}; sincronización de labios solo para quien habla. Sin subtítulos ni texto en pantalla.`;
   return `Telenovela animada 3D (render CGI de película animada premium), vertical 9:16, 8 segundos. Anima a partir de la imagen de la escena como primer fotograma.
 ${ANIMATION_STYLE_LOCK}
 Referencias: imagen 1 = escena${member ? `; imagen 2 = ficha de ${member.name}` : ""}.
@@ -163,13 +164,13 @@ ESCENA: ${s.setting}.${guard}
 TOMAS: ${tomas}
 PRONUNCIACIÓN OBLIGATORIA: ${pronunciationFor(member, s.line)}.
 ${voces}
-${SOUND_ES}`;
+${SOUND_ES}${kissNote(s, "es")}`;
 }
 
 // Prompt de Dola (Seedance) con las escenas elegidas para la versión corta.
 function buildDolaPrompt(dolaScenes: { n: number; setting: string; speaker: string; line: string; emotion: string }[], cast: CastMember[], style: StyleKey, total: number, dolaDuration: number) {
   const castLine = cast.map(c => isFruitStyle(style) ? `${c.name}: personaje 3D animado con rostro humano y piel de ${c.fruit} (${c.headES}); ${c.clothing}` : `${c.name}: ${c.visualEN || c.visualES}; ${c.clothing}`).join(". ");
-  return `Usa Seedance 2.5. ${isFruitStyle(style) ? `Telenovela animada 3D (render CGI de película animada premium), vertical 9:16; personajes 3D animados de rostro humano con piel de su fruta, nunca una fruta entera como cabeza. ${ANIMATION_STYLE_LOCK}` : "Película romántica dominicana de los 90, 35 mm, vertical 9:16, personas reales."} ${total > dolaDuration ? `Adaptación de ${dolaDuration} s del episodio de ${total} s. Conserva el gancho y el cierre; elimina solo escenas intermedias.` : `Episodio completo de ${total} s.`}${style === "cristiana" ? ` ${CHRISTIAN_SCENE_GUARD[0].toUpperCase()}${CHRISTIAN_SCENE_GUARD.slice(1)}.` : ""} PERSONAJES: ${castLine}. ${dolaScenes.map((s, i) => `${i * SCENE_SECONDS}-${(i + 1) * SCENE_SECONDS}s [escena ${s.n}]: ${s.setting}. ${s.speaker === NARRATOR ? `Narrador en off: "${s.line}"` : `${s.speaker} dice con ${s.emotion}: "${s.line}"`}`).join(" ")} PRONUNCIACIÓN OBLIGATORIA: ${Array.from(new Set(cast.flatMap(c => c.pronunciations).concat(dialectPronunciations(dolaScenes.map(s => s.line).join(" "))))).join("; ") || "palabras completas con acentos correctos"}. VOCES: ${ACCENT_ES}; sincronización de labios solo para quien habla; sin subtítulos ni texto en pantalla. RITMO: cada personaje responde enseguida, sin pausas entre frases; ambiente continuo y SIN música de fondo (se añade en la edición).`;
+  return `Usa Seedance 2.5. ${isFruitStyle(style) ? `Telenovela animada 3D (render CGI de película animada premium), vertical 9:16; personajes 3D animados de rostro humano con piel de su fruta, nunca una fruta entera como cabeza. ${ANIMATION_STYLE_LOCK}` : "Película romántica dominicana de los 90, 35 mm, vertical 9:16, personas reales."} ${total > dolaDuration ? `Adaptación de ${dolaDuration} s del episodio de ${total} s. Conserva el gancho y el cierre; elimina solo escenas intermedias.` : `Episodio completo de ${total} s.`}${style === "cristiana" ? ` ${CHRISTIAN_SCENE_GUARD[0].toUpperCase()}${CHRISTIAN_SCENE_GUARD.slice(1)}.` : ""} PERSONAJES: ${castLine}. ${dolaScenes.map((s, i) => `${i * SCENE_SECONDS}-${(i + 1) * SCENE_SECONDS}s [escena ${s.n}]: ${s.setting}. ${s.speaker === NARRATOR ? `Narrador en off: "${s.line}"` : `${s.speaker} dice con ${s.emotion}: "${s.line}"`}`).join(" ")} PRONUNCIACIÓN OBLIGATORIA: ${Array.from(new Set(cast.flatMap(c => c.pronunciations).concat(dialectPronunciations(dolaScenes.map(s => s.line).join(" "))))).join("; ") || "palabras completas con acentos correctos"}. VOCES: cada personaje con su acento (${cast.map(c => `${c.name}: ${accentOf(c) || "latino neutro"}`).join("; ")}), cada palabra completa, nunca acento inglés; sincronización de labios solo para quien habla; sin subtítulos ni texto en pantalla. RITMO: cada personaje responde enseguida, sin pausas entre frases; ambiente continuo y SIN música de fondo (se añade en la edición).`;
 }
 
 // Construye todo el paquete de producción del episodio a partir de lo que devolvió la IA.

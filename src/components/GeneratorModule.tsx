@@ -399,7 +399,10 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
           // Rehace los prompts con las reglas actuales, sin IA: el guion, las escenas y los personajes no cambian.
           const firstBible = data.episodes.find((e: any) => e.seriesId === result.seriesId && e.output?.seriesBible?.style)?.output?.seriesBible;
           const st = (result.episode?.seriesBible?.style || firstBible?.style || (result.episode?.cast?.some((c: any) => c.fruit) ? "frutinovela" : "cine90")) as StyleKey;
-          const output = refreshPrompts(result.episode, st);
+          // El acento (y la forma de hablar) que se edita en Personajes manda sobre la copia del episodio.
+          const masters = data.characters.filter((c: any) => c.seriesId === result.seriesId);
+          const cast = (result.episode?.cast || []).map((c: any) => { const m = masters.find((x: any) => x.name.toLowerCase() === String(c.name).toLowerCase()); return m?.speechStyle ? { ...c, speechStyle: m.speechStyle } : c; });
+          const output = refreshPrompts({ ...result.episode, cast }, st);
           if (result.episodeId) await update("episodes", result.episodeId, { output });
           setResult({ ...result, episode: output });
           setNotice("Prompts actualizados con las reglas nuevas. El guion y los personajes no cambiaron; vuelve a enviar el lote a Flow si ya lo habías enviado.");

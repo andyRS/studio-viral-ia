@@ -2,6 +2,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useData } from "@/lib/DataContext";
 import { useDeleteSeries } from "@/lib/useDelete";
+import { accentOf } from "@/lib/cast";
+
+// Pone «Acento: X.» al principio de la forma de hablar (lo leen los prompts de animación).
+const withAccent = (speech: string, accent: string) => `Acento: ${accent}. ${String(speech || "").replace(/acento\s*:?\s*[^.;,\n]+[.;,]?\s*/i, "").trim()}`.trim();
 
 const EMPTY = { name:"", seriesId:"", visualES:"", visualEN:"", clothing:"", subtitleColor:"#ffffff", speechStyle:"", pronunciations:"" };
 
@@ -86,6 +90,12 @@ export default function CharactersModule({ focusCharacterId }: { focusCharacterI
             <label htmlFor={"character-color-" + c.id} className="text-xs text-slate-300">Color de subtítulo:</label>
             <input id={"character-color-" + c.id} type="color" value={c.subtitleColor || "#ffffff"} onChange={e => update("characters", c.id, { subtitleColor: e.target.value })} className="w-10 h-6 p-0 bg-transparent"/>
             <button className="text-slate-400 hover:text-red-300 text-xs ml-auto" onClick={() => deleteCharacter(c)}>Eliminar</button>
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <label htmlFor={"character-accent-" + c.id} className="text-xs text-slate-300">Acento:</label>
+            <select id={"character-accent-" + c.id} value={/dominican/.test(accentOf(c)) ? "dominicano marcado" : accentOf(c) && !/neutr/.test(accentOf(c)) ? "otro" : "latino neutro"} onChange={e => { const v = e.target.value === "otro" ? window.prompt("¿Qué acento? (p. ej. venezolano, cibaeño, cubano)", "") : e.target.value; if (v) void update("characters", c.id, { speechStyle: withAccent(c.speechStyle, v) }); }} className="w-auto py-1 text-xs">
+              <option value="latino neutro">Latino neutro</option><option value="dominicano marcado">Dominicano marcado</option><option value="otro">{accentOf(c) && !/dominican|neutr/.test(accentOf(c)) ? `Otro: ${accentOf(c)}` : "Otro…"}</option>
+            </select>
           </div>
         </article>)}
         {items.filter(c => c.seriesId === s.id).length === 0 && <p className="text-xs text-slate-500">Sin personajes en esta serie todavía.</p>}
