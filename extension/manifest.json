@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "Estudio Viral → Google Flow",
+  "version": "1.0.1",
+  "description": "Envía en lote las escenas de Estudio Viral a Google Flow, con las fichas aprobadas de cada personaje como referencia.",
+  "permissions": [
+    "storage",
+    "unlimitedStorage"
+  ],
+  "host_permissions": [
+    "https://flow.google.com/*",
+    "https://studio-viral-ia.vercel.app/*",
+    "http://localhost/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://studio-viral-ia.vercel.app/*",
+        "http://localhost/*"
+      ],
+      "js": [
+        "app.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://flow.google.com/*"
+      ],
+      "js": [
+        "flow.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}

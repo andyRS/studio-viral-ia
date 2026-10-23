@@ -1,0 +1,37 @@
+ESTUDIO VIRAL → GOOGLE FLOW (extensión de Chrome)
+
+Qué hace
+- En Estudio Viral (episodio → 2 · Imágenes) el botón «Enviar a Flow» le pasa a esta extensión
+  todas las escenas del episodio, con sus prompts y las fichas aprobadas de los personajes.
+- En Google Flow aparece un panel abajo a la derecha. Para cada escena adjunta como
+  ingredientes las fichas aprobadas de los personajes que salen en ella y pega un prompt
+  que identifica cada imagen por el nombre y versión de la biblia.
+- Empieza en modo asistido: tú revisas y generas cada escena. El modo automático se elige
+  manualmente en Flow y consume créditos.
+
+Instalar
+1. Descomprime este .zip en una carpeta que no vayas a borrar.
+2. En Chrome abre chrome://extensions
+3. Activa «Modo de desarrollador» (arriba a la derecha).
+4. Pulsa «Cargar descomprimida» y elige la carpeta.
+5. Recarga Estudio Viral: el botón «Enviar a Flow» se activará.
+
+Usar
+1. En Estudio Viral aprueba las fichas (1 · Biblia) y pulsa «Enviar a Flow» (2 · Imágenes).
+2. En Flow abre o crea un proyecto, elige el formato 9:16 y el modelo que quieras.
+3. En el panel «Estudio Viral → Flow» pulsa «Preparar siguiente». Comprueba el prompt y
+   las fichas, genera la imagen en Flow y pulsa «Marcar generada» para pasar a la siguiente.
+4. Si quieres que la extensión pulse «Iniciar generación», elige «Automático (usa créditos)»
+   y pulsa «Enviar todas». Haz primero una prueba de una sola escena.
+
+Importante
+- Copiar texto al portapapeles no puede adjuntar imágenes. Usa «Enviar a Flow» para pasar
+  las fichas aprobadas por la extensión. Una ficha sin aprobar bloquea el envío.
+- La extensión guarda las fichas en el almacenamiento local de Chrome y las envía solo a Flow.
+- El modo automático usa tus créditos de Google Flow. El modo asistido no genera por sí solo.
+- Si Flow pide una verificación (reCAPTCHA), muestra un error o dice que no hay créditos,
+  la extensión se para. Resuelve tú la verificación y vuelve a pulsar «Enviar todas»:
+  continúa desde la escena pendiente. La extensión nunca intenta saltarse una verificación.
+- Automatizar Flow puede ir contra sus condiciones de uso. Usa pausas razonables entre
+  escenas (12 s por defecto) y el modo asistido si prefieres generar tú cada imagen.
+- Si Google cambia la web de Flow, puede dejar de funcionar hasta que se actualice.

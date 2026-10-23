@@ -10,6 +10,7 @@ import { buildHookBank } from "@/lib/hooks";
 import { useDeleteSeries, confirmDelete } from "@/lib/useDelete";
 import HookPicker from "./HookPicker";
 import IdeasPanel from "./IdeasPanel";
+import FlowSendButton from "./FlowSendButton";
 import type { StoryIdea } from "@/lib/ideas";
 import SceneDesk from "./SceneDesk";
 import { STYLES, type StyleKey } from "@/lib/knowledge";
@@ -510,6 +511,7 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
           <div className="mt-3 flex flex-wrap gap-2">
             <CopyButton text={lote.full} label={`Copiar ${lote.count.escenas} escenas`} />
           </div>
+          <FlowSendButton title={`${seriesTitle || "Serie"} · ${out.title || `Episodio ${part}`}`} scenes={scenes} cast={cast} master={master} />
           <p className="mt-2 text-[11px] text-slate-400">Si Flow corta un lote largo, copia los prompts de escena por separado. No regeneres las fichas maestras de la serie.</p>
         </section>
         <ol className="space-y-3">{scenes.map((s: any) => <li key={s.n} className="rounded-2xl border border-white/10 bg-[#151C2B] p-4">
