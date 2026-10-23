@@ -19,7 +19,7 @@ export const NARRATOR = "Narrador";
 // anterior muestran «Actualizar prompts» (rehace los prompts sin IA y sin tocar el guion).
 export const PROMPT_RULES_VERSION = 7;
 // v7: si la escena tiene un beso, que sea en la boca (breve y romántico).
-const kissNote = (s: { setting: string; line: string }, lang: "es" | "en") => /\bbes(o|a|an|ar|ando|os)\b|\bkiss/i.test(`${s.setting} ${s.line}`)
+const kissNote = (s: { setting: string; line: string }, lang: "es" | "en") => /\bb[eé]s(?:[oóa]|an|ar|ando|ame|it[oa])|\bkiss/i.test(`${s.setting} ${s.line}`)
   ? (lang === "es" ? " BESO: en la boca, de frente y bien visible, breve y romántico; nunca sexual." : " KISS: on the lips, clearly visible, brief and romantic; never sexual.") : "";
 // v6: acento por personaje (accentPrompt): marcado para quien lo tenga en su ficha, neutro para el resto.
 // Ritmo viral (v4): la voz empieza en el primer segundo, sin silencios de entrada ni de salida, ambiente
