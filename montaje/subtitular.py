@@ -57,15 +57,23 @@ ANCHO_UTIL = 960
 def lineas(texto, size, max_lineas=3):
     texto = "".join(c for c in str(texto) if ord(c) < 0x2190).strip()   # sin emojis: Poppins no los tiene
     cabe = max(8, int(ANCHO_UTIL / (size * 0.62)))
-    out, cur = [], ""
-    for w in texto.split():
-        if cur and len(cur) + 1 + len(w) > cabe:
-            out.append(cur); cur = w
-        else:
-            cur = f"{cur} {w}".strip()
-    if cur:
-        out.append(cur)
-    return out[:max_lineas]
+
+    def partir(ancho):
+        out, cur = [], ""
+        for w in texto.split():
+            if cur and len(cur) + 1 + len(w) > ancho:
+                out.append(cur); cur = w
+            else:
+                cur = f"{cur} {w}".strip()
+        return out + [cur] if cur else out
+
+    out = partir(cabe)
+    # Líneas parejas: con el mismo número de líneas, el ancho más estrecho posible
+    # (evita una palabra suelta abajo, tipo «plaza...»).
+    ancho = cabe
+    while ancho > 8 and len(partir(ancho - 1)) == len(out):
+        ancho -= 1
+    return partir(ancho)[:max_lineas]
 
 
 def ajustar(texto, size, minimo):
