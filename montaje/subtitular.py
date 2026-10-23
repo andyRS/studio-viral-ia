@@ -397,11 +397,17 @@ if zona:
     zx, zy, zw, zh = zona
     lw, lh = (int(v) for v in subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=width,height", "-of", "csv=p=0", LOGO],
                                              capture_output=True, text=True).stdout.strip().split(","))
-    alto = zh + 14                                  # alto justo para tapar la marca (+7 px arriba y abajo)
-    ancho = max(zw + 24, alto * lw / lh)
-    alto = ancho * lh / lw
-    x = min(1080 - ancho - 4, zx + zw + 14 - ancho)  # alineada a la derecha de la marca (+14 px: tapa el borde del difuminado)
-    y = zy + zh / 2 - alto / 2
+    # Núcleo totalmente opaco del emblema (marca/frutienganchados.json): se escala lo justo para que ese
+    # núcleo cubra la marca con 4 px de margen por lado y se centra encima. Así es pequeño y siempre la tapa.
+    try:
+        n0x, n0y, n1x, n1y = json.load(open(os.path.splitext(LOGO)[0] + ".json", encoding="utf-8"))["nucleo"]
+    except Exception:
+        n0x, n0y, n1x, n1y = 0.0, 0.0, 1.0, 1.0
+    esc = max((zw + 8) / ((n1x - n0x) * lw), (zh + 8) / ((n1y - n0y) * lh))
+    ancho, alto = lw * esc, lh * esc
+    x = zx + zw / 2 - ((n0x + n1x) / 2) * ancho
+    y = zy + zh / 2 - ((n0y + n1y) / 2) * alto
+    x = max(0, min(1080 - ancho, x))
     shutil.copy(LOGO, "marca.png")
     li = n + (1 if MUSICA else 0)                   # entrada del logo (después de la música si la hay)
     fc += f"[{li}:v]scale={int(ancho)}:{int(alto)}[logo];[vc][logo]overlay={int(x)}:{int(y)}[vm];[vm]"
