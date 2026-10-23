@@ -86,7 +86,8 @@ function rowOf(collection: CollectionName, item: any, userId: string): Row {
         script: out.scriptBlocks ?? null, prompts: out.prompts ?? null, hook: out.hook ?? null,
         cover_text: out.coverText ?? "", description: out.description ?? "",
         hashtags: out.hashtags ?? [], guion_json: out.guionJson ?? null,
-        platform_adaptations: adaptations, versions: item.versions ?? (out ? [out] : []),
+        // La versión vigente (la que se lee al cargar) es la última: el «output» actual siempre va al final.
+        platform_adaptations: adaptations, versions: item.output ? [...(Array.isArray(item.versions) ? item.versions : []).filter((v: any) => v !== item.output).slice(-4), item.output] : (item.versions ?? []),
         status: item.status ?? "Guion",
       };
     }

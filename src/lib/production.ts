@@ -17,7 +17,11 @@ export function timeJump(text: string) {
 export const NARRATOR = "Narrador";
 // Súbelo cada vez que cambien las reglas de los prompts: los episodios guardados con una versión
 // anterior muestran «Actualizar prompts» (rehace los prompts sin IA y sin tocar el guion).
-export const PROMPT_RULES_VERSION = 3;
+export const PROMPT_RULES_VERSION = 4;
+// Ritmo viral (v4): la voz empieza en el primer segundo, sin silencios de entrada ni de salida, ambiente
+// continuo y sin música dentro del clip (la música va en el montaje; si cada clip trae la suya, salta en cada corte).
+const SOUND_ES = "SONIDO: la voz empieza en el primer segundo, sin silencio de entrada ni de salida; ambiente del lugar continuo de principio a fin; SIN música de fondo (la música se añade en la edición).";
+const SOUND_EN = "SOUND: dialogue starts within the first second, no silent intro or outro; continuous ambient sound of the location; NO background music (music is added in editing).";
 // Sin esto, en los primeros planos el modelo de vídeo pasa del 3D animado a un actor real con la piel teñida.
 export const ANIMATION_STYLE_LOCK = "ESTILO FIJO: el mismo render 3D animado de la imagen de la escena durante todo el vídeo, también en los primeros planos y con lluvia o luz dura. Nunca acción real, nunca fotorrealista, nunca un actor o persona real; la cara, la piel de fruta, el pelo y las proporciones del personaje no cambian.";
 const clean = (v: unknown) => String(v ?? "").replace(/\s+/g, " ").trim();
@@ -130,7 +134,8 @@ function animationPrompt(s: { setting: string; speaker: string; line: string; em
 References: image 1 = scene${member ? `; image 2 = character sheet of ${member.name}` : ""}.
 CHARACTERS: ${member ? `${member.name}: ${member.visualEN || member.visualES}; outfit: ${member.clothing}. Real people.` : "No one speaks on camera."}
 SCENE: ${s.setting}.
-SHOTS: 0–2 s: ${shot.en}, ${shot.moveEn}, ${narrator ? "the setting" : `${member!.name} reacts with ${s.emotion}`}. 2–5 s: ${narrator ? "slow push-in while the narrator says" : `medium shot, slow dolly toward ${member!.name}, who says with ${s.emotion}`} (in Spanish, exact words): "${s.line}" 5–8 s: ${narrator ? "wide shot holding on the scene" : `close-up of ${member!.name} holding the emotion after the line, static camera`}.
+SHOTS: ${shot.en}, ${shot.moveEn}. From 0.3 s, with no pause before, ${narrator ? "slow push-in while the narrator says" : `${member!.name}, already in full ${s.emotion}, says while the camera dollies slowly toward the face`} (in Spanish, exact words): "${s.line}" Right after the line: 1 s ${narrator ? "holding on the scene" : `close-up of ${member!.name} holding the emotion`}, then the same shot continues without cuts.
+${SOUND_EN}
 PRONUNCIATION: Latin American Spanish, every word complete, never English accent.
 VOICES: ${voice} No subtitles or on-screen text.`;
   }
@@ -139,8 +144,8 @@ VOICES: ${voice} No subtitles or on-screen text.`;
     ? `${member.name}: personaje 3D animado con rostro y cuerpo humanos y piel de ${member.fruit} (${member.headES}); ${member.clothing}. Idéntico a su ficha (imagen 2) en cada toma: misma cara, mismo color de piel, mismo pelo y misma ropa; nunca una fruta entera como cabeza.`
     : "Personajes 3D animados con rostro humano y piel de fruta, idénticos a sus fichas; nunca una fruta entera como cabeza; nadie habla a cámara.";
   const tomas = narrator
-    ? `0–2 s: ${shot.es} de la escena, ${shot.move}. 2–6 s: acercamiento lento mientras el narrador dice en voz en off: "${s.line}" 6–8 s: plano general que se sostiene en silencio.`
-    : `0–2 s: ${shot.es}, ${shot.move}; ${member!.name} reacciona con ${s.emotion}. 2–5 s: plano medio con dolly lento hacia ${member!.name}, que dice con ${s.emotion}: "${s.line}" 5–8 s: primer plano de ${member!.name} sosteniendo la emoción al terminar la frase, cámara fija.`;
+    ? `${shot.es} de la escena, ${shot.move}. Desde 0,3 s, sin pausa previa y con acercamiento lento, el narrador dice en voz en off: "${s.line}" Justo al terminar: 1 s sosteniendo la imagen; después la misma toma sigue sin cortes.`
+    : `${shot.es}, ${shot.move}; ${member!.name} ya está en plena emoción (${s.emotion}) desde el primer fotograma. Desde 0,3 s, sin pausa previa, ${member!.name} dice con ${s.emotion}, mientras la cámara hace un dolly lento hacia su cara: "${s.line}" Justo al terminar la frase: 1 s de primer plano de ${member!.name} sosteniendo la emoción; después la misma toma sigue sin cortes.`;
   const voces = narrator
     ? `VOCES: Narrador: voz masculina profunda y cálida, en off. Español latino neutro, cada palabra completa, nunca acento inglés. Nadie mueve los labios. Sin subtítulos ni texto en pantalla.`
     : `VOCES: ${member!.name}: ${member!.voice}. Español latino neutro, cada palabra completa, nunca acento inglés. Solo habla ${member!.name}; sincronización de labios solo para quien habla. Sin subtítulos ni texto en pantalla.`;
@@ -151,13 +156,14 @@ PERSONAJES: ${personajes}
 ESCENA: ${s.setting}.${guard}
 TOMAS: ${tomas}
 PRONUNCIACIÓN OBLIGATORIA: ${pronunciationFor(member, s.line)}.
-${voces}`;
+${voces}
+${SOUND_ES}`;
 }
 
 // Prompt de Dola (Seedance) con las escenas elegidas para la versión corta.
 function buildDolaPrompt(dolaScenes: { n: number; setting: string; speaker: string; line: string; emotion: string }[], cast: CastMember[], style: StyleKey, total: number, dolaDuration: number) {
   const castLine = cast.map(c => isFruitStyle(style) ? `${c.name}: personaje 3D animado con rostro humano y piel de ${c.fruit} (${c.headES}); ${c.clothing}` : `${c.name}: ${c.visualEN || c.visualES}; ${c.clothing}`).join(". ");
-  return `Usa Seedance 2.5. ${isFruitStyle(style) ? `Telenovela animada 3D (render CGI de película animada premium), vertical 9:16; personajes 3D animados de rostro humano con piel de su fruta, nunca una fruta entera como cabeza. ${ANIMATION_STYLE_LOCK}` : "Película romántica dominicana de los 90, 35 mm, vertical 9:16, personas reales."} ${total > dolaDuration ? `Adaptación de ${dolaDuration} s del episodio de ${total} s. Conserva el gancho y el cierre; elimina solo escenas intermedias.` : `Episodio completo de ${total} s.`}${style === "cristiana" ? ` ${CHRISTIAN_SCENE_GUARD[0].toUpperCase()}${CHRISTIAN_SCENE_GUARD.slice(1)}.` : ""} PERSONAJES: ${castLine}. ${dolaScenes.map((s, i) => `${i * SCENE_SECONDS}-${(i + 1) * SCENE_SECONDS}s [escena ${s.n}]: ${s.setting}. ${s.speaker === NARRATOR ? `Narrador en off: "${s.line}"` : `${s.speaker} dice con ${s.emotion}: "${s.line}"`}`).join(" ")} PRONUNCIACIÓN OBLIGATORIA: ${Array.from(new Set(cast.flatMap(c => c.pronunciations).concat(dialectPronunciations(dolaScenes.map(s => s.line).join(" "))))).join("; ") || "palabras completas con acentos correctos"}. VOCES: español latino neutro, cada palabra completa, nunca acento inglés; sincronización de labios solo para quien habla; sin subtítulos ni texto en pantalla.`;
+  return `Usa Seedance 2.5. ${isFruitStyle(style) ? `Telenovela animada 3D (render CGI de película animada premium), vertical 9:16; personajes 3D animados de rostro humano con piel de su fruta, nunca una fruta entera como cabeza. ${ANIMATION_STYLE_LOCK}` : "Película romántica dominicana de los 90, 35 mm, vertical 9:16, personas reales."} ${total > dolaDuration ? `Adaptación de ${dolaDuration} s del episodio de ${total} s. Conserva el gancho y el cierre; elimina solo escenas intermedias.` : `Episodio completo de ${total} s.`}${style === "cristiana" ? ` ${CHRISTIAN_SCENE_GUARD[0].toUpperCase()}${CHRISTIAN_SCENE_GUARD.slice(1)}.` : ""} PERSONAJES: ${castLine}. ${dolaScenes.map((s, i) => `${i * SCENE_SECONDS}-${(i + 1) * SCENE_SECONDS}s [escena ${s.n}]: ${s.setting}. ${s.speaker === NARRATOR ? `Narrador en off: "${s.line}"` : `${s.speaker} dice con ${s.emotion}: "${s.line}"`}`).join(" ")} PRONUNCIACIÓN OBLIGATORIA: ${Array.from(new Set(cast.flatMap(c => c.pronunciations).concat(dialectPronunciations(dolaScenes.map(s => s.line).join(" "))))).join("; ") || "palabras completas con acentos correctos"}. VOCES: español latino neutro, cada palabra completa, nunca acento inglés; sincronización de labios solo para quien habla; sin subtítulos ni texto en pantalla. RITMO: cada personaje responde enseguida, sin pausas entre frases; ambiente continuo y SIN música de fondo (se añade en la edición).`;
 }
 
 // Construye todo el paquete de producción del episodio a partir de lo que devolvió la IA.
@@ -348,5 +354,8 @@ export function refreshPrompts(out: any, style: StyleKey) {
   const dolaNums: number[] = Array.isArray(out?.dolaSceneNumbers) && out.dolaSceneNumbers.length ? out.dolaSceneNumbers : selectShortScenes(scenes, Math.floor(60 / SCENE_SECONDS)).map((s: any) => s.n);
   const dolaScenes = scenes.filter((s: any) => dolaNums.includes(s.n));
   const dolaDuration = dolaScenes.length * SCENE_SECONDS;
-  return { ...out, scenes, prompts: scenes.map((s: any) => s.animationPrompt), dolaPrompt: scenes.length ? buildDolaPrompt(dolaScenes, cast, style, total, dolaDuration) : out?.dolaPrompt, promptsVersion: PROMPT_RULES_VERSION };
+  // Saltos de tiempo para el montaje también en episodios guardados antes de existir las tarjetas.
+  const tarjetas = scenes.map((s: any, i: number) => ({ antes: i, texto: timeJump(`${s.transition || ""} ${s.setting || ""}`) })).filter((t: any) => t.antes > 0 && t.texto);
+  const guionJson = out?.guionJson ? { ...out.guionJson, ...(tarjetas.length ? { tarjetas } : {}) } : out?.guionJson;
+  return { ...out, guionJson, scenes, prompts: scenes.map((s: any) => s.animationPrompt), dolaPrompt: scenes.length ? buildDolaPrompt(dolaScenes, cast, style, total, dolaDuration) : out?.dolaPrompt, promptsVersion: PROMPT_RULES_VERSION };
 }

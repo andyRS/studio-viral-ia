@@ -178,14 +178,14 @@ for ci, clip in enumerate(clips):
         if len(best) >= 0.6 * len(prompt.split()):
             break
     # Recorte de silencios muertos: se empieza justo antes de la primera palabra y se corta medio
-    # segundo después de la última (deja respirar la reacción). Sin voz detectada, el clip va entero.
+    # segundo largo después de la última (deja ver la reacción). Sin voz detectada, el clip va entero.
     a, b = 0.0, D
     if RECORTAR and best and G["clips"][ci]:
         primera, ultima = best[0]["s"], max(x["e"] for x in best)
         if primera > 0.35:
             a = max(0.0, primera - 0.18)
-        if D - ultima > 0.75:
-            b = min(D, ultima + 0.5)
+        if D - ultima > 0.95:
+            b = min(D, ultima + 0.7)   # 0,7 s de reacción tras la frase
         if b - a < 1.2:
             a, b = 0.0, D
     for x in best:
