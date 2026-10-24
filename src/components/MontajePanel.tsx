@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { postApi, isAuthError } from "@/lib/api-client";
 import CopyButton from "./CopyButton";
+import { episodeTrackPrompt, seriesThemePrompt, type MusicContext } from "@/lib/music";
 
 // Marcas de agua conocidas: el servidor reescala a 720x1280 (Dola) o 704x1280 (Pavo) y las borra (ver montaje/README.md).
 type Watermark = "none" | "dola" | "pavo" | "custom";
@@ -65,23 +66,7 @@ export function defaultCta(style: string, part: number, last: boolean) {
   return last ? "Dale me gusta y comenta qué te pareció" : `Comenta PARTE ${part + 1}`;
 }
 
-// Prompt para que Muse (muse.ai) cree la música de fondo original del episodio. Muse no tiene API
-// pública: se copia el prompt, se descarga el MP3 que crea y se sube aquí.
-export function musePrompt(style: string, seconds: number, cues: string[]) {
-  const mood = style === "cristiana" ? "emotiva y esperanzadora, de inspiración cristiana (piano, cuerdas y pads cálidos)"
-    : style === "cine90" ? "dramática de telenovela de los 90 (cuerdas, piano y sintetizadores de la época)"
-    : "dramática de telenovela latina moderna (cuerdas, piano y percusión suave)";
-  const arc = Array.from(new Set(cues.map(c => c.trim()).filter(Boolean))).slice(0, 6);
-  return [
-    `Crea una pista instrumental original, sin voces ni letra, de ${Math.max(30, Math.round(seconds))} segundos, para el fondo de un microdrama vertical de redes sociales.`,
-    `Estilo: música ${mood}.`,
-    arc.length ? `Que siga este arco emocional, en orden: ${arc.join(" → ")}.` : "Que empiece con tensión, suba hacia un clímax y cierre con un final emotivo en suspenso.",
-    "Debe quedar por debajo de los diálogos: melodía sencilla, sin solos fuertes ni golpes que tapen las voces.",
-    "Formato: MP3 de buena calidad, que empiece y termine limpio.",
-  ].join("\n");
-}
-
-export default function MontajePanel({ guion, title, filesOverride, style = "frutinovela", part = 1, musicCues = [], seconds = 0, onDownloaded, publish = [] }: { guion: any; title: string; filesOverride?: File[]; style?: string; part?: number; musicCues?: string[]; seconds?: number; onDownloaded?: () => void; publish?: { platform: string; text: string; hashtags: string; extra?: string }[] }) {
+export default function MontajePanel({ guion, title, filesOverride, style = "frutinovela", part = 1, musicCues = [], seconds = 0, onDownloaded, publish = [], music: musicCtx = {} }: { music?: Partial<MusicContext>; guion: any; title: string; filesOverride?: File[]; style?: string; part?: number; musicCues?: string[]; seconds?: number; onDownloaded?: () => void; publish?: { platform: string; text: string; hashtags: string; extra?: string }[] }) {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const files = filesOverride ?? selectedFiles;
   const [watermark, setWatermark] = useState<Watermark>("none");
@@ -255,11 +240,14 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
     <div className="space-y-2 rounded-lg border border-white/10 p-3">
       <p className="text-xs text-slate-300">Música de fondo original <span className="text-slate-500">(opcional · creada con Muse)</span></p>
       <ol className="list-decimal space-y-1 pl-4 text-[11px] text-slate-400">
-        <li>Copia el prompt y pégalo en <a href="https://muse.ai" target="_blank" rel="noreferrer" className="text-sky-300 underline">Muse</a>.</li>
-        <li>Descarga el MP3 que crea y súbelo aquí. Si es más corto que el episodio, se repite.</li>
-        <li>Al montar, la música va por debajo y baja sola cuando alguien habla.</li>
+        <li><b>Una vez por serie:</b> copia «Tema de la serie» y créalo en <a href="https://muse.ai" target="_blank" rel="noreferrer" className="text-sky-300 underline">Muse</a>. Es la melodía de firma: la misma en todas las partes.</li>
+        <li><b>En cada capítulo:</b> copia «Pista de este capítulo» (una versión del tema con la duración y los momentos de este episodio). Si Muse deja subir audio de referencia, sube el tema.</li>
+        <li>Descarga el MP3 y súbelo aquí. Al montar va por debajo y baja un poco cuando hablan.</li>
       </ol>
-      <CopyButton text={musePrompt(style, seconds || files.length * 8, musicCues)} label="Copiar prompt para Muse" />
+      {(() => { const ctx: MusicContext = { style, part, cues: musicCues, seconds, scenes: files.length, ...musicCtx }; return <div className="flex flex-wrap gap-2">
+        <CopyButton text={seriesThemePrompt(ctx)} label="Copiar tema de la serie" />
+        <CopyButton text={episodeTrackPrompt(ctx)} label="Copiar pista de este capítulo" />
+      </div>; })()}
       <div className="flex flex-wrap items-center gap-2">
         <input type="file" accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/mp4,audio/x-m4a,audio/aac,audio/ogg,audio/flac,.mp3,.wav,.m4a,.aac,.ogg,.flac" onChange={e => setMusic(e.target.files?.[0] || null)} disabled={busy} />
         {music && <><select aria-label="Volumen de la música" value={musicVol} onChange={e => setMusicVol(e.target.value)} disabled={busy} className="text-xs"><option value="0.1">Muy suave</option><option value="0.18">Suave (recomendado)</option><option value="0.28">Media</option></select>
