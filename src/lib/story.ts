@@ -157,13 +157,14 @@ function fallbackNotice(error: unknown) {
 // respuesta recortada o una frase repetida en casi todas las escenas.
 function validateEpisode(episode: ReturnType<typeof buildProduction>, duration: number) {
   const expected = sceneCountFor(duration);
-  if (episode.scenes.length !== expected) throw new Error(`el guion tenía ${episode.scenes.length} escenas en vez de ${expected}`);
+  // 1 o 2 escenas de más o de menos no son un error (la IA a veces junta o parte una): solo se rechaza si se desvía mucho.
+  if (Math.abs(episode.scenes.length - expected) > 2) throw new Error(`el guion tenía ${episode.scenes.length} escenas en vez de ${expected}`);
   if (episode.scenes[episode.scenes.length - 1]?.speaker !== NARRATOR) throw new Error("faltó el cierre del narrador");
   const lines = episode.scenes.map(scene => norm(scene.line));
   const counts = new Map<string, number>();
   for (const line of lines) counts.set(line, (counts.get(line) || 0) + 1);
   if (Math.max(...Array.from(counts.values())) > 2) throw new Error("el guion repitió el mismo diálogo");
-  if (episode.duration !== expected * 8) throw new Error("la duración del guion no coincide con sus escenas");
+  if (episode.duration !== episode.scenes.length * 8) throw new Error("la duración del guion no coincide con sus escenas");
 }
 
 // ---------- HISTORIA NUEVA ----------

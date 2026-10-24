@@ -422,6 +422,14 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
         episode={result.episode} episodeId={result.episodeId} seriesId={result.seriesId} part={result.part} seriesTitle={data.series.find((s: any) => s.id === result.seriesId)?.title} initialTab={openTab || focusTab}
         status={data.episodes.find((e: any) => e.id === result.episodeId)?.status}
         onFinish={async () => { if (result.episodeId && !isFinished(data.episodes.find((e: any) => e.id === result.episodeId))) await update("episodes", result.episodeId, { status: FINISHED }); }}
+        onAcceptDraft={async () => {
+          // Borrador de Gemini revisado por el usuario: pasa a guion normal (y deja de bloquear la parte siguiente).
+          if (!result.episodeId || !window.confirm("¿Dar por bueno este guion y pasarlo a producción?")) return;
+          const output = { ...result.episode, mode: "llm", qualityIssues: undefined };
+          await update("episodes", result.episodeId, { status: "Guion", output });
+          setResult({ ...result, episode: output });
+          setNotice("Guion aceptado: ya puedes producirlo y crear la parte siguiente.");
+        }}
         onUnlock={async () => { if (result.episodeId && window.confirm("¿Desbloquear este episodio para volver a editarlo?")) await update("episodes", result.episodeId, { status: "Guion" }); }}
         backLabel={data.series.find((s: any) => s.id === result.seriesId)?.title}
         onBack={() => { if (result.seriesId && data.series.some((s: any) => s.id === result.seriesId)) openSeries(result.seriesId); else setView("inicio"); }} onNext={() => { setSeriesId(result.seriesId); setView("continuar"); }}
@@ -489,7 +497,7 @@ function DownloadText({ text, filename, label }: { text: string; filename: strin
 const Field = ({ label, value }: { label: string; value?: string }) => value ? <div><dt className="inline font-semibold text-slate-200">{label}: </dt><dd className="inline text-slate-300">{value}</dd></div> : null;
 const RefChips = ({ refs }: { refs?: string[] }) => <p className="mt-2 text-[11px] text-sky-200">Referencias a seleccionar (fuera del prompt): {(refs || []).length ? (refs || []).map(r => <span key={r} className="ml-1 rounded-full bg-sky-400/15 px-2 py-0.5">{r}</span>) : <span className="text-slate-400">ninguna</span>}</p>;
 
-function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialTab, status, onFinish, onUnlock, backLabel, onBack, onNext, onRecreate, onDelete, onRefreshPrompts }: any) {
+function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialTab, status, onFinish, onUnlock, onAcceptDraft, backLabel, onBack, onNext, onRecreate, onDelete, onRefreshPrompts }: any) {
   type Tab = "guion" | "elenco" | "imagenes" | "animacion" | "mesa" | "redes" | "plataformas" | "archivos";
   const { data, update } = useData();
   const cast: any[] = Array.isArray(out.cast) ? out.cast : [];
@@ -544,6 +552,7 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
     <div className={`mt-4 rounded-xl border p-4 text-sm ${fromAI ? "border-emerald-400/25 bg-emerald-400/[.07] text-emerald-100" : "border-amber-400/30 bg-amber-400/[.08] text-amber-100"}`}>
       <p className="font-bold">{out.mode === "importado" ? "Parte publicada e importada · solo lectura" : out.mode === "guion-manual" ? `Guion escrito · ${cast.length} personajes · ${(out.scriptBlocks || []).length} bloques · pendiente de producción` : fromAI ? `Guion escrito por la IA · ${cast.length} personajes · ${scenes.length || (out.scriptBlocks || []).length} escenas · ${fullDuration} s` : isTemplate ? "Borrador de la plantilla local (sin IA)" : isAIDraft ? "Borrador de Gemini · pendiente de corregir" : "Borrador anterior sin elenco de producción"}</p>
       <p className="mt-1 text-xs leading-5">{fromAI ? "Orden de trabajo: aprueba las fichas maestras → genera imágenes con esas referencias → anima y revisa cada escena → monta el vídeo." : isTemplate ? "Elenco de frutas, escenas, prompts y montaje completos, pero el diálogo es de estructura genérica: revísalo antes de producir o recréalo con la IA cuando esté disponible." : isAIDraft ? `Se conservaron las escenas y personajes de Gemini, pero ${out.qualityIssues?.join("; ") || "el guion necesita revisión"}. Revísalo antes de producir o recréalo con la IA.` : "Este episodio se creó con una versión anterior. Recréalo para tener el elenco y las escenas de producción."}</p>
+      {isAIDraft && !finished && cast.length >= 2 && scenes.length > 0 && <button type="button" onClick={onAcceptDraft} className="mr-2 mt-3 rounded-lg bg-emerald-400 px-3 py-2 text-xs font-bold text-slate-950 hover:bg-emerald-300">Usar este guion así</button>}
       {!fromAI && <button onClick={onRecreate} className="mt-3 rounded-lg bg-amber-500 px-3 py-2 text-xs font-bold text-slate-950 hover:bg-amber-400">Recrear con la IA</button>}
       {out.shortForLongPlatforms && <p className="mt-2 text-xs">{out.shortForLongPlatforms}</p>}
     </div>
