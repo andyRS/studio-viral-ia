@@ -34,7 +34,8 @@ export const PELICULAS_PROFILE: Omit<AccountProfile, "id" | "accountId"> = {
     "Portadas de serie: nombre de la serie y frase de intriga arriba, en la zona segura (300-600 px), y «PARTE» con el número enorme en dorado abajo (1290-1640 px)",
     "Calidad: exportar a 1440x2560, o al menos a 1080x1920",
     "Vestuario: elegante y de manga larga; nada de bikinis, toallas ni escotes",
-    "Prompts visuales: en inglés, con el diálogo en español latino neutro, acentos correctos y sin contracciones, empezando por «Usa Seedance 2.5.»",
+    "Prompts visuales: en inglés (la escena entera, sin mezclar español ni palabras de emoción sueltas), con el diálogo en español latino neutro, acentos correctos y sin contracciones. «Usa Seedance 2.5.» va SOLO al inicio de los prompts de animación (vídeo), nunca en los de imagen de Flow",
+    "Continuidad: el objeto que se revela en la parte siguiente no se abre en esta (como mucho aparece cerrado al final)",
   ],
   schedule: [
     { day: "Lunes", piece: "Historia suelta" },

@@ -224,6 +224,8 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
         // Si no se pide nada, se sigue el plan guardado de la serie para esa parte (p. ej. «Parte 6: …»).
         series: { title: current.title, logline: current.description }, bible, style: bible.style, partNumber: part, wish: wish.trim() || String(bible?.plan?.[part] || ""), duration, account: data.accounts.find((a: any) => a.id === current.accountId) || account, learnings, chosenHook,
         accountProfile: profileFor(current.accountId),
+        // Continuidad: lo que el plan guarda para la parte siguiente no se abre en esta.
+        nextPlan: String(bible?.plan?.[part + 1] || ""),
         characters: currentCast.map((c: any) => ({ name: c.name, role: c.role, fruit: c.fruit, fruitEmoji: c.fruitEmoji, headES: c.headES, visualES: c.visualES, visualEN: c.visualEN, clothing: c.clothing, voice: c.voice, subtitleColor: c.subtitleColor, speechStyle: c.speechStyle, pronunciations: c.pronunciations, flowPrompt: c.flowPrompt })),
         // El último cierre (cliffhanger) va explícito: la parte nueva arranca justo ahí y termina con un gancho aún más fuerte.
         history: eps.map((e: any, i: number) => ({ part: i + 1, title: e.title, summary: e.output?.summary || e.theme, cliffhanger: cliffhangerOf(e.output) })),

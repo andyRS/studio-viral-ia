@@ -13,7 +13,8 @@ export function profileText(p?: Partial<AccountProfile> | null, sharedCast: { na
     p.goals?.length && `Metas: ${p.goals.join(" | ")}.`,
     p.audience && `Público: ${p.audience}.`,
     p.results && `Resultados que respaldan el formato: ${p.results}.`,
-    p.contentRules?.length && `REGLAS DE CONTENIDO DE LA CUENTA:\n${p.contentRules.map(r => `- ${r}`).join("\n")}`,
+    // Perfiles guardados con la regla antigua: «Usa Seedance 2.5.» solo va en los prompts de vídeo.
+    p.contentRules?.length && `REGLAS DE CONTENIDO DE LA CUENTA:\n${p.contentRules.map(r => `- ${r.replace(/,?\s*empezando por «Usa Seedance 2\.5\.»/, ". «Usa Seedance 2.5.» va solo al inicio de los prompts de animación (vídeo), nunca en los de imagen")}`).join("\n")}`,
     p.schedule?.length && `Ritmo semanal: ${p.schedule.map(s => `${s.day}: ${s.piece}`).join("; ")}.${p.scheduleNotes?.length ? " " + p.scheduleNotes.join(" ") : ""}`,
     p.cta && `CTA: ${p.cta}.`,
     p.commentWords?.length && `Palabras para comentar: ${p.commentWords.join(", ")}.`,
