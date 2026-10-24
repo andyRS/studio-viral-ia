@@ -28,6 +28,8 @@ Opcionales:
   "tarjetas": [{"antes": 3, "texto": "Horas después..."}]   tarjeta negra de 1,6 s antes del clip 3 (índice desde 0)
   "anterior_archivo": lo pone server.py: vídeo o clip de la parte anterior; abre el episodio con 7 s en
                       blanco y negro y «Anteriormente...».
+  "musica_modo": "extremos" | "todo"   «extremos»: la música (firma de la serie) suena solo en los primeros 4 s
+                                     y en los últimos 8 s con el «Continuará…»; «todo» (por defecto): todo el vídeo.
   "musica_volumen": 0.05-0.4   volumen de la música de fondo (0.18 por defecto). El archivo lo pone
                                server.py en "musica_archivo"; se repite si es corto y baja sola cuando hablan.
   Un bloque vacío [] sirve para clips sin diálogo (tarjetas "Un año después...").
@@ -436,14 +438,20 @@ if MUSICA:
     # 6 dB bajo las voces; cuando hablan baja solo ~4 dB más. Antes iba al 18 % y con la voz casi continua
     # (sin pausas) se hundía 12-15 dB y no se oía.
     vol = min(0.4, max(0.05, float(G.get("musica_volumen") or 0.18)))
+    EXTREMOS = str(G.get("musica_modo") or "") == "extremos"
     gan = vol / 0.18                                   # 0.18 = «Suave (recomendado)» = nivel de referencia
     inputs += ["-stream_loop", "-1", "-i", MUSICA]   # entrada n (el logo, si lo hay, va después)
     fc += (f";[{n}:a]aresample=48000,aformat=channel_layouts=stereo,atrim=0:{total:.2f},"
            f"loudnorm=I=-24:TP=-3:LRA=11,aresample=48000,volume={gan:.2f},"
-           f"afade=t=in:d=0.6,afade=t=out:st={max(0, total - 2.5):.2f}:d=2.5[mus];"
+           # «extremos»: la música sube en los primeros 4 s y en los últimos 8 s; en medio queda en silencio.
+           + (f"volume='max(clip(4.5-t,0,1),clip(t-{max(5.0, total - 8.5):.2f},0,1))':eval=frame," if EXTREMOS else "")
+           + f"afade=t=in:d=0.6,afade=t=out:st={max(0, total - 2.5):.2f}:d=2.5[mus];"
            f"[voz]asplit[voz1][voz2];[mus][voz1]sidechaincompress=threshold=0.08:ratio=2.5:attack=30:release=400[musb];"
            f"[voz2][musb]amix=inputs=2:duration=first:normalize=0[a]")
-    progreso(69, f"Música de fondo a volumen fijo ({'muy suave' if gan < 0.8 else 'media' if gan > 1.2 else 'suave'}), baja un poco cuando hablan")
+    if EXTREMOS:
+        progreso(69, "Música solo al inicio (4 s) y al final con el «Continuará…»; en medio, voces y ambiente")
+    else:
+        progreso(69, f"Música de fondo a volumen fijo ({'muy suave' if gan < 0.8 else 'media' if gan > 1.2 else 'suave'}), baja un poco cuando hablan")
 VCODEC = (["-c:v", "h264_nvenc", "-preset", "p5", "-rc", "vbr", "-cq", "19", "-b:v", "0"]
           if os.environ.get("VIDEO_ENCODER") == "h264_nvenc"
           else ["-c:v", "libx264", "-crf", "17", "-preset", os.environ.get("X264_PRESET", "medium")])

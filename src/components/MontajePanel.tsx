@@ -77,6 +77,9 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
   const [rect, setRect] = useState({ x: "", y: "", w: "", h: "" });
   const [music, setMusic] = useState<File | null>(null);
   const [musicVol, setMusicVol] = useState("0.18");
+  // Dónde suena la música: como firma de la serie al inicio y al final (recomendado, como los virales:
+  // en medio solo voces y ambiente) o por debajo de todo el vídeo.
+  const [musicMode, setMusicMode] = useState<"extremos" | "todo">("extremos");
   const [recortar, setRecortar] = useState(true);
   const [anterior, setAnterior] = useState<File | null>(null);
   const musicUrl = useMemo(() => (music ? URL.createObjectURL(music) : ""), [music]);
@@ -149,7 +152,7 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
         base = t.json.url; headers = { Authorization: `Ticket ${t.json.ticket}` };
       }
       // Un servidor sin actualizar ignora la música sin avisar: se comprueba antes de subir nada.
-      const needs = [music && ["musica", "la música de fondo"], anterior && ["anterior", "«Anteriormente...»"], recortar && ["recorte", "quitar las pausas"]].filter(Boolean) as [string, string][];
+      const needs = [music && ["musica", "la música de fondo"], music && musicMode === "extremos" && ["musica_modo", "la música solo al inicio y al final"], anterior && ["anterior", "«Anteriormente...»"], recortar && ["recorte", "quitar las pausas"]].filter(Boolean) as [string, string][];
       if (needs.length) {
         const caps = await fetch(`${base}/salud`, { signal: AbortSignal.timeout(8000) }).then(r => r.json()).catch(() => null);
         const missing = needs.filter(([k]) => !caps?.[k]).map(([, label]) => label);
@@ -161,7 +164,7 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
         }
       }
       const fd = new FormData();
-      fd.append("guion", new Blob([JSON.stringify({ ...adaptGuion(guion, files.length, { marca, delogo, cierre: lastEpisode ? "FIN" : guion?.cierre || "Continuará...", cierreCta: cta }), ...(music ? { musica_volumen: Number(musicVol) } : {}), recortar })], { type: "application/json" }), "guion.json");
+      fd.append("guion", new Blob([JSON.stringify({ ...adaptGuion(guion, files.length, { marca, delogo, cierre: lastEpisode ? "FIN" : guion?.cierre || "Continuará...", cierreCta: cta }), ...(music ? { musica_volumen: Number(musicVol), musica_modo: musicMode } : {}), recortar })], { type: "application/json" }), "guion.json");
       for (const f of files) fd.append("clips", f, f.name);
       if (music) fd.append("musica", music, music.name);
       if (anterior) fd.append("anterior", anterior, anterior.name);
@@ -241,7 +244,7 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
       <p className="text-xs text-slate-300">Música de fondo original <span className="text-slate-500">(opcional · creada con Muse)</span></p>
       <ol className="list-decimal space-y-1 pl-4 text-[11px] text-slate-400">
         <li><b>Una vez por serie:</b> copia «Tema de la serie» y créalo en <a href="https://muse.ai" target="_blank" rel="noreferrer" className="text-sky-300 underline">Muse</a>. Es la melodía de firma: la misma en todas las partes.</li>
-        <li><b>En cada capítulo:</b> copia «Pista de este capítulo» (una versión del tema con la duración y los momentos de este episodio). Si Muse deja subir audio de referencia, sube el tema.</li>
+        <li><b>Con «Inicio y final»</b> (recomendado) basta el tema de la serie: suena con el gancho y vuelve en el «Continuará…». <b>Con «Todo el vídeo»</b>, copia «Pista de este capítulo» (una versión del tema con la duración y los momentos de este episodio).</li>
         <li>Descarga el MP3 y súbelo aquí. Al montar va por debajo y baja un poco cuando hablan.</li>
       </ol>
       {(() => { const ctx: MusicContext = { style, part, cues: musicCues, seconds, scenes: files.length, ...musicCtx }; return <div className="flex flex-wrap gap-2">
@@ -250,7 +253,8 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
       </div>; })()}
       <div className="flex flex-wrap items-center gap-2">
         <input type="file" accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/mp4,audio/x-m4a,audio/aac,audio/ogg,audio/flac,.mp3,.wav,.m4a,.aac,.ogg,.flac" onChange={e => setMusic(e.target.files?.[0] || null)} disabled={busy} />
-        {music && <><select aria-label="Volumen de la música" value={musicVol} onChange={e => setMusicVol(e.target.value)} disabled={busy} className="text-xs"><option value="0.1">Muy suave</option><option value="0.18">Suave (recomendado)</option><option value="0.28">Media</option></select>
+        {music && <><select aria-label="Dónde suena la música" value={musicMode} onChange={e => setMusicMode(e.target.value as "extremos" | "todo")} disabled={busy} className="text-xs"><option value="extremos">Inicio y final (firma de la serie, recomendado)</option><option value="todo">Todo el vídeo, por debajo de las voces</option></select>
+        <select aria-label="Volumen de la música" value={musicVol} onChange={e => setMusicVol(e.target.value)} disabled={busy} className="text-xs"><option value="0.1">Muy suave</option><option value="0.18">Suave (recomendado)</option><option value="0.28">Media</option></select>
         <button type="button" disabled={busy} onClick={() => setMusic(null)} className="text-xs text-slate-400 hover:text-red-300">Quitar música</button></>}
       </div>
       {music && <audio src={musicUrl} controls className="h-8 w-full max-w-sm" />}
