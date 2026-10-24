@@ -20,6 +20,7 @@ export interface IdeasRequest {
   biblical?: { character: string; mode: "epoca" | "moderna" } | null;
   avoid?: string[];                         // ideas o títulos ya propuestos / series existentes
   history?: { role: "user" | "ia"; text: string }[];
+  accountProfile?: string;                  // perfil de la cuenta (profileText): manda sobre las reglas generales
   count?: number;
 }
 

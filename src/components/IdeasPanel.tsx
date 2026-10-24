@@ -8,8 +8,8 @@ import type { StyleKey } from "@/lib/knowledge";
 
 type Turn = { role: "user" | "ia"; text: string; ideas?: StoryIdea[] };
 
-export default function IdeasPanel({ style, online, existing, onUse, busy: creating = false }: {
-  style: StyleKey; online: boolean; existing: string[]; onUse: (idea: StoryIdea, start?: boolean) => void; busy?: boolean;
+export default function IdeasPanel({ style, online, existing, onUse, busy: creating = false, accountProfile = "" }: {
+  style: StyleKey; online: boolean; existing: string[]; onUse: (idea: StoryIdea, start?: boolean) => void; busy?: boolean; accountProfile?: string;
 }) {
   const [direction, setDirection] = useState("");
   const [bibleOn, setBibleOn] = useState(false);
@@ -24,7 +24,7 @@ export default function IdeasPanel({ style, online, existing, onUse, busy: creat
     const request = direction.trim() || (more ? "Dame más ideas distintas" : bibleOn ? `Ideas con ${character.trim()}` : "Sorpréndeme con ideas que enganchen");
     const shown = turns.flatMap(t => (t.ideas || []).map(i => i.idea));
     const body = {
-      style, direction: request, count: 4,
+      style, direction: request, count: 4, accountProfile,
       biblical: bibleOn ? { character: character.trim(), mode: bibleMode } : null,
       avoid: [...existing, ...shown],
       history: turns.map(t => ({ role: t.role, text: t.role === "ia" ? `${t.text} Ideas: ${(t.ideas || []).map(i => i.title).join("; ")}` : t.text })),

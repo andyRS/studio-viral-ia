@@ -17,7 +17,8 @@ export function timeJump(text: string) {
 export const NARRATOR = "Narrador";
 // Súbelo cada vez que cambien las reglas de los prompts: los episodios guardados con una versión
 // anterior muestran «Actualizar prompts» (rehace los prompts sin IA y sin tocar el guion).
-export const PROMPT_RULES_VERSION = 10;
+export const PROMPT_RULES_VERSION = 11;
+// v11: los prompts de cine de los 90 empiezan por «Usa Seedance 2.5.» (regla de @peliculasquenoexisten.rd).
 // v10: cristiana con vocabulario neutro y global (sin jerga ni groserías) y acento dominicano suave.
 // v9: escenas sin hablante en cámara (Narrador): o salen los personajes presentes con sus fichas, o el lugar
 // va VACÍO. Antes el generador rellenaba con frutas inventadas (cabeza de fruta entera) que no son el elenco.
@@ -182,7 +183,7 @@ function animationPrompt(s: { setting: string; speaker: string; line: string; em
   const shot = shotFor(i);
   if (!isFruitStyle(style)) {
     const voice = narrator ? `Off-screen narrator voice; nobody moves their lips.` : `Only ${member!.name} speaks; lip sync only for ${member!.name}. Voice: ${member!.voice}.`;
-    return `1990s Dominican romance film, 35mm grain, warm golden light, vertical 9:16, 8 seconds. Animate from the scene image as the first frame.
+    return `Usa Seedance 2.5. 1990s Dominican romance film, 35mm grain, warm golden light, vertical 9:16, 8 seconds. Animate from the scene image as the first frame.
 References: image 1 = scene${member ? `; image 2 = character sheet of ${member.name}` : others.length ? others.map((o, k) => `; image ${k + 2} = character sheet of ${o.name}`).join("") : ""}.
 CHARACTERS: ${member ? `${member.name}: ${member.visualEN || member.visualES}; outfit: ${member.clothing}. Real people.` : others.length ? `${others.map(o => `${o.name}: ${o.visualEN || o.visualES}; outfit: ${o.clothing}`).join(". ")}. Real people, identical to their sheets; nobody speaks on camera.` : `${EMPTY_EN}. Nobody appears at any moment.`}
 SCENE: ${s.location ? `${s.location} (same set as the other scenes here). ` : ""}${s.setting}.

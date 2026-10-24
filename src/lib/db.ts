@@ -6,12 +6,15 @@
 export type CollectionName =
   | "accounts" | "series" | "characters" | "formulas" | "episodes"
   | "productionCards" | "clipChecks" | "costs" | "calendarEntries"
-  | "metrics" | "viralAnalyses" | "products" | "productTests";
+  | "metrics" | "viralAnalyses" | "products" | "productTests" | "accountProfiles";
 
 export const COLLECTIONS: CollectionName[] = [
   "accounts","series","characters","formulas","episodes","productionCards",
-  "clipChecks","costs","calendarEntries","metrics","viralAnalyses","products","productTests",
+  "clipChecks","costs","calendarEntries","metrics","viralAnalyses","products","productTests","accountProfiles",
 ];
+// Colecciones nuevas: si su tabla aún no existe en Supabase (migración sin ejecutar), la app sigue
+// funcionando y las guarda en este navegador hasta que se cree.
+export const OPTIONAL_TABLES: CollectionName[] = ["accountProfiles"];
 
 export const TABLE_OF: Record<CollectionName, string> = {
   accounts: "accounts",
@@ -27,6 +30,7 @@ export const TABLE_OF: Record<CollectionName, string> = {
   viralAnalyses: "viral_analyses",
   products: "products",
   productTests: "product_tests",
+  accountProfiles: "account_profiles",
 };
 
 // Claves históricas de localStorage (modo sin login) — no cambiar: son los
@@ -45,6 +49,7 @@ export const LOCAL_KEY_OF: Record<CollectionName, string> = {
   viralAnalyses: "viralAnalyses",
   products: "products",
   productTests: "productTests",
+  accountProfiles: "accountProfiles",
 };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -105,6 +110,7 @@ function rowOf(collection: CollectionName, item: any, userId: string): Row {
     };
     case "viralAnalyses": return { user_id: userId, source_url: item.sourceUrl ?? null, transcript: item.transcript ?? "", notes: item.notes ?? "", structure: item.structure ?? null, formula_id: uuidOrNull(item.formulaId) };
     case "products": return { user_id: userId, name: item.name, link: item.link ?? "", photos: item.photos ?? [], cost_price: Number(item.costPrice || 0), sale_price: Number(item.salePrice || 0), angles: item.angles ?? null, scripts: item.scripts ? (item.seedancePrompt ? { list: item.scripts, seedancePrompt: item.seedancePrompt } : item.scripts) : null, landing: item.landing ?? null };
+    case "accountProfiles": { const { id: _i, accountId, ...rest } = item; return { user_id: userId, account_id: uuidOrNull(accountId), data: rest, updated_at: new Date().toISOString() }; }
     case "productTests": return { user_id: userId, product_id: uuidOrNull(item.productId), views: Number(item.views || 0), sales: Number(item.sales || 0), revenue: Number(item.revenue || 0), is_winner: !!item.isWinner, tested_at: item.testedAt || new Date().toISOString().slice(0, 10) };
   }
 }
@@ -129,6 +135,7 @@ export function fromRow(collection: CollectionName, r: Row): any {
     case "metrics": { const ex = r.extra || {}; return { id: r.id, episodeId: r.episode_id ?? undefined, accountId: r.account_id ?? undefined, episodeTitle: ex.episodeTitle ?? "", platform: r.platform ?? "", date: r.published_at ?? "", views: Number(r.views || 0), avgWatch: Number(r.avg_watch_seconds || 0), interactions: Number(r.interactions || 0), followers: Number(r.followers_gained || 0), formula: r.formula_name ?? "", hook: r.hook_text ?? "", duration: Number(r.duration_seconds || 0), shares: ex.shares, saves: ex.saves, oneMinViews: ex.oneMinViews, estRevenue: ex.estRevenue, completion: ex.completion, searches: ex.searches, viewedVsSwiped: ex.viewedVsSwiped, retention: ex.retention, externalId: ex.externalId, permalink: ex.permalink, skipRate: ex.skipRate, reach: ex.reach, accountName: ex.accountName, thumb: ex.thumb, capturedAt: ex.capturedAt }; }
     case "viralAnalyses": return { id: r.id, sourceUrl: r.source_url ?? undefined, transcript: r.transcript ?? "", notes: r.notes ?? "", structure: r.structure, formulaId: r.formula_id ?? undefined, createdAt: r.created_at };
     case "products": { const sc = r.scripts; const scripts = Array.isArray(sc) ? sc : (sc?.list ?? undefined); const seedancePrompt = Array.isArray(sc) ? undefined : sc?.seedancePrompt; return { id: r.id, name: r.name, link: r.link ?? "", photos: r.photos ?? [], costPrice: Number(r.cost_price || 0), salePrice: Number(r.sale_price || 0), angles: r.angles ?? undefined, scripts, seedancePrompt, landing: r.landing ?? undefined }; }
+    case "accountProfiles": return { ...(r.data || {}), id: r.id, accountId: r.account_id ?? (r.data || {}).accountId ?? "" };
     case "productTests": return { id: r.id, productId: r.product_id ?? "", views: Number(r.views || 0), sales: Number(r.sales || 0), revenue: Number(r.revenue || 0), isWinner: !!r.is_winner, testedAt: r.tested_at };
   }
 }

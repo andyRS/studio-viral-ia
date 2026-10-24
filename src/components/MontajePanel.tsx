@@ -295,7 +295,7 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
       {!!publish.length && <div className="mt-3 space-y-2">
         <p className="text-sm font-bold">Listo para publicar</p>
         <div className="grid gap-3 md:grid-cols-2">{publish.map(p => <div key={p.platform} className="rounded-xl border border-white/10 bg-black/20 p-3">
-          <p className="font-bold">{p.platform === "Facebook" ? "📘" : "🎵"} {p.platform}</p>
+          <p className="font-bold">{p.platform === "Facebook" ? "📘" : p.platform === "Instagram" ? "📸" : "🎵"} {p.platform}</p>
           <p className="mt-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Texto corto</p>
           <p className="mt-1 whitespace-pre-line text-sm">{p.text}</p>
           <p className="mt-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Hashtags</p>

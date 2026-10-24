@@ -29,7 +29,7 @@ const STYLE_PUBLISH: Record<string, { word: (part: number) => string; topic: str
 // (#frutinovela #frutinovelas), el género (#drama #minidrama) y #ia; las de alcance van aparte.
   frutinovela: { word: p => `PARTE ${p + 1}`, topic: "Animación", tags: ["#frutinovela", "#frutinovelas", "#drama", "#minidrama", "#ia"] },
   cristiana: { word: () => "AMÉN", topic: "Religión", tags: ["#frutinovela", "#frutinovelas", "#reflexion", "#cristianos", "#ia"] },
-  cine90: { word: () => "BUTACA", topic: "Películas", tags: ["#peliculasquenoexisten", "#romance", "#minidrama", "#drama", "#ia"] },
+  cine90: { word: () => "BUTACA", topic: "Películas", tags: ["#peliculasquenoexisten", "#historiadeamor", "#cortometraje", "#videoia", "#romance"] },
 };
 export const stylePublish = (style?: string) => STYLE_PUBLISH[style || ""] || STYLE_PUBLISH.frutinovela;
 

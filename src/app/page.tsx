@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { DataProvider, SessionBar, useData } from "@/lib/DataContext";
 import AccountsModule from "@/components/AccountsModule";
+import { growthStage } from "@/lib/profiles";
 import CharactersModule from "@/components/CharactersModule";
 import FormulasModule from "@/components/FormulasModule";
 import GeneratorModule from "@/components/GeneratorModule";
@@ -90,6 +91,30 @@ function Brand({ onClick }: { onClick: () => void }) {
   </button>;
 }
 
+// «Objetivo de la cuenta»: meta actual y progreso de seguidores (se actualiza a mano).
+function AccountGoals() {
+  const { data, update } = useData();
+  const profiles = data.accountProfiles || [];
+  if (!profiles.length) return null;
+  return <div className="grid gap-4 xl:grid-cols-2">{profiles.map(p => {
+    const acc = data.accounts.find(a => a.id === p.accountId);
+    const st = growthStage(p.followers || 0);
+    const pct = Math.max(0, Math.min(100, Math.round((((p.followers || 0) - st.from) / (st.to - st.from)) * 100)));
+    return <div key={p.id} className="studio-panel p-5">
+      <p className="studio-eyebrow">Objetivo de la cuenta</p>
+      <h2 className="mt-1 text-lg font-bold text-white">{acc?.name || `@${p.handle}`} <span className="text-sm font-normal text-slate-400">· {p.platform}{p.verified ? " · verificada" : ""}</span></h2>
+      <p className="mt-2 text-sm text-slate-300">{p.goals?.[st.step - 1] || p.objective}</p>
+      <div className="mt-3 flex items-center gap-3 text-xs text-slate-300">
+        <span className="h-2 flex-1 overflow-hidden rounded-full bg-white/10"><span className="block h-full rounded-full bg-[#FF9F1C]" style={{ width: `${pct}%` }} /></span>
+        <b>{formatNumber(p.followers || 0)} / {formatNumber(st.to)}</b>
+      </div>
+      <label className="mt-3 flex items-center gap-2 text-xs text-slate-400">Seguidores hoy:
+        <input type="number" min="0" defaultValue={p.followers || 0} onBlur={e => { const v = Number(e.target.value) || 0; if (v !== (p.followers || 0)) void update("accountProfiles", p.id, { followers: v }); }} className="w-28 py-1 text-xs" />
+      </label>
+    </div>;
+  })}</div>;
+}
+
 function HomeModule() {
   const { data } = useData();
   const latest = [...data.episodes].sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))).slice(0, 4);
@@ -113,6 +138,7 @@ function HomeModule() {
       </div>
       <span className="studio-hero-orbit" aria-hidden="true" />
     </div>
+    <AccountGoals />
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
       {facts.map(f => <div key={f.label} className="studio-panel p-4 sm:p-5">
         <p className="studio-eyebrow">{f.label}</p>

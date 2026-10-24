@@ -39,8 +39,12 @@ async function askJson(system: string, user: string) {
 }
 
 // Aprendizajes de métricas + gancho elegido del banco: contexto extra para el modelo.
+// El perfil de la cuenta (lo arma el cliente con profileText) va justo después del manual viral.
+const accountBlock = (input: any) => (input?.accountProfile ? "\n\n" + String(input.accountProfile).slice(0, 8000) : "");
+
 function extraContext(input: any) {
   const parts: string[] = [];
+  if (input.accountProfile) parts.push(String(input.accountProfile).slice(0, 8000));
   if (input.learnings) parts.push(String(input.learnings));
   const hook = Array.isArray(input.chosenHook) ? input.chosenHook.filter(Boolean) : [];
   if (hook.length) parts.push(`GANCHO ELEGIDO POR EL USUARIO (obligatorio): usa exactamente estas líneas como hook y construye los primeros 3 segundos alrededor de ellas: ${hook.map((l: string) => `"${l}"`).join(" / ")}`);
@@ -262,7 +266,7 @@ export function templateNext(input: any) {
 export async function generateHookVariants(input: any): Promise<{ mode: string; variants: HookVariant[] }> {
   if (!process.env.LLM_API_KEY) return { mode: "plantilla-local", variants: templateHookVariants(input) };
   const st = STYLES[styleKey(input.style)];
-  const system = `${MANUAL_VIRAL}${input.learnings ? "\n\n" + input.learnings : ""}
+  const system = `${MANUAL_VIRAL}${accountBlock(input)}${input.learnings ? "\n\n" + input.learnings : ""}
 
 TAREA: propón 5 GANCHOS distintos para los primeros 3 segundos del episodio. Cada gancho son 2 líneas cortas de texto en pantalla (máximo 8 palabras por línea), en español, sin presentaciones, con conflicto o intriga visible desde el segundo 0. Usa 5 mecanismos DIFERENTES (ironía dramática, bomba de tiempo, revelación con objeto, humillación pública, pregunta directa…). Si hay ganchos ganadores en el banco, imita su estructura sin copiarlos.
 ESTILO: ${st.label}
@@ -287,7 +291,7 @@ export async function generateIdeas(input: IdeasRequest): Promise<{ mode: string
     ? "adaptación moderna (la misma estructura del relato llevada a la República Dominicana de hoy: barrio, iglesia evangélica, Nueva York, remesas…)"
     : "época bíblica (escenarios, vestuario y costumbres de la época, sin ningún elemento moderno)"}.
 Respeta los hechos principales del relato y su enseñanza; indica biblicalBase (libro capítulo:versículos). Los diálogos son dramatización: nunca los presentes como citas bíblicas literales. Lleva el relato a la fórmula viral: empieza por su momento más humillante o dramático, con un objeto que revela y un giro.` : "";
-  const system = `${styleRules(style)}
+  const system = `${styleRules(style)}${accountBlock(input)}
 
 TAREA: eres el director creativo. Propón ${count} ideas NUEVAS para ${STYLES[style].label}, distintas entre sí y distintas de todo lo que aparece en EVITAR.
 Cada idea cumple la fórmula: conflicto o humillación visible en el segundo 0-1, juego de estatus, revelación mediante un objeto, escalada, giro final y narrador solo en la última frase${style === "cristiana" ? ', y cierre con "Escribe AMÉN"' : ""}. Varía los mecanismos entre ideas (madre negada, amor prohibido por clase, traición o hijo escondido, herencia, ironía dramática, bomba de tiempo). Identidad dominicana.

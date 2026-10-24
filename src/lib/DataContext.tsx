@@ -16,9 +16,9 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { createClient, hasSupabase } from "./supabase/client";
 import { load, save, uid } from "./store";
-import { COLLECTIONS, LOCAL_KEY_OF, TABLE_OF, fromRow, toRow, type CollectionName } from "./db";
+import { COLLECTIONS, LOCAL_KEY_OF, OPTIONAL_TABLES, TABLE_OF, fromRow, toRow, type CollectionName } from "./db";
 import { seedAccounts, seedFormulas } from "./seed";
-import type { Account, CalendarEntry, Character, ClipCheck, Cost, Episode, Formula, Metric, Product, ProductTest, ProductionCard, Series, ViralAnalysis } from "./types";
+import type { Account, AccountProfile, CalendarEntry, Character, ClipCheck, Cost, Episode, Formula, Metric, Product, ProductTest, ProductionCard, Series, ViralAnalysis } from "./types";
 
 export type { CollectionName };
 
@@ -26,7 +26,7 @@ export interface DataState {
   accounts: Account[]; series: Series[]; characters: Character[]; formulas: Formula[];
   episodes: Episode[]; productionCards: ProductionCard[]; clipChecks: ClipCheck[]; costs: Cost[];
   calendarEntries: CalendarEntry[]; metrics: Metric[]; viralAnalyses: ViralAnalysis[];
-  products: Product[]; productTests: ProductTest[];
+  products: Product[]; productTests: ProductTest[]; accountProfiles: AccountProfile[];
 }
 
 export type DataMode = "cargando" | "supabase" | "local";
@@ -41,6 +41,8 @@ interface DataCtx {
   update: (collection: CollectionName, id: string, patch: any) => Promise<any>;
   remove: (collection: CollectionName, id: string) => Promise<void>;
   removeMany: (collection: CollectionName, ids: string[]) => Promise<void>;
+  /** true si esa colección se guarda en el navegador porque su tabla aún no existe en Supabase. */
+  isLocalOnly: (collection: CollectionName) => boolean;
   seriesFootprint: (seriesId: string) => SeriesFootprint;
   removeSeries: (seriesId: string) => Promise<SeriesFootprint>;
   refresh: () => Promise<void>;
@@ -62,7 +64,7 @@ function localDefaults(): DataState {
   return {
     accounts: seedAccounts, series: [], characters: [], formulas: seedFormulas,
     episodes: [], productionCards: [], clipChecks: [], costs: [], calendarEntries: [], metrics: [],
-    viralAnalyses: [], products: [], productTests: [],
+    viralAnalyses: [], products: [], productTests: [], accountProfiles: [],
   };
 }
 function loadLocal(): DataState {
@@ -86,6 +88,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const loadedForRef = useRef<string | null>(null);
   const dataRef = useRef(data);
   dataRef.current = data;
+  // Tablas opcionales que aún no existen en Supabase: esas colecciones se guardan en el navegador.
+  const missingRef = useRef<Set<CollectionName>>(new Set());
   const modeRef = useRef(mode);
   modeRef.current = mode;
 
@@ -104,7 +108,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           COLLECTIONS.map(async (c) => {
             const { data: rows, error: qError } = await supabase
               .from(TABLE_OF[c]).select("*").eq("user_id", user.id).order("created_at", { ascending: true });
+            if (qError && OPTIONAL_TABLES.includes(c)) {   // migración sin ejecutar: no rompe la carga
+              missingRef.current.add(c);
+              return [c, load(LOCAL_KEY_OF[c], [])] as const;
+            }
             if (qError) throw qError;
+            missingRef.current.delete(c);
             return [c, (rows || []).map((r: any) => fromRow(c, r))] as const;
           })
         );
@@ -164,7 +173,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   }, [applyLocal, loadSupabase]);
 
   const insert = useCallback(async (collection: CollectionName, item: any) => {
-    if (modeRef.current === "supabase" && supabaseRef.current && userId) {
+    if (modeRef.current === "supabase" && supabaseRef.current && userId && !missingRef.current.has(collection)) {
       const { data: row, error: insErr } = await supabaseRef.current.from(TABLE_OF[collection]).insert(toRow(collection, item, userId)).select().single();
       if (insErr) { setError("Error guardando en Supabase: " + insErr.message); throw insErr; }
       const mapped = fromRow(collection, row);
@@ -183,7 +192,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const update = useCallback(async (collection: CollectionName, id: string, patch: any) => {
     const current = (dataRef.current as any)[collection].find((x: any) => x.id === id);
     const merged = { ...(current || { id }), ...patch, id };
-    if (modeRef.current === "supabase" && supabaseRef.current && userId) {
+    if (modeRef.current === "supabase" && supabaseRef.current && userId && !missingRef.current.has(collection)) {
       const { data: row, error: updErr } = await supabaseRef.current
         .from(TABLE_OF[collection]).update(toRow(collection, merged, userId))
         .eq("id", id).eq("user_id", userId).select().single();
@@ -201,7 +210,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   }, [userId]);
 
   const remove = useCallback(async (collection: CollectionName, id: string) => {
-    if (modeRef.current === "supabase" && supabaseRef.current && userId) {
+    if (modeRef.current === "supabase" && supabaseRef.current && userId && !missingRef.current.has(collection)) {
       const { error: delErr } = await supabaseRef.current.from(TABLE_OF[collection]).delete().eq("id", id).eq("user_id", userId);
       if (delErr) { setError("Error borrando en Supabase: " + delErr.message); throw delErr; }
       setData((prev) => ({ ...prev, [collection]: (prev as any)[collection].filter((x: any) => x.id !== id) }));
@@ -218,7 +227,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const removeMany = useCallback(async (collection: CollectionName, ids: string[]) => {
     const set = new Set(ids.filter(Boolean));
     if (!set.size) return;
-    if (modeRef.current === "supabase" && supabaseRef.current && userId) {
+    if (modeRef.current === "supabase" && supabaseRef.current && userId && !missingRef.current.has(collection)) {
       const { error: delErr } = await supabaseRef.current.from(TABLE_OF[collection]).delete().in("id", Array.from(set)).eq("user_id", userId);
       if (delErr) { setError("Error borrando en Supabase: " + delErr.message); throw delErr; }
       setData((prev) => ({ ...prev, [collection]: (prev as any)[collection].filter((x: any) => !set.has(x.id)) }));
@@ -267,7 +276,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     applyLocal();
   }, [applyLocal]);
 
-  const value: DataCtx = { mode, userEmail, userId, error, data, insert, update, remove, removeMany, seriesFootprint, removeSeries, refresh, signOut };
+  const isLocalOnly = useCallback((c: CollectionName) => modeRef.current !== "supabase" || missingRef.current.has(c), []);
+  const value: DataCtx = { mode, userEmail, userId, error, data, insert, update, remove, removeMany, isLocalOnly, seriesFootprint, removeSeries, refresh, signOut };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 

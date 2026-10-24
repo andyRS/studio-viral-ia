@@ -19,6 +19,7 @@ import { isGenericName } from "@/lib/cast";
 import { buildFlowBatch, refreshPrompts, PROMPT_RULES_VERSION, sceneCountFor } from "@/lib/production";
 import { seriesSignals } from "@/lib/seriesSignals";
 import { stylePublish, formatDescription, viralHashtags } from "@/lib/platforms";
+import { profileText } from "@/lib/profiles";
 
 type View = "inicio" | "nueva" | "continuar" | "resultado";
 type EpisodeTab = "guion" | "elenco" | "imagenes" | "animacion" | "mesa" | "redes" | "plataformas" | "archivos";
@@ -39,20 +40,23 @@ const isFinished = (e: any) => e?.status === FINISHED;
 // Cliffhanger con el que cerró un episodio: lo retoma la parte siguiente.
 const cliffhangerOf = (out: any) => String(out?.ficha?.closing || out?.ficha?.cierre || (Array.isArray(out?.scenes) && out.scenes.length ? out.scenes[out.scenes.length - 1].line : "") || "").trim();
 // Texto corto y hashtags para Facebook y TikTok: la adaptación guardada o, si no hay, la fórmula del estilo.
-function publishPack(out: any, style: string, part: number, seriesTitle = "") {
+function publishPack(out: any, style: string, part: number, seriesTitle = "", accountPlatform = "") {
   const ad: any[] = out?.platformAdaptations || out?.platform_adaptations || [];
   const sp = stylePublish(style);
   const title = String(out?.social?.title || out?.title || "").trim();
-  return (["Facebook", "TikTok"] as const).map(platform => {
+  // Una cuenta de Instagram (p. ej. @peliculasquenoexisten.rd) publica solo ahí; las demás, Facebook y TikTok.
+  const platforms = accountPlatform === "Instagram" ? ["Instagram"] : ["Facebook", "TikTok"];
+  return platforms.map(platform => {
     const a = ad.find(x => x?.platform === platform);
     // Los de la IA solo aportan el tema del episodio; el resto es la fórmula de los virales del nicho.
     const hashtags = viralHashtags(style, platform, seriesTitle, [...(a?.hashtags || []), ...(out?.hashtags || [])]);
     const text = String(a?.description || (platform === "TikTok" && out?.social?.tiktokDescription ? `${out.social.tiktokDescription}\n${hashtags.slice(0, 5).join(" ")}` : formatDescription(title, sp.word(part), hashtags))).replace(/#[^\s#]+/g, "").replace(/[ \t]+\n/g, "\n").trim();
-    return { platform, text, hashtags: hashtags.join(" "), extra: platform === "Facebook" ? (a?.topic || sp.topic ? `Tema al publicar: ${a?.topic || sp.topic}` : "") : (a?.bestTime ? `Mejor hora: ${a.bestTime}` : "") };
+    const credit = style === "cine90" && !/higgsfield/i.test(text) ? "\nHecho con @higgsfield.ai" : "";
+    return { platform, text: text + credit, hashtags: hashtags.join(" "), extra: platform === "Facebook" ? (a?.topic || sp.topic ? `Tema al publicar: ${a?.topic || sp.topic}` : "") : (a?.bestTime ? `Mejor hora: ${a.bestTime}` : "") };
   });
 }
 // Duración del vídeo montado; cada escena queda en ~4,5 s tras el recorte (ritmo viral).
-const DURATIONS = [64, 72, 80, 88, 96, 104, 128];
+const DURATIONS = [40, 48, 64, 72, 80, 88, 96, 104, 128];
 
 const IDEAS: Record<StyleKey, string[]> = {
   frutinovela: [
@@ -148,6 +152,20 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
   const bank = useMemo(() => bankAll.filter(h => !hiddenHooks.includes(hookKey(h.hook))), [bankAll, hiddenHooks]);
   const bankTop = bank.slice(0, 10).map(h => ({ gancho: h.hook, vistas: h.views, plataformas: h.platforms }));
   const account = data.accounts.find((a: any) => a.id === accountId) || data.accounts[0];
+  // Perfil de cuenta: se manda a la IA en todo lo que se genera para esa cuenta (y su elenco fijo compartido).
+  const profileOf = (accId?: string) => (data.accountProfiles || []).find((p: any) => p.accountId === accId);
+  const sharedCastOf = (accId?: string) => {
+    const sids = new Set(data.series.filter((x: any) => x.accountId && x.accountId === accId).map((x: any) => x.id));
+    const seen = new Set<string>();
+    return data.characters.filter((c: any) => sids.has(c.seriesId) && c.imageUrl && c.referenceApprovedAt && !seen.has(c.name.toLowerCase()) && seen.add(c.name.toLowerCase()));
+  };
+  const profileFor = (accId?: string) => profileText(profileOf(accId), sharedCastOf(accId));
+  // Al elegir una cuenta con perfil, el estilo y la duración se ajustan a ella (p. ej. cine de los 90, 40 s en Instagram).
+  useEffect(() => {
+    const p = profileOf(account?.id); if (!p) return;
+    if (p.style) setStyle(p.style as StyleKey);
+    if (p.platform === "Instagram") setDuration(40);
+  }, [account?.id, data.accountProfiles]);
 
   async function call(path: string, body: any, local: () => any) {
     // Sin sesión: plantilla local en el navegador (elenco de frutas y escenas completas, sin IA).
@@ -176,11 +194,17 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
     if (!idea_.trim() && !(kind_ === "replica" && replica.trim())) { setNotice(kind === "replica" ? "Describe el viral que quieres replicar." : "Escribe la idea de la historia o elige una de las sugerencias."); return; }
     setLoading(true); setNotice(""); setAuthError(false);
     try {
-      const body = { idea: idea_, style, duration, account, notes: notes_, learnings, chosenHook, replica: kind_ === "replica" ? replica : "" };
+      const body = { idea: idea_, style, duration, account, notes: notes_, learnings, chosenHook, replica: kind_ === "replica" ? replica : "", accountProfile: profileFor(account?.id) };
       const res = await call("/api/series", body, () => templateSeries(body)); if (!res) return;
       const d = res.data;
       const s = await insert("series", { title: d.series?.title || idea_.slice(0, 60), description: d.series?.logline || idea_, accountId: account?.id });
-      for (const c of d.characters || []) await insert("characters", { ...c, seriesId: s.id });
+      // Elenco fijo de la cuenta: si la IA reutiliza a un personaje compartido, se copia su ficha aprobada.
+      const shared = sharedCastOf(account?.id);
+      for (const c of d.characters || []) {
+        const m = shared.find((x: any) => x.name.toLowerCase() === String(c.name).toLowerCase());
+        if (m) { const { id: _id, seriesId: _sid, ...master } = m; await insert("characters", { ...c, ...master, seriesId: s.id }); }
+        else await insert("characters", { ...c, seriesId: s.id });
+      }
       const bible = { style, logline: d.series?.logline, world: d.series?.world, tone: d.series?.tone };
       const saved = await saveEpisode(s.id, 1, d.episode, bible);
       setSeriesId(s.id); setResult({ episode: saved.output, episodeId: saved.episodeId, seriesId: s.id, part: 1 }); setView("resultado"); setNotice(res.note); setChosenHook(null);
@@ -197,7 +221,9 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
       const eps = current.eps; const part = eps.length + 1;
       const bible = eps[0]?.output?.seriesBible || { style: "frutinovela", logline: current.description };
       const body = {
-        series: { title: current.title, logline: current.description }, bible, style: bible.style, partNumber: part, wish, duration, account, learnings, chosenHook,
+        // Si no se pide nada, se sigue el plan guardado de la serie para esa parte (p. ej. «Parte 6: …»).
+        series: { title: current.title, logline: current.description }, bible, style: bible.style, partNumber: part, wish: wish.trim() || String(bible?.plan?.[part] || ""), duration, account: data.accounts.find((a: any) => a.id === current.accountId) || account, learnings, chosenHook,
+        accountProfile: profileFor(current.accountId),
         characters: currentCast.map((c: any) => ({ name: c.name, role: c.role, fruit: c.fruit, fruitEmoji: c.fruitEmoji, headES: c.headES, visualES: c.visualES, visualEN: c.visualEN, clothing: c.clothing, voice: c.voice, subtitleColor: c.subtitleColor, speechStyle: c.speechStyle, pronunciations: c.pronunciations, flowPrompt: c.flowPrompt })),
         // El último cierre (cliffhanger) va explícito: la parte nueva arranca justo ahí y termina con un gancho aún más fuerte.
         history: eps.map((e: any, i: number) => ({ part: i + 1, title: e.title, summary: e.output?.summary || e.theme, cliffhanger: cliffhangerOf(e.output) })),
@@ -214,6 +240,8 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
 
   function openEpisode(sid: string, ep: any, part: number, tab?: EpisodeTab) { setSeriesId(sid); setOpenTab(tab); setResult({ episode: ep.output || {}, episodeId: ep.id, seriesId: sid, part }); setView("resultado"); setNotice(""); window.scrollTo?.({ top: 0, behavior: "smooth" }); }
   function openSeries(sid: string) { setSeriesId(sid); setView("continuar"); setNotice(""); setWish(""); setChosenHook(null); }
+  // Serie de una cuenta de Instagram con perfil: el episodio siguiente sale a 40 s (formato de esa cuenta).
+  useEffect(() => { if (view === "continuar" && current && profileOf(current.accountId)?.platform === "Instagram") setDuration(40); }, [view, current?.id]);
   // En «Continuar» siempre hay una serie abierta: la última trabajada si no se eligió otra.
   useEffect(() => { if (view === "continuar" && !current && seriesList.length) setSeriesId(seriesList[0].id); }, [view, current, seriesList]);
   useEffect(() => {
@@ -282,7 +310,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
               <textarea id="generator-replica" value={replica} onChange={e => setReplica(e.target.value)} placeholder="Qué pasa en el vídeo, su gancho, quién humilla a quién, qué objeto revela el giro… Se copia la estructura y la emoción, nunca los personajes ni el diálogo." /></div>}
             <label htmlFor="generator-idea" className="field-label block">{kind === "replica" ? "Idea para adaptarlo a RD" : "Idea de la historia"}</label>
             <textarea id="generator-idea" value={idea} onChange={e => setIdea(e.target.value)} placeholder="Ej.: Una madre humilde descubre que su hijo rico la niega delante de sus amigos…" />
-            <div className="mt-3"><IdeasPanel style={style} online={mode === "supabase"} existing={data.series.map((x: any) => `${x.title}. ${x.description || ""}`)} onUse={useIdea} busy={loading} /></div>
+            <div className="mt-3"><IdeasPanel style={style} accountProfile={profileFor(account?.id)} online={mode === "supabase"} existing={data.series.map((x: any) => `${x.title}. ${x.description || ""}`)} onUse={useIdea} busy={loading} /></div>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <div><label htmlFor="generator-account" className="field-label block">Cuenta principal</label>
@@ -292,7 +320,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
           </div>
           <div><label htmlFor="generator-notes" className="field-label block">Notas opcionales</label>
             <input id="generator-notes" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Ej.: que la abuela se llame Doña Guanábana, que pase en Navidad…" /></div>
-          <HookPicker online={mode === "supabase"} chosen={chosenHook} onChoose={setChosenHook} body={() => ({ idea, style, learnings, bank: bankTop })} />
+          <HookPicker online={mode === "supabase"} chosen={chosenHook} onChoose={setChosenHook} body={() => ({ idea, style, learnings, bank: bankTop, accountProfile: profileFor(account?.id) })} />
           <button disabled={loading} onClick={() => { void createStory(); }} className="w-full rounded bg-amber-500 px-5 py-3 text-base font-bold sm:w-auto">{loading ? "Creando la serie…" : "Crear serie y episodio 1"}</button>
         </div>
       </>}
@@ -355,9 +383,10 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
                 </div>
                 {current.last && cliffhangerOf(current.last.output) && <p className="mt-3 rounded-lg border border-white/10 bg-black/20 p-3 text-sm text-slate-300"><span className="text-xs font-semibold uppercase tracking-wider text-amber-300">La parte {current.eps.length} terminó con</span><br /><i>«{cliffhangerOf(current.last.output)}»</i><br /><span className="text-xs text-slate-400">El episodio {current.eps.length + 1} lo retoma en la primera escena y cierra con un gancho nuevo para que pidan la siguiente parte.</span></p>}
                 {!!missingCurrentMasters.length && !currentNeedsRepair && <p className="mt-3 rounded-lg border border-amber-400/25 bg-amber-400/10 p-3 text-xs text-amber-100">Antes, aprueba la ficha maestra de: {missingCurrentMasters.map(c => c.name).join(", ")}. {current.eps.length > 0 && <button type="button" onClick={() => openEpisode(current.id, current.eps[0], 1, "elenco")} className="font-semibold text-amber-300 underline">Ir a Personajes canónicos →</button>}</p>}
+                {!wish.trim() && current.eps[0]?.output?.seriesBible?.plan?.[current.eps.length + 1] && <p className="mt-3 rounded-lg border border-sky-400/25 bg-sky-400/[.06] p-3 text-xs text-sky-100"><b>Plan guardado para la parte {current.eps.length + 1}:</b> {current.eps[0].output.seriesBible.plan[current.eps.length + 1]} <span className="text-sky-200/70">(se usa si dejas el campo vacío)</span></p>}
                 <label htmlFor="generator-next-wish" className="field-label mt-4 block">¿Qué quieres que pase? (opcional)</label>
                 <textarea id="generator-next-wish" value={wish} onChange={e => setWish(e.target.value)} placeholder="Déjalo vacío y la IA propone un giro." />
-                <div className="mt-3"><HookPicker online={mode === "supabase"} chosen={chosenHook} onChoose={setChosenHook} body={() => ({ wish, style: current.style, series: { title: current.title, logline: current.description }, characters: currentChars.map((c: any) => ({ name: c.name })), history: current.eps.map((e: any, i: number) => ({ part: i + 1, summary: e.output?.summary || e.theme })), learnings, bank: bankTop })} /></div>
+                <div className="mt-3"><HookPicker online={mode === "supabase"} chosen={chosenHook} onChoose={setChosenHook} body={() => ({ wish, accountProfile: profileFor(current.accountId), style: current.style, series: { title: current.title, logline: current.description }, characters: currentChars.map((c: any) => ({ name: c.name })), history: current.eps.map((e: any, i: number) => ({ part: i + 1, summary: e.output?.summary || e.theme })), learnings, bank: bankTop })} /></div>
                 <div className="mt-3 flex flex-wrap items-center gap-3">
                   <label htmlFor="generator-next-duration" className="sr-only">Duración del próximo episodio</label>
                   <select id="generator-next-duration" value={duration} onChange={e => setDuration(Number(e.target.value))} className="w-auto">{DURATIONS.map(d => <option key={d} value={d}>{d} s · {sceneCountFor(d)} escenas</option>)}</select>
@@ -470,7 +499,7 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
   const finished = status === FINISHED;
   // Terminado: se puede ver, publicar y descargar textos, pero no editar fichas, prompts ni la mesa.
   const lockedTab = finished && (tab === "elenco" || tab === "imagenes" || tab === "animacion" || tab === "mesa");
-  const pack = useMemo(() => publishPack(out, out.seriesBible?.style || (cast.some((c: any) => c.fruit) ? "frutinovela" : "cine90"), part, seriesTitle || ""), [out, part, seriesTitle]);
+  const pack = useMemo(() => publishPack(out, out.seriesBible?.style || (cast.some((c: any) => c.fruit) ? "frutinovela" : "cine90"), part, seriesTitle || "", data.accounts.find((a: any) => a.id === data.series.find((x: any) => x.id === seriesId)?.accountId)?.platform || ""), [out, part, seriesTitle, data.accounts, data.series, seriesId]);
   const [reviewed, setReviewed] = useState(false);
   useEffect(() => { setReviewed(false); setTab(initialTab || "guion"); }, [out, initialTab]);
   const fromAI = !!out.mode && out.mode !== "plantilla-local" && out.mode !== "gemini-borrador" && cast.length >= 2;
@@ -513,7 +542,7 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
       <button onClick={onNext} className="rounded bg-amber-500 px-4 py-2 text-sm font-bold">Crear episodio {part + 1} →</button></span>
     </div>
     <div className={`mt-4 rounded-xl border p-4 text-sm ${fromAI ? "border-emerald-400/25 bg-emerald-400/[.07] text-emerald-100" : "border-amber-400/30 bg-amber-400/[.08] text-amber-100"}`}>
-      <p className="font-bold">{fromAI ? `Guion escrito por la IA · ${cast.length} personajes · ${scenes.length || (out.scriptBlocks || []).length} escenas · ${fullDuration} s` : isTemplate ? "Borrador de la plantilla local (sin IA)" : isAIDraft ? "Borrador de Gemini · pendiente de corregir" : "Borrador anterior sin elenco de producción"}</p>
+      <p className="font-bold">{out.mode === "importado" ? "Parte publicada e importada · solo lectura" : out.mode === "guion-manual" ? `Guion escrito · ${cast.length} personajes · ${(out.scriptBlocks || []).length} bloques · pendiente de producción` : fromAI ? `Guion escrito por la IA · ${cast.length} personajes · ${scenes.length || (out.scriptBlocks || []).length} escenas · ${fullDuration} s` : isTemplate ? "Borrador de la plantilla local (sin IA)" : isAIDraft ? "Borrador de Gemini · pendiente de corregir" : "Borrador anterior sin elenco de producción"}</p>
       <p className="mt-1 text-xs leading-5">{fromAI ? "Orden de trabajo: aprueba las fichas maestras → genera imágenes con esas referencias → anima y revisa cada escena → monta el vídeo." : isTemplate ? "Elenco de frutas, escenas, prompts y montaje completos, pero el diálogo es de estructura genérica: revísalo antes de producir o recréalo con la IA cuando esté disponible." : isAIDraft ? `Se conservaron las escenas y personajes de Gemini, pero ${out.qualityIssues?.join("; ") || "el guion necesita revisión"}. Revísalo antes de producir o recréalo con la IA.` : "Este episodio se creó con una versión anterior. Recréalo para tener el elenco y las escenas de producción."}</p>
       {!fromAI && <button onClick={onRecreate} className="mt-3 rounded-lg bg-amber-500 px-3 py-2 text-xs font-bold text-slate-950 hover:bg-amber-400">Recrear con la IA</button>}
       {out.shortForLongPlatforms && <p className="mt-2 text-xs">{out.shortForLongPlatforms}</p>}
@@ -531,7 +560,7 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
         </span>
       </div>
       <div className="mt-4 grid gap-3 md:grid-cols-2">{pack.map(p => <div key={p.platform} className="rounded-xl border border-white/10 bg-[#121826] p-4">
-        <p className="font-bold">{p.platform === "Facebook" ? "📘" : "🎵"} {p.platform}</p>
+        <p className="font-bold">{p.platform === "Facebook" ? "📘" : p.platform === "Instagram" ? "📸" : "🎵"} {p.platform}</p>
         <p className="mt-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Texto corto</p>
         <p className="mt-1 whitespace-pre-line text-sm">{p.text}</p>
         <p className="mt-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Hashtags</p>
