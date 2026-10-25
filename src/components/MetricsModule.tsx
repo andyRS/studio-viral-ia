@@ -63,7 +63,7 @@ function RefBadge({ value, refAvg }: { value: number; refAvg: number }) {
   const x = value / refAvg;
   const good = x >= 1;
   return <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${good ? "bg-emerald-500/20 text-emerald-300" : "bg-rose-500/15 text-rose-300"}`} title="Comparado con la media por Reel de la cuenta de referencia">
-    {x >= 10 ? Math.round(x) : x.toFixed(1)}× ref
+    {x >= 10 ? `${Math.round(x)}× ref` : x >= 1 ? `${x.toFixed(1)}× ref` : `${x > 0 && x < 0.01 ? "<1" : Math.round(x * 100)}% de la ref`}
   </span>;
 }
 
@@ -345,7 +345,7 @@ export default function MetricsModule({ focusMetricId }: { focusMetricId?: strin
       </div>
       {reels.length ? <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">{reels.slice(0, shown).map((m, i) => <ReelCard key={m.id} m={m} rank={i + 1} refAvg={refAvg} onDelete={() => remove("metrics", m.id)} onOpenEpisode={() => openEpisode(m.episodeTitle)} />)}</div> : <div className="mt-3 rounded-2xl border border-dashed border-white/15 bg-[#151C2B] p-8 text-center text-sm text-slate-300">{items.length ? "No hay publicaciones para estos filtros." : "Todavía no hay métricas. Conecta Meta o registra un video a mano."}</div>}
       {reels.length > shown && <button onClick={() => setShown(shown + 12)} className="mt-3 w-full rounded-xl border border-white/10 bg-white/5 py-2.5 text-sm font-semibold hover:bg-white/10">Ver más ({reels.length - shown} restantes)</button>}
-      {refAvg > 0 && <p className="mt-2 text-[11px] text-slate-400">«× ref» compara vistas por Reel con la cuenta de referencia. Revisa también las métricas propias de cada plataforma.</p>}
+      {refAvg > 0 && <p className="mt-2 text-[11px] text-slate-400">«× ref» y «% de la ref» comparan las vistas por Reel con la cuenta de referencia (100 % = igual que la referencia). Revisa también las métricas propias de cada plataforma.</p>}
     </div>
 
     <EpisodeInsights title={activeEp} titles={episodeTitles} episode={selectedEpisode} metrics={selectedEpisodeMetrics} onSelect={setEp} />
