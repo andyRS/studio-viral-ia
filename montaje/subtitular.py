@@ -26,7 +26,7 @@ Opcionales:
   "recortar": true (por defecto)   quita el silencio muerto al inicio y al final de cada clip con diálogo
                                    (los clips de IA traen medio segundo o más): el vídeo fluye sin pausas.
   "tarjetas": [{"antes": 3, "texto": "Horas después..."}]   tarjeta negra de 1,6 s antes del clip 3 (índice desde 0)
-  "anterior_archivo": lo pone server.py: vídeo o clip de la parte anterior; abre el episodio con 7 s en
+  "anterior_archivo": lo pone server.py: vídeo o clip de la parte anterior; abre el episodio con ~11 s (las últimas frases de diálogo, sin el Narrador) en
                       blanco y negro y «Anteriormente...».
   "musica_modo": "extremos" | "todo"   «extremos»: la música (firma de la serie) suena solo en los primeros 4 s
                                      y en los últimos 8 s con el «Continuará…»; «todo» (por defecto): todo el vídeo.
@@ -187,11 +187,38 @@ for tj in G.get("tarjetas") or []:
         TARJETAS[k] = txt[:60]
 ANTERIOR = G.get("anterior_archivo") if G.get("anterior_archivo") and os.path.exists(G["anterior_archivo"]) else ""
 RECAP_S = 0.0
+RECAP_MAX = 11.5   # como el viral: ~11 s con varias frases de la escena clave, no solo el final
 if ANTERIOR:
     da = dur(ANTERIOR)
-    # Vídeo final de la parte anterior (>20 s): se salta su tarjeta final de 3 s. Clip suelto: su final.
+    # Vídeo final de la parte anterior (>20 s): se salta su tarjeta final de 3 s y la escena del Narrador
+    # («Lo que X no sabe...»), que no cuenta lo que pasó; se toman las últimas frases de diálogo enteras.
+    # Clip suelto: hasta 11,5 s desde su final.
     fin = da - 3.2 if da > 20 else da
-    RECAP_S = round(min(7.0, fin), 2)
+    ini = max(0.0, fin - RECAP_MAX)
+    if da > 20:
+        try:
+            desde = max(0.0, fin - 32)
+            wav = os.path.join(tmp, "anterior.wav")
+            run(["ffmpeg", "-v", "error", "-y", "-ss", f"{desde:.2f}", "-t", f"{fin - desde:.2f}", "-i", ANTERIOR, "-ac", "1", "-ar", "16000", wav])
+            w = wave.open(wav)
+            xa = np.frombuffer(w.readframes(w.getnframes()), np.int16).astype(np.float32) / 32768
+            segs = [(desde + sg.start, desde + sg.end, sg.text.strip()) for sg in model.transcribe(xa, language="es")[0]]
+            # Fuera la narración final: el último bloque o lo que empiece como el Narrador.
+            narr = re.compile(r"^(lo que|pero lo que|y lo que|nadie sab|escribe am[eé]n|continuar)", re.I)
+            # (la frase del Narrador puede venir partida en dos bloques: se corta desde donde empieza)
+            marca_n = [i for i, sg in enumerate(segs) if sg[0] > fin - 14 and (narr.search(sg[2]) or "no sabe" in sg[2].lower())]
+            if marca_n:
+                segs = segs[:marca_n[-1]]
+            elif segs and segs[-1][0] > fin - 8:
+                segs.pop()   # el episodio siempre cierra con el Narrador
+            if segs:
+                fin_d = min(fin, segs[-1][1] + 0.5)
+                # empieza al principio de una frase, sin pasarse de 11,5 s
+                inicio = next((s0 for s0, e0, _ in segs if fin_d - s0 <= RECAP_MAX), segs[-1][0])
+                ini, fin = max(0.0, inicio - 0.15), fin_d
+        except Exception as e:  # sin voz o error: se queda con el final
+            progreso(4, f"«Anteriormente...»: no pude escuchar la parte anterior ({str(e)[:60]}); uso su final")
+    RECAP_S = round(max(1.0, min(RECAP_MAX, fin - ini)), 2)
     RECAP_INI = max(0.0, fin - RECAP_S)
 offsets, words_per_clip, recortes, t = [], [], [], RECAP_S
 for ci, clip in enumerate(clips):

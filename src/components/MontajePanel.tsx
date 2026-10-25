@@ -257,7 +257,7 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
       <label className="flex items-start gap-2 text-xs text-slate-300"><input type="checkbox" checked={recortar} onChange={e => setRecortar(e.target.checked)} disabled={busy} className="mt-0.5" /><span><b>Quitar pausas muertas</b> (recomendado): cada clip empieza justo antes de la primera palabra y corta al terminar la frase. Así el vídeo fluye sin silencios, como los virales.</span></label>
       {Array.isArray(guion?.tarjetas) && guion.tarjetas.length > 0 && <p className="text-[11px] text-slate-400">Saltos de tiempo: {guion.tarjetas.map((t: any) => `«${t.texto}» antes de la escena ${t.antes + 1}`).join(" · ")} (tarjeta negra de 1,6 s).</p>}
       {part > 1 && <div className="space-y-1">
-        <p className="text-xs text-slate-300"><b>«Anteriormente...»</b> <span className="text-slate-500">(opcional)</span>: sube el vídeo final de la Parte {part - 1} y el episodio abre con sus últimos 7 s en blanco y negro.</p>
+        <p className="text-xs text-slate-300"><b>«Anteriormente...»</b> <span className="text-slate-500">(opcional)</span>: sube el vídeo final de la Parte {part - 1} y el episodio abre con ~11 s de su escena final (las últimas frases de diálogo, sin la del Narrador) en blanco y negro, como el viral.</p>
         <div className="flex flex-wrap items-center gap-2"><input type="file" accept="video/mp4,video/*" onChange={e => setAnterior(e.target.files?.[0] || null)} disabled={busy} />{anterior && <button type="button" disabled={busy} onClick={() => setAnterior(null)} className="text-xs text-slate-400 hover:text-red-300">Quitar</button>}</div>
       </div>}
     </div>
