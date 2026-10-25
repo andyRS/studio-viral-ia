@@ -22,7 +22,7 @@ export const META_SYNC_MINUTES = 5;
 let running = false;
 
 type Ops = { data: any; insert: (c: any, item: any) => Promise<any>; update: (c: any, id: string, patch: any) => Promise<any> };
-export type SyncResult = { added: number; updated: number; unchanged: number; linked: number; preserved: number; failed: string[]; errors: string[]; total: number; skipped?: boolean; error?: string };
+export type SyncResult = { added: number; updated: number; unchanged: number; linked: number; preserved: number; failed: string[]; errors: string[]; total: number; skipped?: boolean; error?: string; expired?: boolean };
 
 export async function syncMetaMetrics({ data, insert, update }: Ops, opts: { quick?: boolean; onProgress?: (done: number, total: number) => void } = {}): Promise<SyncResult> {
   const res: SyncResult = { added: 0, updated: 0, unchanged: 0, linked: 0, preserved: 0, failed: [], errors: [], total: 0 };
@@ -32,6 +32,10 @@ export async function syncMetaMetrics({ data, insert, update }: Ops, opts: { qui
     const r = await fetch(`/api/meta/import${opts.quick ? "?rapida=1" : ""}`, { method: "POST" });
     const j = await r.json().catch(() => ({}));
     if (!j.ok) return { ...res, error: j.error || `HTTP ${r.status}` };
+    if (j.expired) {
+      try { window.dispatchEvent(new CustomEvent(META_SYNC_EVENT, { detail: { ...res, expired: true } })); } catch {}
+      return { ...res, expired: true, error: "Facebook cerró la conexión de la app (cambio de contraseña o revisión de seguridad). Pulsa «Reconectar»." };
+    }
     const incoming = Array.isArray(j.metrics) ? j.metrics : [];
     res.total = incoming.length; res.errors = Array.isArray(j.errors) ? j.errors : [];
     const byExternalId = new Map<string, Metric>(data.metrics.filter((m: Metric) => m.externalId).map((m: Metric) => [m.externalId!, m]));

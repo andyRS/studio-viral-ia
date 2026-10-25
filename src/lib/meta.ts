@@ -165,11 +165,14 @@ export async function setSelection(userId: string, ids: string[]) {
 
 // limit: cuántos Reels recientes por página. La actualización automática (cada 5 min) pide solo los
 // últimos 8, que son los que cambian; así no se pasa del límite de consultas de Meta.
+const TOKEN_ERROR = /access token|session has (been invalidated|expired)|code 190/i;
 export async function importMetrics(conn: any, limit = REELS_LIMIT) {
   const metrics: ImportedMetric[] = []; const errors: string[] = [];
   for (const page of selectedPages(conn)) {
     try { metrics.push(...await facebookReels(page, limit)); } catch (e: any) { errors.push(`Facebook · ${page.name}: ${e.message}`); }
     if (page.ig) try { metrics.push(...await instagramReels(page, limit)); } catch (e: any) { errors.push(`Instagram · @${page.ig.username}: ${e.message}`); }
   }
-  return { metrics, errors };
+  // Token caducado o invalidado (cambio de contraseña, revisión de seguridad): hay que reconectar.
+  const expired = metrics.length === 0 && errors.length > 0 && errors.every(e => TOKEN_ERROR.test(e));
+  return { metrics, errors, expired };
 }

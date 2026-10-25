@@ -27,10 +27,14 @@ export default function MetaConnect() {
   const [picking, setPicking] = useState(false);
   const [checked, setChecked] = useState<string[]>([]);
   const [lastSync, setLastSync] = useState<string | null>(null);
+  const [expired, setExpired] = useState(false);
   const [, tick] = useState(0);
 
   useEffect(() => {
-    const read = () => { try { setLastSync(localStorage.getItem(META_SYNC_KEY)); } catch {} };
+    const read = (e?: Event) => {
+      try { setLastSync(localStorage.getItem(META_SYNC_KEY)); } catch {}
+      if (e) setExpired(!!(e as CustomEvent).detail?.expired);
+    };
     read();
     window.addEventListener(META_SYNC_EVENT, read);
     const t = setInterval(() => tick(x => x + 1), 30_000);
@@ -75,6 +79,7 @@ export default function MetaConnect() {
     try {
       const res = await syncMetaMetrics({ data, insert, update }, { onProgress: (done, total) => setImportProgress({ done, total }) });
       if (res.skipped) { setMsg("Ya se está actualizando en segundo plano. Espera unos segundos."); return; }
+      if (res.expired) { setExpired(true); setMsg(res.error!); return; }
       if (res.error) { setMsg("No se pudo iniciar la importación: " + res.error + ". Vuelve a intentarlo."); return; }
       const partial = res.failed.length > 0 || res.errors.length > 0;
       const summary = `${res.added} Reels nuevos, ${res.updated} actualizados. ${res.linked} vinculados automáticamente; ${res.preserved} vínculos existentes conservados.`;
@@ -100,8 +105,9 @@ export default function MetaConnect() {
   const stateLabel = mode === "cargando" ? "Comprobando" : mode !== "supabase" ? "Sin sesión"
     : !status ? "Comprobando" : status.configured === false ? "Sin configurar"
     : status.error ? "Error de conexión" : !status.connected ? "Sin conexión"
-    : !Array.isArray(status.selected) || selectedPages.length === 0 ? "Elegir páginas" : "Conectado";
+    : !Array.isArray(status.selected) || selectedPages.length === 0 ? "Elegir páginas" : expired ? "Hay que reconectar" : "Conectado";
   const connected = mode === "supabase" && status?.connected && !status?.error && selectedPages.length > 0;
+  const healthy = connected && !expired;
 
   return <section aria-label="Integración de Meta" className="mt-3 rounded-2xl border border-white/10 bg-[#151C2B] p-4 text-sm shadow-[0_16px_40px_-28px_rgba(0,0,0,.9)] sm:p-5">
     <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -109,8 +115,8 @@ export default function MetaConnect() {
         <div className="flex flex-wrap items-center gap-2">
           <span aria-hidden="true" className="grid h-8 w-8 place-items-center rounded-lg bg-[#598BFF]/15 text-[#9BB8FF]">◎</span>
           <h3 className="font-semibold text-slate-100">Facebook e Instagram</h3>
-          <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${connected ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-300" : "border-white/10 bg-white/5 text-slate-300"}`}>
-            <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${connected ? "bg-emerald-400" : "bg-slate-400"}`} />{stateLabel}
+          <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${healthy ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-300" : expired ? "border-amber-400/30 bg-amber-400/10 text-amber-200" : "border-white/10 bg-white/5 text-slate-300"}`}>
+            <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${healthy ? "bg-emerald-400" : expired ? "bg-amber-400" : "bg-slate-400"}`} />{stateLabel}
           </span>
         </div>
         <p className="mt-2 text-xs leading-relaxed text-slate-300">
@@ -133,6 +139,7 @@ export default function MetaConnect() {
         </>}
       </div>
       <div className="flex shrink-0 flex-wrap gap-2">
+        {connected && expired && <a href="/api/meta/connect" className="rounded-xl bg-[#598BFF] px-3.5 py-2 text-xs font-bold text-white transition hover:brightness-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FF9F1C]">Reconectar Facebook</a>}
         {connected && <button type="button" disabled={busy} onClick={importNow} className="rounded-xl bg-[#FF9F1C] px-3.5 py-2 text-xs font-bold text-[#090D16] transition hover:brightness-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#598BFF] disabled:opacity-50">{busy ? importProgress ? importProgress.total ? "Guardando…" : "Consultando…" : "Espera…" : "Importar métricas"}</button>}
         {mode === "supabase" && <button type="button" aria-expanded={managing} aria-controls="meta-connection-management" onClick={() => { setManaging(!managing); if (managing) setPicking(false); }} className="rounded-xl border border-white/15 bg-white/5 px-3.5 py-2 text-xs font-semibold text-slate-100 transition hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#598BFF]">Gestionar conexiones</button>}
         {mode === "local" && <a href="/login" className="rounded-xl bg-[#FF9F1C] px-3.5 py-2 text-xs font-bold text-[#090D16] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#598BFF]">Iniciar sesión</a>}

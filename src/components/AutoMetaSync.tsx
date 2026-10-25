@@ -26,7 +26,8 @@ export default function AutoMetaSync() {
     }
     async function run() {
       if (stopped || !ready || document.visibilityState !== "visible" || !due()) return;
-      await syncMetaMetrics(ops.current, { quick: true }).catch(() => null);
+      const res = await syncMetaMetrics(ops.current, { quick: true }).catch(() => null);
+      if (res?.expired) ready = false;   // no insiste hasta reconectar (se vuelve a comprobar cada 30 min)
     }
 
     check().then(run);
