@@ -26,6 +26,8 @@ Opcionales:
   "pantallas": [{"clip": 4, "tipo": "whatsapp", "de": "Ramón", "mensajes": ["Ya llegaste?", "Te extraño"]}]
                chat de WhatsApp dibujado arriba del clip 4, con los mensajes apareciendo uno a uno
   "telefono": [6]   el clip 6 es una llamada o nota de voz: la voz suena como por teléfono
+  "logo2_archivo": lo pone server.py: segundo logo; sale también <salida>_2.mp4 con ese logo (otra página)
+  "logo2": "frutienganchados"   segunda versión con el emblema FrutiEnganchados (sin subir archivo)
   "velocidad": 1.0-1.25   ritmo: 1.1 = clips un 10 % más rápidos (voz y vídeo juntos, mismo tono)
   "recortar": true (por defecto)   quita el silencio muerto al inicio y al final de cada clip con diálogo
                                    (los clips de IA traen medio segundo o más): el vídeo fluye sin pausas.
@@ -591,28 +593,31 @@ if G.get("logo", True) is not False and os.path.exists(LOGO) and (ZONAS or G.get
         zona = a_salida(tuple(int(kv.split("=")[1]) for kv in str(G["delogo"]).split(":")), W0, H0)
 MUSICA = G.get("musica_archivo") if G.get("musica_archivo") and os.path.exists(G["musica_archivo"]) else ""
 fc += f"{cat}concat=n={n}:v=1:a=1[vc][{'voz' if MUSICA else 'a'}];"
+LOGOS = []   # (archivo, x, y, ancho, alto, nombre): uno por versión del vídeo (p. ej. dos páginas con logos distintos)
 if zona:
     zx, zy, zw, zh = zona
-    LOGO_U = G.get("logo_archivo") if G.get("logo_archivo") and os.path.exists(G["logo_archivo"]) else LOGO
-    lw, lh = (int(v) for v in subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=width,height", "-of", "csv=p=0", LOGO_U],
-                                             capture_output=True, text=True).stdout.strip().split(","))
-    # Núcleo totalmente opaco del emblema (marca/frutienganchados.json): se escala lo justo para que ese
-    # núcleo cubra la marca con 4 px de margen por lado y se centra encima. Así es pequeño y siempre la tapa.
-    try:
-        n0x, n0y, n1x, n1y = json.load(open(os.path.splitext(LOGO_U)[0] + ".json", encoding="utf-8"))["nucleo"]
-    except Exception:
-        n0x, n0y, n1x, n1y = nucleo_alfa(LOGO_U, lw, lh)
-    esc = max((zw + 8) / ((n1x - n0x) * lw), (zh + 8) / ((n1y - n0y) * lh))
-    ancho, alto = lw * esc, lh * esc
-    x = zx + zw / 2 - ((n0x + n1x) / 2) * ancho
-    y = zy + zh / 2 - ((n0y + n1y) / 2) * alto
-    x = max(0, min(1080 - ancho, x))
-    run(["ffmpeg", "-v", "error", "-y", "-i", LOGO_U, "-vf", "format=rgba", "marca.png"])
-    li = n + (1 if MUSICA else 0)                   # entrada del logo (después de la música si la hay)
-    fc += f"[{li}:v]scale={int(ancho)}:{int(alto)}[logo];[vc][logo]overlay={int(x)}:{int(y)}[vm];[vm]"
-    progreso(69, f"Logo {G.get('logo_nombre') or ('propio' if LOGO_U != LOGO else 'FrutiEnganchados')} sobre la marca de {G.get('marca') or 'agua'} ({int(ancho)}×{int(alto)} px)")
-else:
-    fc += "[vc]"
+    for k_logo, (clave, nombre_clave) in enumerate((("logo_archivo", "logo_nombre"), ("logo2_archivo", "logo2_nombre"))):
+        ruta = G.get(clave) if G.get(clave) and os.path.exists(G[clave]) else (LOGO if k_logo == 0 or str(G.get("logo2")) == "frutienganchados" else "")
+        if not ruta:
+            continue
+        lw, lh = (int(v) for v in subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=width,height", "-of", "csv=p=0", ruta],
+                                                 capture_output=True, text=True).stdout.strip().split(","))
+        # Núcleo totalmente opaco del logo (marca/<logo>.json o su canal alfa): se escala lo justo para que ese
+        # núcleo cubra la marca con 4 px de margen por lado y se centra encima. Así es pequeño y siempre la tapa.
+        try:
+            n0x, n0y, n1x, n1y = json.load(open(os.path.splitext(ruta)[0] + ".json", encoding="utf-8"))["nucleo"]
+        except Exception:
+            n0x, n0y, n1x, n1y = nucleo_alfa(ruta, lw, lh)
+        esc = max((zw + 8) / ((n1x - n0x) * lw), (zh + 8) / ((n1y - n0y) * lh))
+        ancho, alto = lw * esc, lh * esc
+        x = max(0, min(1080 - ancho, zx + zw / 2 - ((n0x + n1x) / 2) * ancho))
+        y = zy + zh / 2 - ((n0y + n1y) / 2) * alto
+        png = f"marca{k_logo + 1}.png"
+        run(["ffmpeg", "-v", "error", "-y", "-i", ruta, "-vf", "format=rgba", png])
+        nom = G.get(nombre_clave) or ("propio" if ruta != LOGO else "FrutiEnganchados")
+        LOGOS.append((png, int(x), int(y), int(ancho), int(alto), nom))
+        progreso(69, f"Logo {nom} sobre la marca de {G.get('marca') or 'agua'} ({int(ancho)}×{int(alto)} px)" + (" · segunda versión" if k_logo else ""))
+fc += "[vc]"
 # El gancho sale en los 3 primeros segundos del episodio nuevo (después de «Anteriormente...» si lo hay).
 H0 = RECAP_S
 alpha = f"alpha='if(lt(t,{H0 + 2.6:.2f}),1,max(0,1-(t-{H0 + 2.6:.2f})/0.4))':enable='between(t,{H0:.2f},{H0 + 3:.2f})'"
@@ -626,7 +631,15 @@ for k, line in enumerate(gancho):
         fc += texto_dt(ln, size, col, y, 5, ":" + alpha) + ","
         y += int(size * 1.2)
     y += 10
-fc += "ass=subs.ass:fontsdir=.[v]"
+# Subtítulos y gancho una sola vez; el logo va encima al final, uno por versión (misma codificación).
+if LOGOS:
+    fc += "ass=subs.ass:fontsdir=.[vs];"
+    li0 = n + (1 if MUSICA else 0)                  # entradas de los logos (después de la música si la hay)
+    fc += f"[vs]split={len(LOGOS)}" + "".join(f"[s{k}]" for k in range(len(LOGOS))) + ";"
+    fc += ";".join(f"[{li0 + k}:v]scale={an}:{al}[lg{k}];[s{k}][lg{k}]overlay={lx}:{ly}[{'v' if k == 0 else f'v{k + 1}'}]"
+                   for k, (_, lx, ly, an, al, _) in enumerate(LOGOS))
+else:
+    fc += "ass=subs.ass:fontsdir=.[v]"
 total = t + (3 if G.get("cierre") else 0)
 if MUSICA:
     # Música de fondo (p. ej. de Muse): en bucle hasta el final, entra y sale con fundido y baja
@@ -657,12 +670,20 @@ VCODEC = (["-c:v", "h264_nvenc", "-preset", "p5", "-rc", "vbr", "-cq", "19", "-b
           if os.environ.get("VIDEO_ENCODER") == "h264_nvenc"
           else ["-c:v", "libx264", "-crf", "17", "-preset", os.environ.get("X264_PRESET", "medium")])
 mmss = lambda x: f"{int(x // 60)}:{int(x % 60):02d}"
-if zona:
-    inputs += ["-i", "marca.png"]   # imagen fija: overlay la repite hasta el final
+for png, *_ in LOGOS:
+    inputs += ["-i", png]   # imagen fija: overlay la repite hasta el final
 progreso(70, f"Codificando el vídeo final 1080x1920 ({mmss(total)}) con {'la GPU (NVENC)' if VCODEC[1] == 'h264_nvenc' else 'x264'}")
-enc = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-nostats", "-progress", "pipe:1", *inputs, "-filter_complex", fc, "-map", "[v]", "-map", "[a]",
-     *VCODEC, "-pix_fmt", "yuv420p",
-     "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", out_mp4], stdout=subprocess.PIPE, text=True)
+# Dos versiones (dos logos): una sola pasada que escribe <salida>.mp4 y <salida>_2.mp4.
+salidas = [("[v]", "[a]", out_mp4)]
+if len(LOGOS) > 1:
+    fc += ";[a]asplit=2[a1][a2]"
+    salidas = [("[v]", "[a1]", out_mp4), ("[v2]", "[a2]", os.path.splitext(out_mp4)[0] + "_2.mp4")]
+    progreso(70, f"Dos versiones: con {LOGOS[0][5]} y con {LOGOS[1][5]}")
+cmd_out = []
+for vl, al, ruta in salidas:
+    cmd_out += ["-map", vl, "-map", al, *VCODEC, "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", ruta]
+enc = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-nostats", "-progress", "pipe:1", *inputs, "-filter_complex", fc, *cmd_out],
+                       stdout=subprocess.PIPE, text=True)
 last_pct = -1
 for row in enc.stdout:
     if row.startswith("out_time_us=") and row[12:].strip().isdigit():

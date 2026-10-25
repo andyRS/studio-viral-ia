@@ -34,6 +34,9 @@ export async function logoFile(id: string): Promise<File | null> {
   const l = (await listLogos()).find(x => x.id === id);
   return l ? new File([l.blob], `${l.name.replace(/[^\w-]+/g, "_") || "logo"}.png`, { type: l.blob.type || "image/png" }) : null;
 }
+export async function logoName(id: string): Promise<string> {
+  return BUILTIN.find(b => b.id === id)?.name || (await listLogos()).find(l => l.id === id)?.name || "logo";
+}
 // Logo por defecto: el último elegido para esa serie o cuenta; en las cristianas, el de «oración» si existe.
 export async function defaultLogo(key: string, style?: string): Promise<string> {
   let saved = ""; try { saved = localStorage.getItem(`estudio-viral:logo:${key}`) || ""; } catch {}

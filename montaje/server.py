@@ -97,7 +97,7 @@ def autorizado(authorization: str) -> bool:
 @app.get("/salud")
 def salud():
     # «carpeta»: desde dónde corre el montaje del PC (para ver si es la copia actualizada).
-    return {"ok": True, "local": LOCAL, "gpu": GPU, "musica": True, "musica_modo": True, "anterior": True, "recorte": True, "portada": True, "pavo_720": True, "comprimir": LOCAL, "mejorar": LOCAL, "quitar_marca": LOCAL, "logo_propio": True, "velocidad": True, "resumen": True, "pantallas": True, **({"carpeta": os.path.dirname(HERE)} if LOCAL else {})}
+    return {"ok": True, "local": LOCAL, "gpu": GPU, "musica": True, "musica_modo": True, "anterior": True, "recorte": True, "portada": True, "pavo_720": True, "comprimir": LOCAL, "mejorar": LOCAL, "quitar_marca": LOCAL, "logo_propio": True, "dos_logos": True, "velocidad": True, "resumen": True, "pantallas": True, **({"carpeta": os.path.dirname(HERE)} if LOCAL else {})}
 
 
 # ---------- Trabajos en segundo plano ----------
@@ -136,7 +136,9 @@ def _ejecutar(job, gpath, out, paths, work):
                 detalle = "".join(errores)[-1200:] or "el montaje excedió 30 minutos"
                 _avisar(job, estado="error", error="Falló el montaje: " + detalle)
             else:
-                _avisar(job, estado="listo", pct=100, paso="Vídeo listo", out=out)
+                out2 = os.path.splitext(out)[0] + "_2.mp4"
+                _avisar(job, estado="listo", pct=100, paso="Vídeo listo" + (" (dos versiones)" if os.path.exists(out2) else ""), out=out,
+                        out2=out2 if os.path.exists(out2) else "")
         except Exception as e:  # nunca deja el trabajo colgado en «montando»
             _avisar(job, estado="error", error=f"Falló el montaje: {e}")
         finally:
@@ -154,19 +156,23 @@ async def _guardar_logo(logo: Optional[UploadFile], work: str) -> str:
     ext = os.path.splitext(logo.filename)[1].lower()
     if ext not in (".png", ".jpg", ".jpeg", ".webp"):
         raise HTTPException(400, "El logo debe ser PNG, JPG o WEBP (mejor PNG con fondo transparente)")
+    os.makedirs(work, exist_ok=True)
     path = os.path.join(work, "logo" + ext)
     await save_upload(logo, path, MAX_LOGO_BYTES)
     return path
 
 
-async def _guardar_musica(musica: Optional[UploadFile], gpath: str, work: str, anterior: Optional[UploadFile] = None, logo: Optional[UploadFile] = None):
+async def _guardar_musica(musica: Optional[UploadFile], gpath: str, work: str, anterior: Optional[UploadFile] = None, logo: Optional[UploadFile] = None, logo2: Optional[UploadFile] = None):
     """Guarda la música de fondo y el vídeo de la parte anterior y apunta a ellos en el guion. Las rutas
     las pone siempre el servidor: las que vengan del navegador se descartan."""
     g = json.load(open(gpath, encoding="utf-8"))
-    g.pop("musica_archivo", None); g.pop("anterior_archivo", None); g.pop("logo_archivo", None)
+    g.pop("musica_archivo", None); g.pop("anterior_archivo", None); g.pop("logo_archivo", None); g.pop("logo2_archivo", None)
     lpath = await _guardar_logo(logo, work)
     if lpath:
         g["logo_archivo"] = lpath
+    l2 = await _guardar_logo(logo2, os.path.join(work, "l2")) if logo2 is not None and logo2.filename else ""
+    if l2:
+        g["logo2_archivo"] = l2
     if anterior is not None and anterior.filename:
         apath = os.path.join(work, "anterior.mp4")
         await save_upload(anterior, apath, MAX_CLIP_BYTES)
@@ -181,7 +187,7 @@ async def _guardar_musica(musica: Optional[UploadFile], gpath: str, work: str, a
     json.dump(g, open(gpath, "w", encoding="utf-8"), ensure_ascii=False)
 
 
-async def _guardar_entrada(guion: UploadFile, clips: List[UploadFile], musica: Optional[UploadFile] = None, anterior: Optional[UploadFile] = None, logo: Optional[UploadFile] = None):
+async def _guardar_entrada(guion: UploadFile, clips: List[UploadFile], musica: Optional[UploadFile] = None, anterior: Optional[UploadFile] = None, logo: Optional[UploadFile] = None, logo2: Optional[UploadFile] = None):
     if not 1 <= len(clips) <= MAX_CLIPS:
         raise HTTPException(400, f"Se admiten entre 1 y {MAX_CLIPS} clips")
     work = tempfile.mkdtemp(prefix="montaje_")
@@ -193,17 +199,17 @@ async def _guardar_entrada(guion: UploadFile, clips: List[UploadFile], musica: O
             p = os.path.join(work, f"clip{i:02d}.mp4")
             total_bytes += await save_upload(c, p, min(MAX_CLIP_BYTES, MAX_TOTAL_BYTES - total_bytes))
             paths.append(p)
-        await _guardar_musica(musica, gpath, work, anterior, logo)
+        await _guardar_musica(musica, gpath, work, anterior, logo, logo2)
     except Exception:
         shutil.rmtree(work, ignore_errors=True); raise
     return work, gpath, paths
 
 
 @app.post("/trabajos")
-async def crear_trabajo(guion: UploadFile = File(...), clips: List[UploadFile] = File(...), musica: Optional[UploadFile] = File(None), anterior: Optional[UploadFile] = File(None), logo: Optional[UploadFile] = File(None), authorization: str = Header(default=""), x_montaje_local: str = Header(default="")):
+async def crear_trabajo(guion: UploadFile = File(...), clips: List[UploadFile] = File(...), musica: Optional[UploadFile] = File(None), anterior: Optional[UploadFile] = File(None), logo: Optional[UploadFile] = File(None), logo2: Optional[UploadFile] = File(None), authorization: str = Header(default=""), x_montaje_local: str = Header(default="")):
     if not (autorizado(authorization) or (LOCAL and x_montaje_local == "1")):
         raise HTTPException(401, "Token inválido")
-    work, gpath, paths = await _guardar_entrada(guion, clips, musica, anterior, logo)
+    work, gpath, paths = await _guardar_entrada(guion, clips, musica, anterior, logo, logo2)
     jid = uuid.uuid4().hex
     en_cola = sum(1 for j in TRABAJOS.values() if j["estado"] in ("en cola", "montando"))
     job = {"id": jid, "estado": "en cola", "pct": 0, "paso": f"En cola ({en_cola} por delante)" if en_cola else "Clips recibidos",
@@ -230,14 +236,18 @@ async def estado_trabajo(jid: str, desde: int = -1):
             job["cond"].wait_for(lambda: job["seq"] > desde or job["estado"] in ("listo", "error"), timeout=20)
     if job["seq"] <= desde and job["estado"] not in ("listo", "error"):
         await asyncio.to_thread(esperar)
-    return {k: job[k] for k in ("estado", "pct", "paso", "log", "seq", "error")}
+    return {**{k: job[k] for k in ("estado", "pct", "paso", "log", "seq", "error")}, "segunda": bool(job.get("out2"))}
 
 
 @app.get("/trabajos/{jid}/video")
-def video_trabajo(jid: str):
+def video_trabajo(jid: str, v: int = 1):
     job = _trabajo(jid)
     if job["estado"] != "listo":
         raise HTTPException(409, "El vídeo todavía no está listo")
+    if v == 2:   # segunda versión, con el otro logo
+        if not job.get("out2"):
+            raise HTTPException(404, "Este montaje no tiene segunda versión")
+        return FileResponse(job["out2"], media_type="video/mp4", filename="episodio_montado_2.mp4")
     return FileResponse(job["out"], media_type="video/mp4", filename="episodio_montado.mp4")
 
 

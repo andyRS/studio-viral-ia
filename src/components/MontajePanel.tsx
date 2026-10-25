@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
-import LogoPicker, { FRUTI, defaultLogo, logoFile, rememberLogo } from "./LogoPicker";
+import LogoPicker, { FRUTI, defaultLogo, logoFile, logoName, rememberLogo } from "./LogoPicker";
 import { postApi, isAuthError } from "@/lib/api-client";
 import CopyButton from "./CopyButton";
 import { episodeTrackPrompt, seriesThemePrompt, type MusicContext } from "@/lib/music";
@@ -44,6 +44,8 @@ function clipFromStep(paso: string, n: number) {
 // El servidor espera un bloque de diálogo por clip. Si hay menos clips que bloques
 // (p. ej. un solo clip de Dola de 60 s), se juntan bloques consecutivos; si hay más,
 // los clips sobrantes van sin diálogo (tarjetas).
+const slug = (v: string) => v.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\w]+/g, "-").replace(/^-|-$/g, "").toLowerCase() || "logo";
+
 export function adaptGuion(guion: any, nClips: number, opts: { marca?: "dola" | "pavo"; delogo?: string; cierre?: string; cierreCta?: string } = {}) {
   const blocks: any[][] = Array.isArray(guion?.clips) ? guion.clips : [];
   let clips: any[][];
@@ -104,6 +106,11 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
   // Logo que tapa la marca de agua: el de la página donde se publica (se recuerda por serie).
   const [logo, setLogo] = useState(FRUTI);
   useEffect(() => { defaultLogo(String(musicCtx?.series || title), style).then(setLogo); }, [musicCtx?.series, title, style]);
+  // Segunda versión con otro logo (otra página): «» = no. Se recuerda por serie.
+  const logoKey2 = `2:${String(musicCtx?.series || title)}`;
+  const [logo2, setLogo2] = useState("");
+  useEffect(() => { try { setLogo2(localStorage.getItem(`estudio-viral:logo:${logoKey2}`) || ""); } catch {} }, [logoKey2]);
+  const [names, setNames] = useState<[string, string]>(["", ""]);
   // Canción de firma recordada para esta serie.
   const serieKey = String(musicCtx?.series || "");
   const [songSaved, setSongSaved] = useState(false);
@@ -140,6 +147,7 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
   const [error, setError] = useState("");
   const [video, setVideo] = useState<string>("");
   const [cover, setCover] = useState<string>("");
+  const [video2, setVideo2] = useState<string>("");
   const timer = useRef<any>(null);
   const blocks = Array.isArray(guion?.clips) ? guion.clips.length : 0;
   const monitorClip = live ? clipFromStep(live.paso, files.length) : -1;
@@ -166,6 +174,7 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
     const delogo = watermark === "custom" ? custom : "";
     setBusy(true); setError(""); setElapsed(0); setUploadPct(0); setLive(null);
     if (video) { URL.revokeObjectURL(video); setVideo(""); }
+    if (video2) { URL.revokeObjectURL(video2); setVideo2(""); }
     const t0 = Date.now(); timer.current = setInterval(() => setElapsed(Math.round((Date.now() - t0) / 1000)), 1000);
     try {
       // Destino: este PC (sin pase, solo 127.0.0.1) o el servidor de Fly (pase temporal firmado por la app).
@@ -179,7 +188,7 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
         base = t.json.url; headers = { Authorization: `Ticket ${t.json.ticket}` };
       }
       // Un servidor sin actualizar ignora la música sin avisar: se comprueba antes de subir nada.
-      const needs = [music && ["musica", "la música de fondo"], music && musicMode === "extremos" && ["musica_modo", "la música solo al inicio y al final"], anterior && ["anterior", "«Anteriormente...»"], anterior && resumen.trim() && ["resumen", "el resumen del «Anteriormente...»"], recortar && ["recorte", "quitar las pausas"], Number(velocidad) > 1 && ["velocidad", "el ritmo ágil"], (guion?.pantallas?.length || guion?.telefono?.length) && ["pantallas", "los chats de WhatsApp y la voz por teléfono"], watermark !== "none" && logo !== FRUTI && ["logo_propio", "el logo de tu página"]].filter(Boolean) as [string, string][];
+      const needs = [music && ["musica", "la música de fondo"], music && musicMode === "extremos" && ["musica_modo", "la música solo al inicio y al final"], anterior && ["anterior", "«Anteriormente...»"], anterior && resumen.trim() && ["resumen", "el resumen del «Anteriormente...»"], recortar && ["recorte", "quitar las pausas"], Number(velocidad) > 1 && ["velocidad", "el ritmo ágil"], (guion?.pantallas?.length || guion?.telefono?.length) && ["pantallas", "los chats de WhatsApp y la voz por teléfono"], watermark !== "none" && logo !== FRUTI && ["logo_propio", "el logo de tu página"], watermark !== "none" && !!logo2 && logo2 !== logo && ["dos_logos", "la segunda versión con otro logo"]].filter(Boolean) as [string, string][];
       if (needs.length) {
         const caps = await fetch(`${base}/salud`, { signal: AbortSignal.timeout(8000) }).then(r => r.json()).catch(() => null);
         const missing = needs.filter(([k]) => !caps?.[k]).map(([, label]) => label);
@@ -191,11 +200,14 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
         }
       }
       const fd = new FormData();
-      fd.append("guion", new Blob([JSON.stringify({ ...adaptGuion(guion, files.length, { marca, delogo, cierre: lastEpisode ? "FIN" : guion?.cierre || "Continuará...", cierreCta: cta }), ...(music ? { musica_volumen: Number(musicVol), musica_modo: musicMode } : {}), recortar, velocidad: Number(velocidad), ...(anterior && resumen.trim() ? { anterior_resumen: resumen.trim() } : {}), ...(coverData?.parte ? { portada: { ...coverData, clip: Math.round(files.length * 0.35) } } : {}) })], { type: "application/json" }), "guion.json");
+      fd.append("guion", new Blob([JSON.stringify({ ...adaptGuion(guion, files.length, { marca, delogo, cierre: lastEpisode ? "FIN" : guion?.cierre || "Continuará...", cierreCta: cta }), ...(music ? { musica_volumen: Number(musicVol), musica_modo: musicMode } : {}), recortar, velocidad: Number(velocidad), ...(anterior && resumen.trim() ? { anterior_resumen: resumen.trim() } : {}), ...(watermark !== "none" && logo2 && logo2 !== logo ? { logo_nombre: await logoName(logo), logo2_nombre: await logoName(logo2), ...(logo2 === FRUTI ? { logo2: "frutienganchados" } : {}) } : {}), ...(coverData?.parte ? { portada: { ...coverData, clip: Math.round(files.length * 0.35) } } : {}) })], { type: "application/json" }), "guion.json");
       for (const f of files) fd.append("clips", f, f.name);
       if (music) fd.append("musica", music, music.name);
       if (anterior) fd.append("anterior", anterior, anterior.name);
       if (watermark !== "none") { const lf = await logoFile(logo); if (lf) fd.append("logo", lf, lf.name); }
+      const dual = watermark !== "none" && !!logo2 && logo2 !== logo;
+      if (dual && logo2 !== FRUTI) { const l2 = await logoFile(logo2); if (l2) fd.append("logo2", l2, l2.name); }
+      setNames(dual ? [await logoName(logo), await logoName(logo2)] : ["", ""]);
       // 1) Subida: el servidor responde al instante con el número de trabajo.
       const { id } = await upload(`${base}/trabajos`, headers, fd, setUploadPct);
       // 2) Progreso en vivo: cada respuesta llega en cuanto hay un paso nuevo (o a los 20 s).
@@ -218,6 +230,7 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
       const v = await fetch(`${base}/trabajos/${id}/video`);
       if (!v.ok) { setError(`No se pudo descargar el vídeo (HTTP ${v.status}). Está guardado 30 min en el servidor: vuelve a intentarlo.`); return; }
       setVideo(URL.createObjectURL(await v.blob()));
+      if (state.segunda) { const v2 = await fetch(`${base}/trabajos/${id}/video?v=2`); if (v2.ok) setVideo2(URL.createObjectURL(await v2.blob())); }
       // Portada con el diseño fijo de la serie (servidores antiguos no la tienen: se ignora).
       const c = await fetch(`${base}/trabajos/${id}/portada`).catch(() => null);
       if (c?.ok) setCover(URL.createObjectURL(await c.blob()));
@@ -257,7 +270,10 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
       El guion tiene {blocks} bloque(s) y subiste {files.length} clip(s). {files.length < blocks ? "Se juntarán bloques seguidos para que cada clip lleve su diálogo." : "Los clips sobrantes irán sin diálogo (como tarjetas)."}
     </p>}
     <div className="space-y-2"><label htmlFor="watermark-mode" className="block text-xs text-slate-300">Quitar marca de agua</label><select id="watermark-mode" value={watermark} onChange={e => setWatermark(e.target.value as Watermark)} disabled={busy} className="max-w-sm"><option value="none">No · los clips no tienen marca (Higgsfield)</option><option value="dola">Sí · marca de Dola</option><option value="pavo">Sí · marca de Pavo IA</option><option value="custom">Sí · otra marca (indicar área)</option></select>{(watermark === "dola" || watermark === "pavo") && <p className="text-xs text-slate-400">Cada clip se lleva a la resolución de {watermark === "dola" ? "Dola (720 × 1280)" : "Pavo (704 × 1280)"} y se borra la marca, aunque alguno venga en otra resolución. Encima va el logo elegido, del tamaño justo para taparla (no se nota el difuminado).</p>}{watermark === "custom" && <div className="flex flex-wrap gap-2">{(["x", "y", "w", "h"] as const).map(key => <label key={key} className="text-xs text-slate-300">{key === "w" ? "Ancho" : key === "h" ? "Alto" : key}<input type="number" min="0" max="9999" value={rect[key]} onChange={e => setRect(prev => ({ ...prev, [key]: e.target.value }))} className="mt-1 w-20" /></label>)}<p className="w-full text-xs text-slate-400">Coordenadas en píxeles del clip original. Funciona con marcas fijas; revisa el resultado antes de publicar.</p></div>}
-      {watermark !== "none" && <div className="rounded-lg border border-white/10 p-3"><p className="mb-2 text-xs text-slate-300">Logo que tapa la marca <span className="text-slate-500">(el de la página donde publicas)</span></p><LogoPicker value={logo} onChange={id => { setLogo(id); rememberLogo(String(musicCtx?.series || title), id); }} disabled={busy} /></div>}</div>
+      {watermark !== "none" && <div className="space-y-3 rounded-lg border border-white/10 p-3"><p className="text-xs text-slate-300">Logo que tapa la marca <span className="text-slate-500">(el de la página donde publicas)</span></p><LogoPicker value={logo} onChange={id => { setLogo(id); rememberLogo(String(musicCtx?.series || title), id); }} disabled={busy} />
+        <label className="flex items-center gap-2 text-xs text-slate-300"><input type="checkbox" className="w-auto" checked={!!logo2} disabled={busy} onChange={e => { const v = e.target.checked ? (logo === FRUTI ? "un-minuto-en-oracion" : FRUTI) : ""; setLogo2(v); rememberLogo(logoKey2, v); }} /> <b>Sacar también otra versión con otro logo</b> <span className="text-slate-500">(para publicar en dos páginas; sale en el mismo montaje)</span></label>
+        {!!logo2 && <div><p className="mb-2 text-xs text-slate-400">Logo de la segunda versión</p><LogoPicker value={logo2} onChange={id => { setLogo2(id); rememberLogo(logoKey2, id); }} disabled={busy} />{logo2 === logo && <p className="mt-1 text-[11px] text-amber-200">Elige un logo distinto al de arriba.</p>}</div>}
+      </div>}</div>
     <div className="space-y-2">
       <label htmlFor="cierre-cta" className="block text-xs text-slate-300">Llamada final <span className="text-slate-500">(línea amarilla bajo «{lastEpisode ? "FIN" : guion?.cierre || "Continuará..."}» en la tarjeta de cierre)</span></label>
       <input id="cierre-cta" value={cta} maxLength={40} onChange={e => { setCta(e.target.value); setCtaEdited(true); }} disabled={busy} className="max-w-sm" />
@@ -324,7 +340,11 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
     {error && <p className="rounded border border-red-500/30 bg-red-500/10 p-2 text-sm text-red-200">{error}</p>}
     {video && <div className="space-y-2">
       <video src={video} controls className="max-h-[70vh] rounded" />
-      <a href={video} download={fname} onClick={() => onDownloaded?.()} className="inline-block rounded bg-emerald-500 px-4 py-2 text-sm font-bold text-black">Descargar {fname}</a>
+      <div className="flex flex-wrap gap-2">
+        <a href={video} download={video2 && names[0] ? fname.replace(/\.mp4$/, `-${slug(names[0])}.mp4`) : fname} onClick={() => onDownloaded?.()} className="inline-block rounded bg-emerald-500 px-4 py-2 text-sm font-bold text-black">Descargar {video2 && names[0] ? `versión ${names[0]}` : fname}</a>
+        {video2 && <a href={video2} download={fname.replace(/\.mp4$/, `-${slug(names[1])}.mp4`)} onClick={() => onDownloaded?.()} className="inline-block rounded bg-emerald-500 px-4 py-2 text-sm font-bold text-black">Descargar versión {names[1]}</a>}
+      </div>
+      {video2 && <p className="text-xs text-slate-400">Mismo vídeo con dos logos: arriba se ve la versión {names[0]}.</p>}
       {cover && <div className="mt-3 flex flex-wrap items-end gap-3"><img src={cover} alt="Portada del episodio" className="h-64 rounded-lg border border-white/10" /><a href={cover} download={fname.replace(/\.mp4$/, "-portada.jpg")} className="rounded bg-amber-500 px-4 py-2 text-sm font-bold text-black">Descargar portada</a></div>}
       {onDownloaded && <p className="text-xs text-slate-400">Al descargarlo, este episodio queda terminado y bloqueado, y se abre el paso para crear la parte siguiente.</p>}
       {!!publish.length && <div className="mt-3 space-y-2">
