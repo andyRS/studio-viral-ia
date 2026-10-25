@@ -12,6 +12,7 @@ import MetricsModule from "@/components/MetricsModule";
 import ViralAnalyzerModule from "@/components/ViralAnalyzerModule";
 import DropshippingModule from "@/components/DropshippingModule";
 import DolaStudioModule from "@/components/DolaStudioModule";
+import AutoMetaSync from "@/components/AutoMetaSync";
 
 const I = (d: string, size = "h-[18px] w-[18px]") => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className={size + " shrink-0"} aria-hidden="true">
@@ -283,6 +284,7 @@ function DashboardInner() {
   const activeModules = workspace?.modules || [];
 
   return <div className="studio-shell min-h-screen md:flex">
+    <AutoMetaSync />
     <aside className="studio-sidebar hidden md:flex md:w-[264px] xl:w-[280px] shrink-0 flex-col sticky top-0 h-screen" aria-label="Navegación principal">
       <div className="px-5 pb-5 pt-6"><Brand onClick={() => go("inicio")} /></div>
       <div className="px-3">

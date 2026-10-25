@@ -99,8 +99,8 @@ export interface ImportedMetric {
   shares?: number; saves?: number; skipRate?: number; reach?: number; thumb?: string;
 }
 
-async function instagramReels(page: any): Promise<ImportedMetric[]> {
-  const media = await graph(`/${page.ig.id}/media`, { fields: "id,caption,media_product_type,timestamp,permalink,thumbnail_url", limit: String(REELS_LIMIT), access_token: page.token });
+async function instagramReels(page: any, limit = REELS_LIMIT): Promise<ImportedMetric[]> {
+  const media = await graph(`/${page.ig.id}/media`, { fields: "id,caption,media_product_type,timestamp,permalink,thumbnail_url", limit: String(limit), access_token: page.token });
   const reels = (media.data || []).filter((m: any) => m.media_product_type === "REELS");
   const rows = await pool(reels, 5, async (m: any) => {
     const v = await insights(`/${m.id}/insights`, page.token,
@@ -116,8 +116,8 @@ async function instagramReels(page: any): Promise<ImportedMetric[]> {
   return rows.filter(Boolean) as ImportedMetric[];
 }
 
-async function facebookReels(page: any): Promise<ImportedMetric[]> {
-  const list = await graph(`/${page.id}/video_reels`, { fields: "id,description,created_time,length,permalink_url,picture,thumbnails{uri,is_preferred}", limit: String(REELS_LIMIT), access_token: page.token });
+async function facebookReels(page: any, limit = REELS_LIMIT): Promise<ImportedMetric[]> {
+  const list = await graph(`/${page.id}/video_reels`, { fields: "id,description,created_time,length,permalink_url,picture,thumbnails{uri,is_preferred}", limit: String(limit), access_token: page.token });
   const rows = await pool(list.data || [], 5, async (r: any) => {
     const v = await insights(`/${r.id}/video_insights`, page.token,
       // post_impressions_unique ya no es válida para reels en v26: si se pide, falla toda la llamada.
@@ -163,11 +163,13 @@ export async function setSelection(userId: string, ids: string[]) {
   return { selected: next, removedExternalIds };
 }
 
-export async function importMetrics(conn: any) {
+// limit: cuántos Reels recientes por página. La actualización automática (cada 5 min) pide solo los
+// últimos 8, que son los que cambian; así no se pasa del límite de consultas de Meta.
+export async function importMetrics(conn: any, limit = REELS_LIMIT) {
   const metrics: ImportedMetric[] = []; const errors: string[] = [];
   for (const page of selectedPages(conn)) {
-    try { metrics.push(...await facebookReels(page)); } catch (e: any) { errors.push(`Facebook · ${page.name}: ${e.message}`); }
-    if (page.ig) try { metrics.push(...await instagramReels(page)); } catch (e: any) { errors.push(`Instagram · @${page.ig.username}: ${e.message}`); }
+    try { metrics.push(...await facebookReels(page, limit)); } catch (e: any) { errors.push(`Facebook · ${page.name}: ${e.message}`); }
+    if (page.ig) try { metrics.push(...await instagramReels(page, limit)); } catch (e: any) { errors.push(`Instagram · @${page.ig.username}: ${e.message}`); }
   }
   return { metrics, errors };
 }

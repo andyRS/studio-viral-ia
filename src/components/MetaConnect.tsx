@@ -1,10 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useData } from "@/lib/DataContext";
-import { hookText } from "@/lib/hooks";
-import type { Metric } from "@/lib/types";
-
-const norm = (s: string) => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9ñ ]+/g, " ").replace(/\s+/g, " ").trim();
+import { syncMetaMetrics, META_SYNC_EVENT, META_SYNC_KEY, META_SYNC_MINUTES } from "@/lib/metaSync";
 
 const MESSAGES: Record<string, string> = {
   conectado: "✓ Facebook e Instagram conectados. Elige abajo las páginas que quieres ver.",
@@ -14,14 +11,9 @@ const MESSAGES: Record<string, string> = {
   "sin-configurar": "Falta configurar META_APP_ID y META_APP_SECRET en Vercel.",
 };
 
-// Busca el episodio de la app al que pertenece un Reel por su texto (título o gancho en la descripción).
-function matchEpisode(caption: string, episodes: any[]) {
-  const c = norm(caption);
-  if (!c) return null;
-  return episodes.find(e => {
-    const t = norm(e.title); const h = norm(hookText(e.output?.hook).split(" / ")[0]);
-    return (t.length >= 6 && !/^episodio \d+$/.test(t) && c.includes(t)) || (h.length >= 12 && c.includes(h));
-  }) || null;
+function ago(iso: string) {
+  const min = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+  return min < 1 ? "hace un momento" : min < 60 ? `hace ${min} min` : `hace ${Math.floor(min / 60)} h`;
 }
 
 export default function MetaConnect() {
@@ -34,6 +26,16 @@ export default function MetaConnect() {
   const [importProgress, setImportProgress] = useState<{ done: number; total: number } | null>(null);
   const [picking, setPicking] = useState(false);
   const [checked, setChecked] = useState<string[]>([]);
+  const [lastSync, setLastSync] = useState<string | null>(null);
+  const [, tick] = useState(0);
+
+  useEffect(() => {
+    const read = () => { try { setLastSync(localStorage.getItem(META_SYNC_KEY)); } catch {} };
+    read();
+    window.addEventListener(META_SYNC_EVENT, read);
+    const t = setInterval(() => tick(x => x + 1), 30_000);
+    return () => { window.removeEventListener(META_SYNC_EVENT, read); clearInterval(t); };
+  }, []);
 
   async function load() {
     const r = await fetch("/api/meta/status", { cache: "no-store" }).catch(() => null);
@@ -70,48 +72,15 @@ export default function MetaConnect() {
     setBusy(true);
     setImportProgress({ done: 0, total: 0 });
     setMsg("Consultando los Reels de Facebook e Instagram…");
-    let added = 0, updated = 0, linked = 0, preserved = 0;
-    const failed: string[] = [];
     try {
-      const r = await fetch("/api/meta/import", { method: "POST" }); const j = await r.json().catch(() => ({}));
-      if (!j.ok) { setMsg("No se pudo iniciar la importación: " + (j.error || "HTTP " + r.status) + ". Vuelve a intentarlo."); return; }
-      const incoming = Array.isArray(j.metrics) ? j.metrics : [];
-      const byExternalId = new Map<string, Metric>(data.metrics.filter(m => m.externalId).map(m => [m.externalId!, m]));
-      setImportProgress({ done: 0, total: incoming.length });
-      setMsg(incoming.length ? "Guardando cada Reel por separado. Lo ya guardado permanece si cierras esta pantalla; vuelve a importar para continuar." : "Consulta completada.");
-      for (let index = 0; index < incoming.length; index++) {
-        const m = incoming[index];
-        if (!m.externalId) { failed.push(`${m.platform || "Reel"} ${m.date || "sin fecha"}: falta ID externo`); setImportProgress({ done: index + 1, total: incoming.length }); continue; }
-        const prev = byExternalId.get(m.externalId);
-        const ep = matchEpisode(m.caption, data.episodes);
-        const manualEpisode = !ep && prev?.episodeId ? data.episodes.find(e => e.id === prev.episodeId) : null;
-        const episodeId = ep?.id || prev?.episodeId;
-        const episodeTitle = ep?.title || manualEpisode?.title || prev?.episodeTitle
-          || (Array.from(String(m.caption || "").split("\n")[0]).slice(0, 80).join("").trim() || `Reel ${m.date}`);
-        const row = {
-          externalId: m.externalId, permalink: m.permalink, platform: m.platform, date: m.date, accountName: m.account, thumb: m.thumb,
-          capturedAt: new Date().toISOString(),
-          views: m.views, avgWatch: m.avgWatch, interactions: m.interactions, followers: m.followers, duration: m.duration || ep?.duration || prev?.duration || 0,
-          shares: m.shares, saves: m.saves, skipRate: m.skipRate, reach: m.reach,
-          episodeId, episodeTitle,
-          hook: ep ? hookText(ep.output?.hook) : prev?.hook || "", formula: prev?.formula || "",
-        };
-        try {
-          if (prev) { const saved = await update("metrics", prev.id, { ...prev, ...row }); byExternalId.set(m.externalId, saved); updated++; }
-          else { const saved = await insert("metrics", row); byExternalId.set(m.externalId, saved); added++; }
-          if (ep) linked++;
-          else if (episodeId) preserved++;
-        } catch (e: any) { failed.push(`${m.platform} ${m.date}: ${e?.message || e}`); }
-        setImportProgress({ done: index + 1, total: incoming.length });
-      }
-      const sourceErrors: string[] = Array.isArray(j.errors) ? j.errors : [];
-      const partial = failed.length > 0 || sourceErrors.length > 0;
-      const summary = `${added} Reels nuevos, ${updated} actualizados. ${linked} vinculados automáticamente; ${preserved} vínculos existentes conservados.`;
-      setMsg(`${partial ? "Importación parcial" : "Importación completa"}: ${summary}${failed.length ? ` ${failed.length} no se pudieron guardar: ${failed.slice(0, 2).join(" · ")}.` : ""}${sourceErrors.length ? ` Avisos de Meta: ${sourceErrors.join(" · ")}.` : ""}${partial ? " Lo guardado permanece; vuelve a importar para reintentar los pendientes." : ""}`);
+      const res = await syncMetaMetrics({ data, insert, update }, { onProgress: (done, total) => setImportProgress({ done, total }) });
+      if (res.skipped) { setMsg("Ya se está actualizando en segundo plano. Espera unos segundos."); return; }
+      if (res.error) { setMsg("No se pudo iniciar la importación: " + res.error + ". Vuelve a intentarlo."); return; }
+      const partial = res.failed.length > 0 || res.errors.length > 0;
+      const summary = `${res.added} Reels nuevos, ${res.updated} actualizados. ${res.linked} vinculados automáticamente; ${res.preserved} vínculos existentes conservados.`;
+      setMsg(`${partial ? "Importación parcial" : "Importación completa"}: ${summary}${res.failed.length ? ` ${res.failed.length} no se pudieron guardar: ${res.failed.slice(0, 2).join(" · ")}.` : ""}${res.errors.length ? ` Avisos de Meta: ${res.errors.join(" · ")}.` : ""}${partial ? " Lo guardado permanece; vuelve a importar para reintentar los pendientes." : ""}`);
     } catch (e: any) {
-      const saved = added + updated;
-      setMsg(saved ? `Importación parcial: ${added} Reels nuevos y ${updated} actualizados antes del error. Lo guardado permanece; vuelve a importar para continuar. Error: ${e?.message || e}`
-        : "No se pudieron importar las métricas: " + (e?.message || e) + ". Vuelve a intentarlo.");
+      setMsg("No se pudieron importar las métricas: " + (e?.message || e) + ". Lo guardado permanece; vuelve a intentarlo.");
     } finally { setImportProgress(null); setBusy(false); }
   }
 
@@ -160,7 +129,7 @@ export default function MetaConnect() {
             </div>)}
             {selectedPages.length > 3 && <button type="button" aria-expanded={showAllAccounts} onClick={() => setShowAllAccounts(!showAllAccounts)} className="rounded-lg border border-white/15 px-2.5 py-1.5 text-xs font-semibold text-slate-200 hover:bg-white/5">{showAllAccounts ? "Ver menos" : `+${selectedPages.length - 3} páginas`}</button>}
           </div>
-          {connectionDate && <p className="mt-2 text-[11px] text-slate-400">Conectado el {connectionDate}</p>}
+          <p className="mt-2 text-[11px] text-slate-400">{connectionDate ? `Conectado el ${connectionDate} · ` : ""}{lastSync ? `Actualizado ${ago(lastSync)}` : "Aún sin actualizar"} · se actualiza solo cada {META_SYNC_MINUTES} min</p>
         </>}
       </div>
       <div className="flex shrink-0 flex-wrap gap-2">
@@ -196,7 +165,7 @@ export default function MetaConnect() {
       </div>}
       {status?.configured === false && <p className="mt-3 text-xs text-slate-300">Falta configurar la app de Meta (META_APP_ID y META_APP_SECRET en Vercel).</p>}
       {status?.connected && selected.length > 0 && instagramCount === 0 && <p className="mt-3 text-xs text-amber-200">Ninguna de las páginas elegidas tiene Instagram vinculado: la cuenta debe ser profesional y estar vinculada a una página de Facebook.</p>}
-      <p className="mt-3 text-[11px] leading-relaxed text-slate-400">Importa los últimos 25 Reels de cada página e Instagram. Meta puede tardar hasta 48 h en dar las cifras. Para enlazar un Reel con su episodio, pon el título del episodio o la primera línea del gancho en la descripción.</p>
+      <p className="mt-3 text-[11px] leading-relaxed text-slate-400">Importa los últimos 25 Reels de cada página e Instagram; mientras la app está abierta, los 8 más recientes se actualizan solos cada 5 minutos. Meta puede tardar hasta 48 h en dar las cifras. Para enlazar un Reel con su episodio, pon el título del episodio o la primera línea del gancho en la descripción.</p>
     </div>}
     {status?.error && <p role="alert" className="mt-3 text-xs text-rose-300">{status.error}</p>}
     {msg && <p role="status" aria-live="polite" className="mt-3 border-t border-white/10 pt-3 text-xs leading-relaxed text-slate-200">{msg}</p>}
