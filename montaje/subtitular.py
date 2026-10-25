@@ -28,6 +28,8 @@ Opcionales:
   "telefono": [6]   el clip 6 es una llamada o nota de voz: la voz suena como por teléfono
   "logo2_archivo": lo pone server.py: segundo logo; sale también <salida>_2.mp4 con ese logo (otra página)
   "logo2": "frutienganchados"   segunda versión con el emblema FrutiEnganchados (sin subir archivo)
+  "versiones": ["facebook", "tiktok", "shorts"]   además: <salida>_facebook.mp4 (abre con el momento más fuerte),
+               <salida>_tiktok_N.mp4 (partes de ~1 min) y <salida>_shorts.mp4 (<60 s). Siempre: <salida>_revision.json
   "velocidad": 1.0-1.25   ritmo: 1.1 = clips un 10 % más rápidos (voz y vídeo juntos, mismo tono)
   "recortar": true (por defecto)   quita el silencio muerto al inicio y al final de cada clip con diálogo
                                    (los clips de IA traen medio segundo o más): el vídeo fluye sin pausas.
@@ -45,7 +47,7 @@ Opcionales:
   Un bloque vacío [] sirve para clips sin diálogo (tarjetas "Un año después...").
 Variables de entorno: FONT_DIR (carpeta con Poppins-Bold.ttf), WHISPER_MODEL (small por defecto).
 """
-import sys, os, json, re, shutil, subprocess, tempfile, unicodedata, difflib, wave
+import sys, os, json, math, re, shutil, subprocess, tempfile, unicodedata, difflib, wave
 import numpy as np
 
 FONTDIR = os.environ.get("FONT_DIR") or (os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts") if os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts", "Poppins-Bold.ttf")) else "/usr/share/fonts/truetype/google-fonts")
@@ -734,5 +736,169 @@ if P:
         progreso(99, f"Portada lista: PARTE {P.get('parte')}")
     except Exception as e:   # la portada nunca impide entregar el vídeo
         progreso(99, f"No se pudo crear la portada ({str(e)[:80]})")
+# ---------- Revisión automática antes de publicar ----------
+# Lo que se miraría a mano: pausas, frases lentas, pantallas negras, clips sin voz, «Anteriormente...»,
+# gancho y duración. Sale en <salida>_revision.json con una nota de 0 a 100 y qué arreglar.
+INICIO_CLIP = [offsets[ci] for ci in range(len(clips))]
+DUR_CLIP = [(recortes[ci][1] - recortes[ci][0]) / VEL for ci in range(len(clips))]
+HABLA = [str((G["clips"][ci] or [["", ""]])[0][0]) for ci in range(len(clips))]
+try:
+    nota, avisos, bien = 100, [], []
+    det = subprocess.run(["ffmpeg", "-hide_banner", "-i", out_mp4, "-af", "silencedetect=noise=-38dB:d=0.9",
+                          "-vf", "blackdetect=d=0.4:pix_th=0.08", "-f", "null", "-"], capture_output=True, text=True).stderr
+    fin_util = total - (3 if G.get("cierre") else 0)
+    silencios = [(float(a), float(b)) for a, b in re.findall(r"silence_start: ([\d.]+)[\s\S]*?silence_end: ([\d.]+)", det)
+                 if float(a) < fin_util - 0.5]
+    negros = [float(a) for a in re.findall(r"black_start:([\d.]+)", det) if float(a) < fin_util - 0.5]
+    if silencios:
+        nota -= min(25, 5 * len(silencios))
+        avisos.append({"tipo": "pausas", "texto": f"{len(silencios)} silencio(s) de más de 0,9 s: " + ", ".join(f"{mmss(a)} ({b - a:.1f} s)" for a, b in silencios[:6]),
+                       "arreglo": "Activa «Quitar pausas muertas» o cambia el clip de ese momento: la gente desliza en los silencios."})
+    else:
+        bien.append("Sin silencios largos: el vídeo fluye.")
+    if negros:
+        nota -= min(15, 5 * len(negros))
+        avisos.append({"tipo": "negro", "texto": f"Pantalla negra en {', '.join(mmss(x) for x in negros[:5])}",
+                       "arreglo": "Revisa ese clip: una imagen negra hace que la gente se vaya."})
+    lentos, mudos = [], []
+    for ci in range(len(clips)):
+        if not G["clips"][ci]:
+            continue
+        palabras = len(words_per_clip[ci]) if ci < len(words_per_clip) else 0
+        if palabras == 0:
+            mudos.append(ci + 1)
+        elif DUR_CLIP[ci] > 2.5 and palabras / DUR_CLIP[ci] < 1.9:
+            lentos.append((ci + 1, palabras / DUR_CLIP[ci], DUR_CLIP[ci]))
+    if lentos:
+        nota -= min(20, 3 * len(lentos))
+        avisos.append({"tipo": "lento", "texto": "Frases lentas en los clips " + ", ".join(f"{c} ({v:.1f} palabras/s, {d:.1f} s)" for c, v, d in lentos[:8]),
+                       "arreglo": "Sube el Ritmo a «Rápido» o regenera esos clips: en los virales se dicen 2,5-3 palabras por segundo."})
+    else:
+        bien.append("Ritmo de habla ágil en todos los clips.")
+    if mudos:
+        nota -= min(20, 5 * len(mudos))
+        avisos.append({"tipo": "sin_voz", "texto": "No se oyó la voz en los clips " + ", ".join(map(str, mudos[:10])),
+                       "arreglo": "Comprueba que el clip tenga el diálogo; si la IA no habló, cámbialo con «Cambiar clip»."})
+    if int(G.get("parte") or (G.get("portada") or {}).get("parte") or 1) > 1:
+        if not ANTERIOR:
+            nota -= 10
+            avisos.append({"tipo": "anteriormente", "texto": "Parte 2 o siguiente sin «Anteriormente...».",
+                           "arreglo": "Sube el vídeo final de la parte anterior: quien llega nuevo necesita saber qué pasó."})
+        elif len(RECAP_PIEZAS) < 2 or not RESUMEN:
+            nota -= 5
+            avisos.append({"tipo": "anteriormente", "texto": "El «Anteriormente...» tiene " + (f"un solo momento" if len(RECAP_PIEZAS) < 2 else "momentos pero no frase de resumen") + ".",
+                           "arreglo": "Escribe la frase de resumen y sube el vídeo final completo de la parte anterior."})
+        else:
+            bien.append(f"«Anteriormente...» con {len(RECAP_PIEZAS)} momentos y resumen.")
+    if not G.get("gancho"):
+        nota -= 10
+        avisos.append({"tipo": "gancho", "texto": "Sin texto de gancho en los primeros 3 s.", "arreglo": "Añade el gancho (2 líneas) en el guion."})
+    if total > 90:
+        avisos.append({"tipo": "duracion", "texto": f"Dura {mmss(total)}: largo para TikTok y Shorts.",
+                       "arreglo": "Usa las versiones por red: TikTok en partes y Shorts de menos de 60 s."})
+    revision = {"nota": max(0, nota), "duracion": round(total, 1), "avisos": avisos, "bien": bien}
+    json.dump(revision, open(os.path.splitext(out_mp4)[0] + "_revision.json", "w", encoding="utf-8"), ensure_ascii=False)
+    progreso(99, f"Revisión automática: {revision['nota']}/100" + (f" · {len(avisos)} cosa(s) por mejorar" if avisos else " · todo bien"))
+except Exception as e:   # la revisión nunca impide entregar el vídeo
+    progreso(99, f"No se pudo hacer la revisión automática ({str(e)[:80]})")
+
+
+# ---------- Versiones por red social ----------
+# Facebook: los 3 s más fuertes al principio y «Horas antes...» (la gente se iba a los 8 s).
+# TikTok: el episodio en partes de ~1 min cortadas entre clips, cada una cierra con «Sigue en la Parte N».
+# Shorts: menos de 60 s, termina con «Historia completa en el perfil».
+VERSIONES = [v for v in (G.get("versiones") or []) if v in ("facebook", "tiktok", "shorts")]
+
+
+def tarjeta_de(video, t, textos, dur, path):
+    """Tarjeta de `dur` s sobre un fotograma del vídeo difuminado y oscuro, con 1-2 líneas de texto."""
+    foto = path + ".png"
+    run(["ffmpeg", "-v", "error", "-y", "-ss", f"{max(0, t):.2f}", "-i", video, "-frames:v", "1",
+         "-vf", "boxblur=24:2,eq=brightness=-0.35", foto])
+    capas, y = [], 860
+    for k, (txt, size, color) in enumerate(textos):
+        for ln in lineas(txt, size, 2):
+            capas.append(texto_dt(ln, size, color, y, 5)); y += int(size * 1.25)
+        y += 18
+    run(["ffmpeg", "-v", "error", "-y", "-loop", "1", "-framerate", "24", "-t", f"{dur}", "-i", foto,
+         "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", f"{dur}",
+         "-vf", "scale=1080:1920,setsar=1," + ",".join(capas) + ",format=yuv420p", *VCODEC, "-pix_fmt", "yuv420p",
+         "-c:a", "aac", "-b:a", "192k", "-shortest", path])
+    return path
+
+
+def unir(trozos, destino, etiqueta=""):
+    """Une tramos [(vídeo, inicio, fin)] (fin=None: hasta el final) en un MP4, opcionalmente con una
+    etiqueta arriba los primeros 2,5 s («Parte 2/3»)."""
+    ent, fcv, cat = [], "", ""
+    for k, (v, a, b) in enumerate(trozos):
+        ent += ["-ss", f"{a:.3f}", *(["-t", f"{b - a:.3f}"] if b is not None else []), "-i", v]
+        fcv += (f"[{k}:v]scale=1080:1920,setsar=1,fps=24,setpts=PTS-STARTPTS[v{k}];"
+                f"[{k}:a]aresample=48000,aformat=channel_layouts=stereo,asetpts=PTS-STARTPTS[a{k}];")
+        cat += f"[v{k}][a{k}]"
+    fcv += f"{cat}concat=n={len(trozos)}:v=1:a=1[vc][a]"
+    fcv += (";[vc]drawbox=x=40:y=60:w=330:h=96:color=black@0.55:t=fill:enable='lt(t,2.5)',"
+            + texto_dt(etiqueta, 56, "0xFFD23F", 78, 3, ":enable='lt(t,2.5)'").replace("x=(w-text_w)/2", "x=40+(330-text_w)/2") + "[v]"
+            if etiqueta else ";[vc]null[v]")
+    run(["ffmpeg", "-v", "error", "-y", *ent, "-filter_complex", fcv, "-map", "[v]", "-map", "[a]", *VCODEC,
+         "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", destino])
+
+
+if VERSIONES:
+    try:
+        fin_util = total - (3 if G.get("cierre") else 0)
+        cortes = sorted(INICIO_CLIP[ci] + DUR_CLIP[ci] for ci in range(len(clips)))   # final de cada clip
+        # Momento más fuerte para Facebook: el clip con más energía de voz entre el 30 % y el 85 % del vídeo.
+        fuerte, mejor = None, -1.0
+        for ci in range(len(clips)):
+            if not G["clips"][ci] or HABLA[ci].lower().startswith("narrador") or not (0.3 * fin_util <= INICIO_CLIP[ci] <= 0.85 * fin_util):
+                continue
+            try:
+                w_ = wave.open(os.path.join(tmp, f"c{ci}.wav"))
+                x_ = np.frombuffer(w_.readframes(w_.getnframes()), np.int16).astype(np.float32) / 32768
+                a_, b_ = recortes[ci]
+                seg = x_[int(a_ * 16000):int(b_ * 16000)]
+                e_ = float(np.sqrt(np.mean(seg ** 2))) if len(seg) else 0.0
+            except Exception:
+                e_ = 0.0
+            if e_ > mejor:
+                fuerte, mejor = ci, e_
+        for _, _, ruta in salidas:
+            base = os.path.splitext(ruta)[0]
+            if "facebook" in VERSIONES and fuerte is not None:
+                t0 = INICIO_CLIP[fuerte]; t1 = t0 + min(3.2, DUR_CLIP[fuerte])
+                card = tarjeta_de(ruta, max(0, RECAP_S) + 0.2, [("Horas antes...", 84, "white")], 1.1, os.path.join(tmp, f"c_fb{len(base)}.mp4"))
+                unir([(ruta, t0, t1), (card, 0, None), (ruta, 0, None)], base + "_facebook.mp4")
+                progreso(99, f"Versión Facebook: abre con el clip {fuerte + 1} (el momento más fuerte) y «Horas antes...»")
+            if "tiktok" in VERSIONES and total > 80:
+                n_p = max(2, math.ceil(fin_util / 70))
+                puntos = []
+                for k in range(1, n_p):
+                    objetivo = k * fin_util / n_p
+                    c = min((c for c in cortes if c < fin_util - 5 and c not in puntos), key=lambda c: abs(c - objetivo), default=None)
+                    if c:
+                        puntos.append(c)
+                puntos = sorted(set(puntos))
+                limites = [0.0] + puntos + [None]
+                n_p = len(limites) - 1
+                for k in range(n_p):
+                    a_, b_ = limites[k], limites[k + 1]
+                    trozos = [(ruta, a_, b_)]
+                    if b_ is not None:   # cierra con «Sigue en la Parte k+1/n»
+                        card = tarjeta_de(ruta, b_ - 0.2, [("Continuará...", 92, "white"), (f"Sigue en la Parte {k + 2}/{n_p}", 60, "0xFFD23F")], 1.6, os.path.join(tmp, f"c_tt{k}_{len(base)}.mp4"))
+                        trozos.append((card, 0, None))
+                    unir(trozos, base + f"_tiktok_{k + 1}.mp4", f"Parte {k + 1}/{n_p}" if k else "")
+                progreso(99, f"Versión TikTok: {n_p} partes de ~{fin_util / n_p:.0f} s cortadas entre clips")
+            if "shorts" in VERSIONES:
+                if total <= 59:
+                    shutil.copy(ruta, base + "_shorts.mp4")
+                else:
+                    c = max((c for c in cortes if c <= 54), default=min(54.0, fin_util))
+                    card = tarjeta_de(ruta, c - 0.2, [("Continuará...", 92, "white"), ("Historia completa en el perfil", 56, "0xFFD23F")], 3, os.path.join(tmp, f"c_sh{len(base)}.mp4"))
+                    unir([(ruta, 0, c), (card, 0, None)], base + "_shorts.mp4")
+                progreso(99, f"Versión Shorts: {min(total, 59):.0f} s")
+    except Exception as e:   # las versiones nunca impiden entregar el vídeo principal
+        progreso(99, f"No se pudieron crear las versiones por red ({str(e)[:100]})")
+
 progreso(100, "Vídeo listo")
 print("OK", out_mp4, "bloques:", len(events))

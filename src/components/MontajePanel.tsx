@@ -44,6 +44,17 @@ function clipFromStep(paso: string, n: number) {
 // El servidor espera un bloque de diálogo por clip. Si hay menos clips que bloques
 // (p. ej. un solo clip de Dola de 60 s), se juntan bloques consecutivos; si hay más,
 // los clips sobrantes van sin diálogo (tarjetas).
+// Revisión automática del montaje: nota, lo que está bien y lo que conviene arreglar antes de publicar.
+function Revision({ r }: { r: any }) {
+  const nota = Number(r?.nota ?? 0);
+  const color = nota >= 85 ? "text-emerald-300 border-emerald-400/30 bg-emerald-400/[.06]" : nota >= 65 ? "text-amber-200 border-amber-400/30 bg-amber-400/[.06]" : "text-rose-200 border-rose-400/30 bg-rose-400/[.06]";
+  return <div className={`rounded-lg border p-3 text-xs ${color}`}>
+    <p className="text-sm font-bold">Revisión automática: {nota}/100 {nota >= 85 ? "· listo para publicar" : nota >= 65 ? "· se puede mejorar" : "· conviene arreglarlo antes de publicar"}</p>
+    {Array.isArray(r.avisos) && r.avisos.length > 0 && <ul className="mt-2 space-y-1.5 text-slate-200">{r.avisos.map((a: any, i: number) => <li key={i}><b>• {a.texto}</b><br /><span className="text-slate-400">{a.arreglo}</span></li>)}</ul>}
+    {Array.isArray(r.bien) && r.bien.length > 0 && <ul className="mt-2 space-y-0.5 text-emerald-200/90">{r.bien.map((b: string, i: number) => <li key={i}>✓ {b}</li>)}</ul>}
+  </div>;
+}
+
 const slug = (v: string) => v.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\w]+/g, "-").replace(/^-|-$/g, "").toLowerCase() || "logo";
 
 export function adaptGuion(guion: any, nClips: number, opts: { marca?: "dola" | "pavo"; delogo?: string; cierre?: string; cierreCta?: string } = {}) {
@@ -111,6 +122,19 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
   const [logo2, setLogo2] = useState("");
   useEffect(() => { try { setLogo2(localStorage.getItem(`estudio-viral:logo:${logoKey2}`) || ""); } catch {} }, [logoKey2]);
   const [names, setNames] = useState<[string, string]>(["", ""]);
+  // Versiones por red que salen del mismo montaje (se recuerda la elección en este navegador).
+  const REDES = [
+    { id: "facebook", label: "Facebook", desc: "abre con los 3 s más fuertes y «Horas antes...»" },
+    { id: "tiktok", label: "TikTok en partes", desc: "partes de ~1 min cortadas entre clips, con «Sigue en la Parte N»" },
+    { id: "shorts", label: "YouTube Shorts", desc: "menos de 60 s, cierra con «Historia completa en el perfil»" },
+  ];
+  const [versiones, setVersiones] = useState<string[]>(["facebook", "tiktok", "shorts"]);
+  useEffect(() => { try { const v = localStorage.getItem("estudio-viral:versiones"); if (v) setVersiones(JSON.parse(v)); } catch {} }, []);
+  const toggleVersion = (id: string) => setVersiones(prev => { const n = prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]; try { localStorage.setItem("estudio-viral:versiones", JSON.stringify(n)); } catch {} return n; });
+  const [extras, setExtras] = useState<{ red: string; parte: number; logo: number; k: number; total: number }[]>([]);
+  const [revision, setRevision] = useState<any>(null);
+  const [job, setJob] = useState<{ base: string; id: string } | null>(null);
+  const [bajando, setBajando] = useState(-1);
   // Canción de firma recordada para esta serie.
   const serieKey = String(musicCtx?.series || "");
   const [songSaved, setSongSaved] = useState(false);
@@ -175,6 +199,7 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
     setBusy(true); setError(""); setElapsed(0); setUploadPct(0); setLive(null);
     if (video) { URL.revokeObjectURL(video); setVideo(""); }
     if (video2) { URL.revokeObjectURL(video2); setVideo2(""); }
+    setExtras([]); setRevision(null); setJob(null);
     const t0 = Date.now(); timer.current = setInterval(() => setElapsed(Math.round((Date.now() - t0) / 1000)), 1000);
     try {
       // Destino: este PC (sin pase, solo 127.0.0.1) o el servidor de Fly (pase temporal firmado por la app).
@@ -188,7 +213,7 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
         base = t.json.url; headers = { Authorization: `Ticket ${t.json.ticket}` };
       }
       // Un servidor sin actualizar ignora la música sin avisar: se comprueba antes de subir nada.
-      const needs = [music && ["musica", "la música de fondo"], music && musicMode === "extremos" && ["musica_modo", "la música solo al inicio y al final"], anterior && ["anterior", "«Anteriormente...»"], anterior && resumen.trim() && ["resumen", "el resumen del «Anteriormente...»"], recortar && ["recorte", "quitar las pausas"], Number(velocidad) > 1 && ["velocidad", "el ritmo ágil"], (guion?.pantallas?.length || guion?.telefono?.length) && ["pantallas", "los chats de WhatsApp y la voz por teléfono"], watermark !== "none" && logo !== FRUTI && ["logo_propio", "el logo de tu página"], watermark !== "none" && !!logo2 && logo2 !== logo && ["dos_logos", "la segunda versión con otro logo"]].filter(Boolean) as [string, string][];
+      const needs = [music && ["musica", "la música de fondo"], music && musicMode === "extremos" && ["musica_modo", "la música solo al inicio y al final"], anterior && ["anterior", "«Anteriormente...»"], anterior && resumen.trim() && ["resumen", "el resumen del «Anteriormente...»"], recortar && ["recorte", "quitar las pausas"], Number(velocidad) > 1 && ["velocidad", "el ritmo ágil"], (guion?.pantallas?.length || guion?.telefono?.length) && ["pantallas", "los chats de WhatsApp y la voz por teléfono"], watermark !== "none" && logo !== FRUTI && ["logo_propio", "el logo de tu página"], watermark !== "none" && !!logo2 && logo2 !== logo && ["dos_logos", "la segunda versión con otro logo"], versiones.length > 0 && ["versiones", "las versiones por red"]].filter(Boolean) as [string, string][];
       if (needs.length) {
         const caps = await fetch(`${base}/salud`, { signal: AbortSignal.timeout(8000) }).then(r => r.json()).catch(() => null);
         const missing = needs.filter(([k]) => !caps?.[k]).map(([, label]) => label);
@@ -200,7 +225,7 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
         }
       }
       const fd = new FormData();
-      fd.append("guion", new Blob([JSON.stringify({ ...adaptGuion(guion, files.length, { marca, delogo, cierre: lastEpisode ? "FIN" : guion?.cierre || "Continuará...", cierreCta: cta }), ...(music ? { musica_volumen: Number(musicVol), musica_modo: musicMode } : {}), recortar, velocidad: Number(velocidad), ...(anterior && resumen.trim() ? { anterior_resumen: resumen.trim() } : {}), ...(watermark !== "none" && logo2 && logo2 !== logo ? { logo_nombre: await logoName(logo), logo2_nombre: await logoName(logo2), ...(logo2 === FRUTI ? { logo2: "frutienganchados" } : {}) } : {}), ...(coverData?.parte ? { portada: { ...coverData, clip: Math.round(files.length * 0.35) } } : {}) })], { type: "application/json" }), "guion.json");
+      fd.append("guion", new Blob([JSON.stringify({ ...adaptGuion(guion, files.length, { marca, delogo, cierre: lastEpisode ? "FIN" : guion?.cierre || "Continuará...", cierreCta: cta }), ...(music ? { musica_volumen: Number(musicVol), musica_modo: musicMode } : {}), recortar, velocidad: Number(velocidad), versiones, parte: part, ...(anterior && resumen.trim() ? { anterior_resumen: resumen.trim() } : {}), ...(watermark !== "none" && logo2 && logo2 !== logo ? { logo_nombre: await logoName(logo), logo2_nombre: await logoName(logo2), ...(logo2 === FRUTI ? { logo2: "frutienganchados" } : {}) } : {}), ...(coverData?.parte ? { portada: { ...coverData, clip: Math.round(files.length * 0.35) } } : {}) })], { type: "application/json" }), "guion.json");
       for (const f of files) fd.append("clips", f, f.name);
       if (music) fd.append("musica", music, music.name);
       if (anterior) fd.append("anterior", anterior, anterior.name);
@@ -230,6 +255,10 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
       const v = await fetch(`${base}/trabajos/${id}/video`);
       if (!v.ok) { setError(`No se pudo descargar el vídeo (HTTP ${v.status}). Está guardado 30 min en el servidor: vuelve a intentarlo.`); return; }
       setVideo(URL.createObjectURL(await v.blob()));
+      setJob({ base, id });
+      const ex: any[] = Array.isArray(state.extras) ? state.extras : [];
+      setExtras(ex.map((e, k) => ({ ...e, k, total: ex.filter(x => x.red === e.red && x.logo === e.logo).length })));
+      setRevision(state.revision || null);
       if (state.segunda) { const v2 = await fetch(`${base}/trabajos/${id}/video?v=2`); if (v2.ok) setVideo2(URL.createObjectURL(await v2.blob())); }
       // Portada con el diseño fijo de la serie (servidores antiguos no la tienen: se ignora).
       const c = await fetch(`${base}/trabajos/${id}/portada`).catch(() => null);
@@ -289,6 +318,9 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
           <option value="1.2">Rápido · 20 % más rápido</option>
         </select>
         <span className="text-[11px] text-slate-500">Los clips de IA hablan lento; los virales dicen una frase cada 2-3 s. Voz y labios van juntos y la voz no cambia de tono.</span></label>
+      <fieldset className="space-y-1"><legend className="text-xs text-slate-300"><b>Versiones por red</b> <span className="text-slate-500">(salen del mismo montaje, además del vídeo principal)</span></legend>
+        {REDES.map(r => <label key={r.id} className="flex items-start gap-2 text-xs text-slate-300"><input type="checkbox" className="mt-0.5 w-auto" checked={versiones.includes(r.id)} onChange={() => toggleVersion(r.id)} disabled={busy} /><span><b>{r.label}</b> · <span className="text-slate-400">{r.desc}</span></span></label>)}
+      </fieldset>
       {Array.isArray(guion?.tarjetas) && guion.tarjetas.length > 0 && <p className="text-[11px] text-slate-400">Saltos de tiempo: {guion.tarjetas.map((t: any) => `«${t.texto}» antes de la escena ${t.antes + 1}`).join(" · ")} (1,3 s sobre la escena siguiente difuminada).</p>}
       {part > 1 && <div className="space-y-1">
         <p className="text-xs text-slate-300"><b>«Anteriormente...»</b> <span className="text-slate-500">(opcional)</span>: sube el vídeo final de la Parte {part - 1} y el episodio abre con ~12 s en blanco y negro: 3-4 frases clave repartidas por toda esa parte (el conflicto, el giro y la última antes del cierre, sin el Narrador) y arriba una frase que la resume. Así quien llega nuevo entiende qué pasó.</p>
@@ -345,6 +377,21 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
         {video2 && <a href={video2} download={fname.replace(/\.mp4$/, `-${slug(names[1])}.mp4`)} onClick={() => onDownloaded?.()} className="inline-block rounded bg-emerald-500 px-4 py-2 text-sm font-bold text-black">Descargar versión {names[1]}</a>}
       </div>
       {video2 && <p className="text-xs text-slate-400">Mismo vídeo con dos logos: arriba se ve la versión {names[0]}.</p>}
+      {revision && <Revision r={revision} />}
+      {extras.length > 0 && job && <div className="rounded-lg border border-white/10 p-3">
+        <p className="mb-2 text-xs font-semibold text-slate-300">Versiones por red</p>
+        <div className="flex flex-wrap gap-2">{extras.map(e => {
+          const red = e.red === "facebook" ? "Facebook" : e.red === "shorts" ? "Shorts" : `TikTok ${e.parte}/${e.total}`;
+          const logoTxt = video2 && names[e.logo - 1] ? ` · ${names[e.logo - 1]}` : "";
+          const file = fname.replace(/\.mp4$/, `-${e.red}${e.parte ? `-${e.parte}` : ""}${video2 && names[e.logo - 1] ? `-${slug(names[e.logo - 1])}` : ""}.mp4`);
+          return <button key={e.k} type="button" disabled={bajando >= 0} onClick={async () => {
+            setBajando(e.k);
+            try { const r = await fetch(`${job.base}/trabajos/${job.id}/extra/${e.k}`); if (!r.ok) throw new Error(`HTTP ${r.status}`); const u = URL.createObjectURL(await r.blob()); const a = document.createElement("a"); a.href = u; a.download = file; a.click(); setTimeout(() => URL.revokeObjectURL(u), 60000); }
+            catch (err: any) { setError("No se pudo descargar la versión: " + (err?.message || err) + ". Está guardada 30 min en el PC."); }
+            finally { setBajando(-1); }
+          }} className="rounded bg-sky-500 px-3 py-2 text-xs font-bold text-black disabled:opacity-60">{bajando === e.k ? "Descargando…" : `Descargar ${red}${logoTxt}`}</button>;
+        })}</div>
+      </div>}
       {cover && <div className="mt-3 flex flex-wrap items-end gap-3"><img src={cover} alt="Portada del episodio" className="h-64 rounded-lg border border-white/10" /><a href={cover} download={fname.replace(/\.mp4$/, "-portada.jpg")} className="rounded bg-amber-500 px-4 py-2 text-sm font-bold text-black">Descargar portada</a></div>}
       {onDownloaded && <p className="text-xs text-slate-400">Al descargarlo, este episodio queda terminado y bloqueado, y se abre el paso para crear la parte siguiente.</p>}
       {!!publish.length && <div className="mt-3 space-y-2">

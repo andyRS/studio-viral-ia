@@ -98,7 +98,7 @@ def autorizado(authorization: str) -> bool:
 @app.get("/salud")
 def salud():
     # «carpeta»: desde dónde corre el montaje del PC (para ver si es la copia actualizada).
-    return {"ok": True, "local": LOCAL, "gpu": GPU, "musica": True, "musica_modo": True, "anterior": True, "recorte": True, "portada": True, "pavo_720": True, "comprimir": LOCAL, "mejorar": LOCAL, "quitar_marca": LOCAL, "logo_propio": True, "dos_logos": True, "borrar_ia": LOCAL, "velocidad": True, "resumen": True, "pantallas": True, **({"carpeta": os.path.dirname(HERE)} if LOCAL else {})}
+    return {"ok": True, "local": LOCAL, "gpu": GPU, "musica": True, "musica_modo": True, "anterior": True, "recorte": True, "portada": True, "pavo_720": True, "comprimir": LOCAL, "mejorar": LOCAL, "quitar_marca": LOCAL, "logo_propio": True, "dos_logos": True, "borrar_ia": LOCAL, "versiones": True, "revision": True, "velocidad": True, "resumen": True, "pantallas": True, **({"carpeta": os.path.dirname(HERE)} if LOCAL else {})}
 
 
 # ---------- Trabajos en segundo plano ----------
@@ -139,7 +139,7 @@ def _ejecutar(job, gpath, out, paths, work):
             else:
                 out2 = os.path.splitext(out)[0] + "_2.mp4"
                 _avisar(job, estado="listo", pct=100, paso="Vídeo listo" + (" (dos versiones)" if os.path.exists(out2) else ""), out=out,
-                        out2=out2 if os.path.exists(out2) else "")
+                        out2=out2 if os.path.exists(out2) else "", extras=_extras(out), revision=_revision(out))
         except Exception as e:  # nunca deja el trabajo colgado en «montando»
             _avisar(job, estado="error", error=f"Falló el montaje: {e}")
         finally:
@@ -148,6 +148,28 @@ def _ejecutar(job, gpath, out, paths, work):
     time.sleep(RETENER_SEGUNDOS)
     shutil.rmtree(work, ignore_errors=True)
     TRABAJOS.pop(job["id"], None)
+
+
+def _extras(out):
+    """Versiones por red que dejó el montaje: [{"red", "parte", "logo": 1|2, "archivo"}]."""
+    base = os.path.splitext(out)[0]
+    res = []
+    for logo, pre in ((1, base), (2, base + "_2")):
+        for red in ("facebook", "shorts"):
+            f = f"{pre}_{red}.mp4"
+            if os.path.exists(f):
+                res.append({"red": red, "parte": 0, "logo": logo, "archivo": f})
+        k = 1
+        while os.path.exists(f"{pre}_tiktok_{k}.mp4"):
+            res.append({"red": "tiktok", "parte": k, "logo": logo, "archivo": f"{pre}_tiktok_{k}.mp4"}); k += 1
+    return res
+
+
+def _revision(out):
+    try:
+        return json.load(open(os.path.splitext(out)[0] + "_revision.json", encoding="utf-8"))
+    except Exception:
+        return None
 
 
 async def _guardar_logo(logo: Optional[UploadFile], work: str) -> str:
@@ -237,7 +259,8 @@ async def estado_trabajo(jid: str, desde: int = -1):
             job["cond"].wait_for(lambda: job["seq"] > desde or job["estado"] in ("listo", "error"), timeout=20)
     if job["seq"] <= desde and job["estado"] not in ("listo", "error"):
         await asyncio.to_thread(esperar)
-    return {**{k: job[k] for k in ("estado", "pct", "paso", "log", "seq", "error")}, "segunda": bool(job.get("out2"))}
+    return {**{k: job[k] for k in ("estado", "pct", "paso", "log", "seq", "error")}, "segunda": bool(job.get("out2")),
+            "extras": [{k: e[k] for k in ("red", "parte", "logo")} for e in job.get("extras") or []], "revision": job.get("revision")}
 
 
 @app.get("/trabajos/{jid}/video")
@@ -250,6 +273,16 @@ def video_trabajo(jid: str, v: int = 1):
             raise HTTPException(404, "Este montaje no tiene segunda versión")
         return FileResponse(job["out2"], media_type="video/mp4", filename="episodio_montado_2.mp4")
     return FileResponse(job["out"], media_type="video/mp4", filename="episodio_montado.mp4")
+
+
+@app.get("/trabajos/{jid}/extra/{k}")
+def extra_trabajo(jid: str, k: int):
+    """Versión por red número k (en el orden de «extras» del estado)."""
+    job = _trabajo(jid)
+    ex = job.get("extras") or []
+    if job["estado"] != "listo" or not 0 <= k < len(ex):
+        raise HTTPException(404, "No existe esa versión")
+    return FileResponse(ex[k]["archivo"], media_type="video/mp4", filename=os.path.basename(ex[k]["archivo"]))
 
 
 @app.get("/trabajos/{jid}/portada")
