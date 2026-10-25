@@ -17,7 +17,7 @@ export function timeJump(text: string) {
 export const NARRATOR = "Narrador";
 // Súbelo cada vez que cambien las reglas de los prompts: los episodios guardados con una versión
 // anterior muestran «Actualizar prompts» (rehace los prompts sin IA y sin tocar el guion).
-export const PROMPT_RULES_VERSION = 13;
+export const PROMPT_RULES_VERSION = 14;
 // v12: «Usa Seedance 2.5.» solo en vídeo; plano según lo que pasa; escenas de cine 90 en inglés con [P0X].
 // v11: los prompts de cine de los 90 empiezan por «Usa Seedance 2.5.» (regla de @peliculasquenoexisten.rd).
 // v10: cristiana con vocabulario neutro y global (sin jerga ni groserías) y acento dominicano suave.
@@ -204,9 +204,40 @@ export const sceneId = (n: number) => `[${String(n).padStart(3, "0")}]`;
 export const sheetId = (n: number) => `[P${String(n).padStart(2, "0")}]`;
 const stripId = (t: string) => String(t || "").replace(/^\[(?:P\d{2}|\d{3})\]\s*/, "");
 
-function imagePrompt(s: { setting: string; speaker: string; emotion: string; location?: string; shot?: string }, member: CastMember | undefined, others: CastMember[], style: StyleKey, i: number, ids: Record<string, string> = {}) {
+// v14: la vida de hoy (chat de WhatsApp, llamada, videollamada, nota de voz). El chat lo dibuja el montaje
+// (legible, como en los virales); en una llamada quien habla NO sale: se oye por el teléfono.
+type PhoneScene = { type: "whatsapp" | "llamada" | "videollamada" | "nota_de_voz"; contact?: string; messages?: string[] };
+export function normPhone(v: any, style: StyleKey): PhoneScene | undefined {
+  if (!v || typeof v !== "object") return undefined;
+  const t = norm(String(v.type || v.tipo || "")).replace(/\s+/g, "_");
+  const type = /whats|chat|mensaje/.test(t) ? "whatsapp" : /video/.test(t) ? "videollamada" : /nota|voz|audio|contestadora/.test(t) ? "nota_de_voz" : /llama|telef/.test(t) ? "llamada" : "";
+  if (!type || (style === "cine90" && (type === "whatsapp" || type === "videollamada"))) return undefined;
+  const messages = (Array.isArray(v.messages || v.mensajes) ? v.messages || v.mensajes : []).map((m: unknown) => clean(m).slice(0, 90)).filter(Boolean).slice(0, 4);
+  if (type === "whatsapp" && !messages.length) return undefined;
+  return { type, ...(clean(v.contact || v.contacto) ? { contact: clean(v.contact || v.contacto).slice(0, 30) } : {}), ...(messages.length ? { messages } : {}) };
+}
+// Llamada o nota de voz: quien habla no está en escena (se oye por el teléfono) y alguien la escucha.
+const remoteCall = (s: { phone?: PhoneScene }, member: CastMember | undefined, others: CastMember[]) =>
+  !!member && others.length > 0 && (s.phone?.type === "llamada" || s.phone?.type === "nota_de_voz");
+function phoneVisual(s: { phone?: PhoneScene }, member: CastMember | undefined, others: CastMember[], style: StyleKey, lang: "es" | "en") {
+  const p = s.phone; if (!p) return "";
+  const listener = (remoteCall(s, member, others) ? others[0] : member || others[0])?.name || (lang === "es" ? "el personaje" : "the character");
+  if (lang === "en") {
+    if (p.type === "llamada") return ` ${listener} holds ${style === "cine90" ? "a corded 1990s landline receiver" : "a smartphone"} to the ear, listening to a call; the caller is not in the scene.`;
+    if (p.type === "nota_de_voz") return ` ${listener} listens to a message playing on a 1990s answering machine; the caller is not in the scene.`;
+    return "";
+  }
+  if (p.type === "whatsapp") return ` ${listener} mira su móvil leyendo un chat de WhatsApp; la pantalla del móvil no se ve de frente (el chat se añade en la edición).`;
+  if (p.type === "llamada") return ` ${listener} con el móvil en la oreja, escuchando una llamada; la persona que llama no aparece.`;
+  if (p.type === "nota_de_voz") return ` ${listener} escucha una nota de voz de WhatsApp con el móvil cerca de la cara; quien la grabó no aparece.`;
+  const b = others[0]?.name; return member && b ? ` Pantalla partida de videollamada vertical: arriba ${member.name} y abajo ${b}, cada uno en su casa, con los botones de la llamada abajo, sin texto legible.` : "";
+}
+
+function imagePrompt(s: { setting: string; speaker: string; emotion: string; location?: string; shot?: string; phone?: PhoneScene }, member: CastMember | undefined, others: CastMember[], style: StyleKey, i: number, ids: Record<string, string> = {}) {
+  const extra = phoneVisual(s, member, others, style, isFruitStyle(style) ? "es" : "en");
+  if (remoteCall(s, member, others)) member = undefined;   // quien llama no sale en la imagen
   const shot = pickShot(s, (member ? 1 : 0) + others.length, i);
-  const setting = tidy(s.setting), location = tidy(s.location || "");
+  const setting = tidy(s.setting) + extra, location = tidy(s.location || "");
   const tag = (m: CastMember) => ids[m.name.toLowerCase()] ? ` ${ids[m.name.toLowerCase()]}` : "";
   if (!isFruitStyle(style)) {
     // Estilo común primero (el lote de Flow lo saca una sola vez arriba), luego el plano y lo que pasa.
@@ -221,7 +252,9 @@ function imagePrompt(s: { setting: string; speaker: string; emotion: string; loc
   return `Imagen 3D cinematográfica realista (película animada premium), vertical 9:16. Encuadre: ${shot.es}. ${member || others.length ? `Referencia: ficha de ${[member, ...others].filter(Boolean).map(m => m!.name).join(", ")}.` : "Sin fichas: no aparece ningún personaje."} ${location ? `LUGAR FIJO (idéntico en todas las escenas de este sitio: mismo decorado, misma hora y misma luz): ${location}. ` : ""}Escena: ${setting}. ${who}.${member && others.length ? ` También en escena: ${others.map(o => `${o.name} (piel de ${o.fruit})`).join(", ")}.` : ""}${member || others.length ? " Personajes de rostro humano realista con piel de su fruta, idénticos a sus fichas; nunca una fruta entera como cabeza." : " Ninguna persona ni fruta con cara en el fondo."}${guard} Sin texto, sin letreros, sin marca de agua.`;
 }
 
-function animationPrompt(s: { setting: string; speaker: string; line: string; emotion: string; location?: string; shot?: string }, member: CastMember | undefined, style: StyleKey, i: number, others: CastMember[] = []) {
+function animationPrompt(s: { setting: string; speaker: string; line: string; emotion: string; location?: string; shot?: string; phone?: PhoneScene }, member: CastMember | undefined, style: StyleKey, i: number, others: CastMember[] = []) {
+  if (remoteCall(s, member, others)) return phoneCallPrompt(s, member!, others, style, i);
+  if (s.phone) s = { ...s, setting: tidy(s.setting) + phoneVisual(s, member, others, style, isFruitStyle(style) ? "es" : "en") };
   const narrator = s.speaker === NARRATOR;
   const shot = pickShot(s, (member ? 1 : 0) + others.length, i);
   const setting = tidy(s.setting), location = tidy(s.location || "");
@@ -258,6 +291,33 @@ ${voces}
 ${SOUND_ES}${kissNote(s, "es")}`;
 }
 
+// Llamada o nota de voz: en cámara solo quien escucha; la voz de quien llama se oye por el teléfono.
+function phoneCallPrompt(s: { setting: string; speaker: string; line: string; emotion: string; location?: string; shot?: string; phone?: PhoneScene }, caller: CastMember, others: CastMember[], style: StyleKey, i: number) {
+  const listener = others[0];
+  const shot = pickShot(s, others.length, i);
+  const location = tidy(s.location || "");
+  if (!isFruitStyle(style)) {
+    return `Usa Seedance 2.5. 1990s Dominican romance film, 35mm grain, warm golden light, vertical 9:16, 8 seconds. Animate from the scene image as the first frame.
+References: image 1 = scene; image 2 = character sheet of ${listener.name}.
+CHARACTERS: ${listener.name}: ${listener.visualEN || listener.visualES}; outfit: ${listener.clothing}. Real people. ${caller.name} does NOT appear.
+SCENE: ${location ? `${location} (same set as the other scenes here). ` : ""}${tidy(s.setting)}${phoneVisual(s, caller, others, style, "en")}
+SHOTS: ${shot.en}, ${shot.moveEn}. From 0.3 s, ${caller.name}'s voice is heard THROUGH THE ${s.phone?.type === "nota_de_voz" ? "ANSWERING MACHINE" : "PHONE"} (thin telephone sound) saying (in Spanish, exact words): "${s.line}" ${listener.name} listens in silence, lips closed, reacting with ${s.emotion}; the camera slowly pushes in on the face.
+${SOUND_EN}
+PRONUNCIATION: ${accentPrompt(caller, "en")}.
+VOICES: only ${caller.name}'s voice, through the phone (${caller.voice}); nobody on screen moves their lips. No subtitles or on-screen text.`;
+  }
+  const guard = style === "cristiana" ? ` ${CHRISTIAN_SCENE_GUARD[0].toUpperCase()}${CHRISTIAN_SCENE_GUARD.slice(1)}.` : "";
+  return `Telenovela animada 3D (render CGI de película animada premium), vertical 9:16, 8 segundos. Anima a partir de la imagen de la escena como primer fotograma.
+${ANIMATION_STYLE_LOCK}
+Referencias: imagen 1 = escena; imagen 2 = ficha de ${listener.name}.
+PERSONAJES: ${listener.name}: personaje 3D animado con rostro y cuerpo humanos y piel de ${listener.fruit} (${listener.headES}); ${listener.clothing}. Idéntico a su ficha. ${caller.name} NO aparece en la escena.
+ESCENA: ${location ? `${location} (el mismo decorado que las demás escenas en este lugar). ` : ""}${tidy(s.setting)}${phoneVisual(s, caller, others, style, "es")}${guard}
+TOMAS: ${shot.es}, ${shot.move}. Desde 0,3 s se oye POR EL TELÉFONO (sonido de llamada, algo metálico) la voz de ${caller.name} que dice: "${s.line}" ${listener.name} escucha en silencio, con la boca cerrada, y reacciona con ${s.emotion}; la cámara se acerca despacio a su cara.
+PRONUNCIACIÓN OBLIGATORIA: ${pronunciationFor(caller, s.line, style)}.
+VOCES: solo la voz de ${caller.name} por el teléfono (${caller.voice}; ${accentPrompt(caller, "es", style)}). Nadie en pantalla mueve los labios. Sin subtítulos ni texto en pantalla.
+${SOUND_ES}`;
+}
+
 // Prompt de Dola (Seedance) con las escenas elegidas para la versión corta.
 function buildDolaPrompt(dolaScenes: { n: number; setting: string; speaker: string; line: string; emotion: string }[], cast: CastMember[], style: StyleKey, total: number, dolaDuration: number) {
   const castLine = cast.map(c => isFruitStyle(style) ? `${c.name}: personaje 3D animado con rostro humano y piel de ${c.fruit} (${c.headES}); ${c.clothing}` : `${c.name}: ${c.visualEN || c.visualES}; ${c.clothing}`).join(". ");
@@ -278,6 +338,7 @@ export function buildProduction(raw: any, ctx: Ctx) {
       present: Array.isArray(r.onScreen) ? r.onScreen : [],
       title: clean(r.title || r.titulo), goal: clean(r.goal || r.objetivo), sfx: clean(r.sfx || r.efectos), music: clean(r.music || r.musica),
       transition: clean(r.transition || r.transicion), link: clean(r.link || r.conexion), location: clean(r.location || r.lugar), shot: clean(r.shot || r.plano),
+      phone: normPhone(r.phone || r.telefono, style) as PhoneScene | undefined,
     }))
     .filter(s => s.line.length >= 3);
   // Un solo hablante por escena: una frase que no cabe en 8 s se parte en dos escenas,
@@ -298,7 +359,7 @@ export function buildProduction(raw: any, ctx: Ctx) {
   if (style === "cristiana" && !base.some(s => /escribe am[eé]n/i.test(s.line))) {
     const last = base[base.length - 1];
     if (last?.speaker === NARRATOR) last.line = `${last.line} Escribe AMÉN.`;
-    else base.push({ location: last?.location || "", shot: "", setting: last?.setting || "iglesia evangélica sencilla", speaker: NARRATOR, line: "Si crees que Dios restaura lo que el orgullo rompe… Escribe AMÉN.", emotion: "esperanza", present: [], title: "Cierre", goal: "Invitar al público a responder", sfx: "Silencio y respiración suave", music: "Piano emotivo que se apaga", transition: "Fundido a negro", link: "" });
+    else base.push({ phone: undefined, location: last?.location || "", shot: "", setting: last?.setting || "iglesia evangélica sencilla", speaker: NARRATOR, line: "Si crees que Dios restaura lo que el orgullo rompe… Escribe AMÉN.", emotion: "esperanza", present: [], title: "Cierre", goal: "Invitar al público a responder", sfx: "Silencio y respiración suave", music: "Piano emotivo que se apaga", transition: "Fundido a negro", link: "" });
   }
   base = assignLocations(selectShortScenes(base, Math.min(MAX_SCENES, target)));
 
@@ -307,7 +368,7 @@ export function buildProduction(raw: any, ctx: Ctx) {
     const member = byName.get(s.speaker);
     const others = s.present.map((p: unknown) => byName.get(findSpeaker(p, cast))).filter((m: CastMember | undefined): m is CastMember => !!m && m !== member);
     const role = sceneRole(i, base.length);
-    const present = [member, ...others].filter((m): m is CastMember => !!m).map(m => m.name);
+    const present = (remoteCall(s, member, others) ? others : [member, ...others]).filter((m): m is CastMember => !!m).map(m => m.name);
     return {
       n: i + 1, durationSec: SCENE_SECONDS, location: s.location, setting: s.setting, speaker: s.speaker, line: s.line, emotion: s.emotion,
       // Ficha de escena (estructura del prompt maestro). Lo que la IA no rellena lo completa el código.
@@ -317,6 +378,7 @@ export function buildProduction(raw: any, ctx: Ctx) {
       nextLink: s.link || (i === base.length - 1 ? "Cierre del episodio" : `Lleva a la escena ${i + 2}`),
       // Referencias canónicas: se muestran FUERA del prompt (el prompt va limpio para copiar).
       references: present.map(n => `Ficha de ${n}`),
+      ...(s.phone ? { phone: s.phone } : {}),
       imagePromptFlow: imagePrompt(s, member, others, style, i, ids),
       animationPrompt: animationPrompt(s, member, style, i, others),
     };
@@ -329,7 +391,7 @@ export function buildProduction(raw: any, ctx: Ctx) {
   if (scenes.some(s => s.speaker === NARRATOR)) colores[NARRATOR] = NARRATOR_COLOR;
   // Saltos de tiempo («Horas después...») → tarjeta negra corta antes de esa escena en el montaje.
   const tarjetas = scenes.map((s, i) => ({ antes: i, texto: timeJump(`${s.transition || ""} ${s.setting || ""}`) })).filter(t => t.antes > 0 && t.texto);
-  const guionJson = { colores, gancho: hook, cierre: "Continuará...", clips: scenes.map(s => [[s.speaker, s.line]]), ...(tarjetas.length ? { tarjetas } : {}) };
+  const guionJson = { colores, gancho: hook, cierre: "Continuará...", clips: scenes.map(s => [[s.speaker, s.line]]), ...(tarjetas.length ? { tarjetas } : {}), ...phoneMontage(scenes) };
   const total = scenes.length * SCENE_SECONDS;
   const scriptBlocks = scenes.map(s => ({ block: s.n, time: `${(s.n - 1) * SCENE_SECONDS}-${s.n * SCENE_SECONDS}s`, scene: s.setting, dialogue: [{ speaker: s.speaker, text: s.line }], onScreen: s.speaker === NARRATOR ? [] : [s.speaker] }));
   // Dola: versión corta sin perder el último giro, narrador ni cliffhanger.
@@ -447,6 +509,12 @@ export function sceneRole(i: number, total: number) {
 
 // Rehace los prompts de imagen, animación y Dola de un episodio guardado con las reglas actuales.
 // Conserva guion, escenas, personajes y todo lo demás.
+// Para el montaje: chats de WhatsApp que se dibujan encima del clip y clips con la voz por teléfono.
+function phoneMontage(scenes: any[]) {
+  const pantallas = scenes.map((s, i) => s.phone?.type === "whatsapp" && s.phone.messages?.length ? { clip: i, tipo: "whatsapp", de: s.phone.contact || "", mensajes: s.phone.messages } : null).filter(Boolean);
+  const telefono = scenes.map((s, i) => (s.phone?.type === "llamada" || s.phone?.type === "nota_de_voz") && Array.isArray(s.characters) && !s.characters.includes(s.speaker) ? i : -1).filter(i => i >= 0);
+  return { ...(pantallas.length ? { pantallas } : {}), ...(telefono.length ? { telefono } : {}) };
+}
 export function refreshPrompts(out: any, style: StyleKey) {
   const cast: CastMember[] = Array.isArray(out?.cast) ? out.cast : [];
   const byName = new Map(cast.map(c => [c.name, c]));
@@ -463,6 +531,6 @@ export function refreshPrompts(out: any, style: StyleKey) {
   const dolaDuration = dolaScenes.length * SCENE_SECONDS;
   // Saltos de tiempo para el montaje también en episodios guardados antes de existir las tarjetas.
   const tarjetas = scenes.map((s: any, i: number) => ({ antes: i, texto: timeJump(`${s.transition || ""} ${s.setting || ""}`) })).filter((t: any) => t.antes > 0 && t.texto);
-  const guionJson = out?.guionJson ? { ...out.guionJson, ...(tarjetas.length ? { tarjetas } : {}) } : out?.guionJson;
+  const guionJson = out?.guionJson ? { ...out.guionJson, ...(tarjetas.length ? { tarjetas } : {}), ...phoneMontage(scenes) } : out?.guionJson;
   return { ...out, guionJson, scenes, editDuration: Math.round(scenes.length * EDIT_SECONDS), prompts: scenes.map((s: any) => s.animationPrompt), dolaPrompt: scenes.length ? buildDolaPrompt(dolaScenes, cast, style, total, dolaDuration) : out?.dolaPrompt, promptsVersion: PROMPT_RULES_VERSION };
 }

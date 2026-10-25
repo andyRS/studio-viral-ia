@@ -53,7 +53,7 @@ export function adaptGuion(guion: any, nClips: number, opts: { marca?: "dola" | 
   const out: any = { ...guion, colores, clips };
   delete out.delogo; delete out.marca;
   // Las tarjetas de tiempo van por número de clip: solo valen si hay un clip por escena.
-  if (nClips !== blocks.length) delete out.tarjetas;
+  if (nClips !== blocks.length) { delete out.tarjetas; delete out.pantallas; delete out.telefono; }
   if (opts.marca) out.marca = opts.marca; else if (opts.delogo) out.delogo = opts.delogo;
   if (opts.cierre) out.cierre = opts.cierre;
   if (opts.cierreCta?.trim()) out.cierre_cta = opts.cierreCta.trim(); else delete out.cierre_cta;
@@ -175,7 +175,7 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
         base = t.json.url; headers = { Authorization: `Ticket ${t.json.ticket}` };
       }
       // Un servidor sin actualizar ignora la música sin avisar: se comprueba antes de subir nada.
-      const needs = [music && ["musica", "la música de fondo"], music && musicMode === "extremos" && ["musica_modo", "la música solo al inicio y al final"], anterior && ["anterior", "«Anteriormente...»"], anterior && resumen.trim() && ["resumen", "el resumen del «Anteriormente...»"], recortar && ["recorte", "quitar las pausas"], Number(velocidad) > 1 && ["velocidad", "el ritmo ágil"]].filter(Boolean) as [string, string][];
+      const needs = [music && ["musica", "la música de fondo"], music && musicMode === "extremos" && ["musica_modo", "la música solo al inicio y al final"], anterior && ["anterior", "«Anteriormente...»"], anterior && resumen.trim() && ["resumen", "el resumen del «Anteriormente...»"], recortar && ["recorte", "quitar las pausas"], Number(velocidad) > 1 && ["velocidad", "el ritmo ágil"], (guion?.pantallas?.length || guion?.telefono?.length) && ["pantallas", "los chats de WhatsApp y la voz por teléfono"]].filter(Boolean) as [string, string][];
       if (needs.length) {
         const caps = await fetch(`${base}/salud`, { signal: AbortSignal.timeout(8000) }).then(r => r.json()).catch(() => null);
         const missing = needs.filter(([k]) => !caps?.[k]).map(([, label]) => label);

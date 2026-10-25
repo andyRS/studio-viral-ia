@@ -94,7 +94,7 @@ def autorizado(authorization: str) -> bool:
 @app.get("/salud")
 def salud():
     # «carpeta»: desde dónde corre el montaje del PC (para ver si es la copia actualizada).
-    return {"ok": True, "local": LOCAL, "gpu": GPU, "musica": True, "musica_modo": True, "anterior": True, "recorte": True, "portada": True, "pavo_720": True, "comprimir": LOCAL, "velocidad": True, "resumen": True, **({"carpeta": os.path.dirname(HERE)} if LOCAL else {})}
+    return {"ok": True, "local": LOCAL, "gpu": GPU, "musica": True, "musica_modo": True, "anterior": True, "recorte": True, "portada": True, "pavo_720": True, "comprimir": LOCAL, "velocidad": True, "resumen": True, "pantallas": True, **({"carpeta": os.path.dirname(HERE)} if LOCAL else {})}
 
 
 # ---------- Trabajos en segundo plano ----------

@@ -479,7 +479,7 @@ function episodeMarkdown(out: any, seriesTitle: string, part: number) {
     f.conflict ? `**Conflicto:** ${f.conflict}` : "", f.development ? `**Desarrollo:** ${f.development}` : "",
     f.climax ? `**Clímax:** ${f.climax}` : "", f.resolution ? `**Resolución:** ${f.resolution}` : "", f.closing ? `**Cierre:** ${f.closing}` : "", "",
     "## Guion por escenas", "",
-    ...scenes.flatMap((s: any) => [`### Escena ${s.n} — ${s.title || ""} (${(s.n - 1) * 8}-${s.n * 8} s)`, `- Objetivo: ${s.goal || "—"}`, `- Personajes: ${(s.characters || []).join(", ") || "—"}`, `- Emoción: ${s.emotion}`, `- Plano: ${s.shot || "—"}`, `- Acción visual: ${s.setting}`, `- ${s.speaker}: «${s.line}»`, `- Efectos: ${s.sfx || "—"}`, `- Música: ${s.music || "—"}`, `- Transición: ${s.transition || "—"}`, `- Conexión: ${s.nextLink || "—"}`, ""]),
+    ...scenes.flatMap((s: any) => [`### Escena ${s.n} — ${s.title || ""} (${(s.n - 1) * 8}-${s.n * 8} s)`, `- Objetivo: ${s.goal || "—"}`, `- Personajes: ${(s.characters || []).join(", ") || "—"}`, `- Emoción: ${s.emotion}`, `- Plano: ${s.shot || "—"}`, `- Acción visual: ${s.setting}`, `- ${s.speaker}: «${s.line}»`, ...(s.phone ? [`- Teléfono: ${s.phone.type}${s.phone.contact ? ` (${s.phone.contact})` : ""}${s.phone.messages?.length ? `: ${s.phone.messages.join(" / ")}` : ""}`] : []), `- Efectos: ${s.sfx || "—"}`, `- Música: ${s.music || "—"}`, `- Transición: ${s.transition || "—"}`, `- Conexión: ${s.nextLink || "—"}`, ""]),
     "## Fase 1 · Elenco", "",
     ...cast.flatMap((c: any) => [`### ${c.fruitEmoji ? c.fruitEmoji + " " : ""}${c.name}${c.fruit ? ` — ${c.fruit}` : ""}`, `- Rol: ${c.role || "—"}`, c.headES ? `- Aspecto: ${c.headES}` : `- Apariencia: ${c.visualES || "—"}`, `- Ropa fija: ${c.clothing || "—"}`, `- Voz: ${c.voice || c.speechStyle || "—"}`, `- Pronunciaciones: ${(c.pronunciations || []).join("; ") || "—"}`, `- Color de subtítulo: ${String(c.subtitleColor || "").replace("#", "")}`, "", "Prompt de ficha para Flow:", "```", c.flowPrompt || "", "```", ""]),
     "## Fase 2 · Imágenes (adjunta las fichas maestras aprobadas)", "", "```", lote.full, "```", "",
@@ -487,6 +487,15 @@ function episodeMarkdown(out: any, seriesTitle: string, part: number) {
     ...scenes.flatMap((s: any) => [`### Escena ${s.n} — primer fotograma: imagen [${String(s.n).padStart(3, "0")}]`, `Referencias a seleccionar: ${(s.references || []).join(", ") || "ninguna"}`, "```", s.animationPrompt, "```", ""]),
     "## Redes", "", `- Título: ${so.title || ""}`, ...(so.hooks || []).map((h: string, i: number) => `- Gancho ${i + 1}: ${h}`), `- Texto del fotograma cero: ${so.frameZeroText || ""}`, `- Descripción TikTok: ${so.tiktokDescription || ""}`, `- Pregunta final: ${so.question || ""}`, `- Portada: ${so.coverIdea || ""}`, `- Música: ${so.music || ""}`, so.biblicalPassage ? `- Pasaje bíblico: ${so.biblicalPassage}` : "",
   ].filter(l => l !== "").join("\n");
+}
+
+// Momento de «la vida de hoy» de la escena: lo que el montaje dibuja (chat) o cómo suena (voz por teléfono).
+function PhoneBadge({ phone, speaker }: { phone: any; speaker: string }) {
+  const label: Record<string, string> = { whatsapp: "Chat de WhatsApp en pantalla", llamada: `Llamada: la voz de ${speaker} suena por teléfono`, videollamada: "Videollamada en pantalla partida", nota_de_voz: `Nota de voz de ${speaker}` };
+  return <div className="mt-2 rounded-lg border border-emerald-400/25 bg-emerald-400/[.06] px-2.5 py-1.5 text-xs text-emerald-200">
+    <span aria-hidden="true">📱 </span>{label[phone.type] || "Teléfono"}{phone.contact ? ` · ${phone.contact}` : ""}
+    {Array.isArray(phone.messages) && phone.messages.length > 0 && <ul className="mt-1 space-y-0.5 text-slate-200">{phone.messages.map((m: string, i: number) => <li key={i} className="w-fit rounded-md bg-white/10 px-2 py-0.5">{m}</li>)}</ul>}
+  </div>;
 }
 
 function DownloadText({ text, filename, label }: { text: string; filename: string; label: string }) {
@@ -603,6 +612,7 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
           <div className="mt-2 rounded-lg border-l-4 bg-white/[.03] px-3 py-2" style={{ borderColor: c?.subtitleColor || "#94a3b8" }}>
             <p className="text-xs"><span className="mr-1">{c?.fruitEmoji || "🎙️"}</span><b style={{ color: c?.subtitleColor || "#fff" }}>{s.speaker}</b>{s.emotion && <span className="text-slate-400"> · {s.emotion}</span>}</p>
             <p className="mt-0.5 text-base font-medium leading-snug">“{s.line}”</p>
+            {s.phone && <PhoneBadge phone={s.phone} speaker={s.speaker} />}
           </div>
           <dl className="mt-2 grid gap-x-4 gap-y-1 text-xs leading-5 sm:grid-cols-2">
             <Field label="Objetivo" value={s.goal} /><Field label="Personajes" value={(s.characters || []).join(", ") || "—"} />

@@ -25,7 +25,9 @@ export interface Scene { n:number; durationSec:8; setting:string; imagePromptFlo
   title?:string; goal?:string; shot?:string; characters?:string[]; sfx?:string; music?:string; transition?:string; nextLink?:string;
   location?:string;      // lugar fijo: idéntico en todas las escenas seguidas que pasan en ese sitio
   references?:string[];  // fichas que el usuario debe seleccionar en Flow/Pavo (fuera del prompt)
+  phone?:ScenePhone;     // la vida de hoy: chat de WhatsApp, llamada, videollamada o nota de voz
 }
+export interface ScenePhone { type:"whatsapp"|"llamada"|"videollamada"|"nota_de_voz"; contact?:string; messages?:string[] }
 export interface Formula { id:string; name:string; category:string; content:string; structure:string[] }
 export interface Episode { id:string; title:string; theme:string; duration:number; status:string; createdAt:string; previousSummary?:string; accountId?:string; seriesId?:string; formulaId?:string; versions:any[]; output?:any; baseFormula?:any; platformAdaptations?:PlatformAdaptation[]; platform_adaptations?:PlatformAdaptation[]; scenes?:Scene[] }
 export interface ProductionCard { id:string; episodeId:string; title:string; stage:"Idea"|"Guion"|"Clips generados"|"Montaje"|"Publicado" }

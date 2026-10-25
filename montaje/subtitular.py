@@ -23,6 +23,9 @@ Opcionales:
   "delogo": "x=..:y=..:w=..:h=.."   coordenadas propias si la marca es otra
   "logo": true (por defecto)   encima de la zona borrada va la marca FrutiEnganchados (marca/frutienganchados.png),
                                del tamaño justo para taparla: no se nota el difuminado
+  "pantallas": [{"clip": 4, "tipo": "whatsapp", "de": "Ramón", "mensajes": ["Ya llegaste?", "Te extraño"]}]
+               chat de WhatsApp dibujado arriba del clip 4, con los mensajes apareciendo uno a uno
+  "telefono": [6]   el clip 6 es una llamada o nota de voz: la voz suena como por teléfono
   "velocidad": 1.0-1.25   ritmo: 1.1 = clips un 10 % más rápidos (voz y vídeo juntos, mismo tono)
   "recortar": true (por defecto)   quita el silencio muerto al inicio y al final de cada clip con diálogo
                                    (los clips de IA traen medio segundo o más): el vídeo fluye sin pausas.
@@ -139,6 +142,47 @@ def texto_dt(texto, size, color, y, borde, extra=""):
             f"bordercolor=black@0.85:shadowcolor=black@0.6:shadowx=0:shadowy=4:x=(w-text_w)/2:y={y}{extra}")
 
 
+def texto_izq(texto, size, color, x, y, extra=""):
+    """drawtext alineado a la izquierda (burbujas de chat)."""
+    TXT_N[0] += 1
+    f = f"txt{TXT_N[0]}.txt"
+    open(f, "w", encoding="utf-8").write(texto)
+    return f"drawtext=fontfile={FONT_F}:textfile={f}:fontsize={size}:fontcolor={color}:x={x}:y={y}{extra}"
+
+
+def chat_capas(de, mensajes, dur):
+    """Chat de WhatsApp dibujado sobre el clip (arriba, sin tapar los subtítulos): cabecera verde con el
+    contacto y burbujas que aparecen una a una, como en los virales. Legible siempre (no depende de la IA)."""
+    PX, PW, y0 = 70, 940, 430   # debajo del gancho de texto (primeros 3 s) y encima de los subtítulos
+    de = "".join(c for c in str(de) if ord(c) < 0x2190).strip()
+    capas = [f"drawbox=x={PX}:y={y0}:w={PW}:h=118:color=0x075E54@0.97:t=fill",
+             texto_izq(de or "WhatsApp", 46, "white", PX + 40, y0 + 18),
+             texto_izq("en línea", 28, "0xCFE9E4", PX + 40, y0 + 74)]
+    burbujas, y = [], y0 + 118 + 26
+    for m in mensajes[:4]:
+        m = "".join(c for c in str(m) if ord(c) < 0x2190).strip()   # sin emojis: la fuente no los tiene
+        ls, cur = [], ""
+        for w in m.split():
+            if cur and len(cur) + 1 + len(w) > 30:
+                ls.append(cur); cur = w
+            else:
+                cur = f"{cur} {w}".strip()
+        if cur:
+            ls.append(cur)
+        ls = ls[:3]
+        h = len(ls) * 52 + 34
+        burbujas.append((ls, y, h, min(PW - 120, max(len(l) for l in ls) * 23 + 64)))
+        y += h + 20
+    capas.insert(1, f"drawbox=x={PX}:y={y0 + 118}:w={PW}:h={y - y0 - 118 + 6}:color=0xECE5DD@0.97:t=fill")
+    paso = min(1.1, max(0.45, (dur - 0.8) / max(1, len(burbujas))))
+    for k, (ls, by, h, bw) in enumerate(burbujas):
+        en = f":enable='gte(t,{0.25 + k * paso:.2f})'"
+        capas.append(f"drawbox=x={PX + 30}:y={by}:w={bw}:h={h}:color=white@1:t=fill{en}")
+        for j, ln in enumerate(ls):
+            capas.append(texto_izq(ln, 40, "0x111B21", PX + 58, by + 18 + j * 52, en))
+    return capas
+
+
 def run(cmd):
     subprocess.run(cmd, check=True)
 
@@ -193,6 +237,17 @@ for tj in G.get("tarjetas") or []:
         continue
     if 0 < k < len(clips) and txt:
         TARJETAS[k] = txt[:60]
+# La vida de hoy: chats de WhatsApp dibujados encima de su clip y clips con la voz por teléfono.
+PANTALLAS = {}
+for pt in G.get("pantallas") or []:
+    try:
+        k = int(pt.get("clip"))
+    except (TypeError, ValueError, AttributeError):
+        continue
+    msgs = [str(x)[:90] for x in (pt.get("mensajes") or []) if str(x).strip()]
+    if 0 <= k < len(clips) and msgs and pt.get("tipo", "whatsapp") == "whatsapp":
+        PANTALLAS[k] = (str(pt.get("de") or "")[:30], msgs)
+TELEFONO = {int(k) for k in (G.get("telefono") or []) if str(k).lstrip("-").isdigit() and 0 <= int(k) < len(clips)}
 ANTERIOR = G.get("anterior_archivo") if G.get("anterior_archivo") and os.path.exists(G["anterior_archivo"]) else ""
 RECAP_S = 0.0
 RECAP_MAX = 14.0   # resumen de la parte anterior: 3-4 momentos clave, no solo su final
@@ -456,9 +511,16 @@ for ci, c in enumerate(clips):
             raise ValueError("delogo debe indicar x, y, w y h en píxeles")
         dl = f"delogo={G['delogo']},"
     a, b = recortes[ci]
+    chat = ("," + ",".join(chat_capas(*PANTALLAS[ci], (b - a) / VEL))) if ci in PANTALLAS else ""
+    # Voz de quien llama: banda de teléfono (300-3400 Hz), algo comprimida.
+    tel = "highpass=f=320,highpass=f=320,lowpass=f=3300,lowpass=f=3300,acompressor=threshold=0.1:ratio=3:attack=5:release=80,volume=1.5," if ci in TELEFONO else ""
+    if chat:
+        progreso(69, f"Clip {ci + 1}: chat de WhatsApp en pantalla ({len(PANTALLAS[ci][1])} mensajes)")
+    if tel:
+        progreso(69, f"Clip {ci + 1}: la voz suena por teléfono")
     # Corte seco y limpio: trim al tramo con voz y micro-fundido de audio (sin «clic» entre clips).
-    fc += (f"[{n}:v]trim=start={a:.3f}:end={b:.3f},setpts=(PTS-STARTPTS)/{VEL:.3f},{dl}scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,fps=24[v{n}];"
-           f"[{n}:a]atrim=start={a:.3f}:end={b:.3f},asetpts=PTS-STARTPTS,{f'atempo={VEL:.3f},' if VEL > 1 else ''}aresample=48000,aformat=channel_layouts=stereo,"
+    fc += (f"[{n}:v]trim=start={a:.3f}:end={b:.3f},setpts=(PTS-STARTPTS)/{VEL:.3f},{dl}scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,fps=24{chat}[v{n}];"
+           f"[{n}:a]atrim=start={a:.3f}:end={b:.3f},asetpts=PTS-STARTPTS,{f'atempo={VEL:.3f},' if VEL > 1 else ''}{tel}aresample=48000,aformat=channel_layouts=stereo,"
            f"afade=t=in:d=0.03,afade=t=out:st={max(0, (b - a) / VEL - 0.04):.3f}:d=0.04[a{n}];")
     cat += f"[v{n}][a{n}]"
     n += 1
