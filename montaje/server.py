@@ -18,7 +18,9 @@ Montaje en segundo plano, con progreso en vivo (lo que usa la app):
 
 Solo en el PC (modo local):
   GET  /              página «Herramientas del PC»: comprimir un vídeo para revisarlo o mandarlo
-  POST /comprimir     (multipart: video, calidad=revisar|ligero|redes; cabecera X-Montaje-Local) -> mp4
+  POST /comprimir     (multipart: video, calidad=revisar|ligero|redes|mejorar; cabecera X-Montaje-Local) -> mp4
+                      (también lo usa la app: Crear > Herramientas)
+  POST /quitar-marca  (multipart: video, zonas=[{x,y,w,h}] en píxeles, metodo=borrar|difuminar|tapar|recortar) -> mp4
 
 GET /salud -> {"ok": true, "local": false, "gpu": "", "musica": true}
   "musica": este servidor monta la música de fondo (versiones anteriores la ignoraban sin avisar).
@@ -94,7 +96,7 @@ def autorizado(authorization: str) -> bool:
 @app.get("/salud")
 def salud():
     # «carpeta»: desde dónde corre el montaje del PC (para ver si es la copia actualizada).
-    return {"ok": True, "local": LOCAL, "gpu": GPU, "musica": True, "musica_modo": True, "anterior": True, "recorte": True, "portada": True, "pavo_720": True, "comprimir": LOCAL, "velocidad": True, "resumen": True, "pantallas": True, **({"carpeta": os.path.dirname(HERE)} if LOCAL else {})}
+    return {"ok": True, "local": LOCAL, "gpu": GPU, "musica": True, "musica_modo": True, "anterior": True, "recorte": True, "portada": True, "pavo_720": True, "comprimir": LOCAL, "mejorar": LOCAL, "quitar_marca": LOCAL, "velocidad": True, "resumen": True, "pantallas": True, **({"carpeta": os.path.dirname(HERE)} if LOCAL else {})}
 
 
 # ---------- Trabajos en segundo plano ----------
@@ -268,6 +270,7 @@ CALIDADES = {
     "revisar": (540, 30, "96k"),    # ~10-15 MB por minuto: para revisarlo en el chat
     "ligero": (360, 32, "64k"),     # lo más pequeño: si «revisar» aún pesa mucho
     "redes": (1080, 21, "160k"),    # buena calidad para publicar, pero más ligero que el original
+    "mejorar": (1080, 16, "192k"),  # sube a 1080 (o 1920 de alto) con escalado fino, limpia ruido y da nitidez
 }
 MAX_COMPRIMIR = 4 * 1024 * 1024 * 1024
 
@@ -286,10 +289,18 @@ async def comprimir(video: UploadFile = File(...), calidad: str = "revisar", x_m
         venc = ["-c:v", "h264_nvenc", "-preset", "p5", "-rc", "vbr", "-cq", str(crf + 2), "-b:v", "0"] if nv else ["-c:v", "libx264", "-crf", str(crf), "-preset", "fast"]
         # El lado corto queda en «alto» px (vale para vertical y horizontal), sin agrandar nunca.
         vf = f"scale='if(lt(iw,ih),min({alto},iw),-2)':'if(lt(iw,ih),-2,min({alto},ih))'"
+        if calidad == "mejorar":
+            # Escalado lanczos hasta 1080 de ancho (vertical) sin deformar, limpieza suave de ruido y nitidez.
+            # No inventa detalle como un escalador con IA, pero los clips de 720p ganan definición real al publicar.
+            vf = ("scale='if(lt(iw,ih),1080,-2)':'if(lt(iw,ih),-2,1080)':flags=lanczos,"
+                  "hqdn3d=1.2:1.2:4:4,unsharp=5:5:0.75:5:5:0,setsar=1")
+            venc = (["-c:v", "h264_nvenc", "-preset", "p6", "-tune", "hq", "-rc", "vbr", "-cq", "17", "-b:v", "0", "-maxrate", "25M", "-bufsize", "50M"] if nv
+                    else ["-c:v", "libx264", "-crf", "16", "-preset", "slow"])
         cmd = ["ffmpeg", "-v", "error", "-y", "-i", src, "-vf", vf, *venc, "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", audio, "-movflags", "+faststart", out]
         r = await asyncio.to_thread(subprocess.run, cmd, capture_output=True, text=True)
         if r.returncode != 0 and nv:   # NVENC ocupado o no disponible: con el procesador
-            cmd[cmd.index("h264_nvenc") - 1:cmd.index("-b:v") + 2] = ["-c:v", "libx264", "-crf", str(crf), "-preset", "fast"]
+            fin = cmd.index("-pix_fmt")
+            cmd[cmd.index("h264_nvenc") - 1:fin] = ["-c:v", "libx264", "-crf", str(crf), "-preset", "fast"]
             r = await asyncio.to_thread(subprocess.run, cmd, capture_output=True, text=True)
         if r.returncode != 0:
             raise HTTPException(500, "ffmpeg no pudo comprimirlo: " + (r.stderr or "")[-300:])
@@ -324,6 +335,7 @@ a.dl{display:inline-block;margin-top:10px;color:var(--blue);font-weight:700}
 <label><input type="radio" name="q" value="revisar" checked><span><b>Para revisar</b> (recomendado)<small>540p · unos 10-15 MB por minuto. Para mandarlo al chat.</small></span></label>
 <label><input type="radio" name="q" value="ligero"><span><b>Lo más ligero</b><small>360p · si «Para revisar» aún pesa mucho.</small></span></label>
 <label><input type="radio" name="q" value="redes"><span><b>Calidad para redes</b><small>1080p · se ve igual de bien y pesa menos que el original.</small></span></label>
+<label><input type="radio" name="q" value="mejorar"><span><b>Mejorar calidad</b><small>Sube a 1080p con escalado fino, quita ruido y da nitidez. Pesa más.</small></span></label>
 </div>
 <button id="go" disabled>Comprimir</button>
 <div class="bar" id="bar"><i id="fill"></i></div><div id="estado" role="status" aria-live="polite"></div>
@@ -358,3 +370,97 @@ def inicio():
     if not LOCAL:
         return HTMLResponse("<p>Montaje Estudio Viral</p>")
     return HTMLResponse(PAGINA.replace("__GPU__", GPU or "sin GPU"))
+
+
+# ---------- Herramientas del PC: quitar una marca de agua ----------
+# Como online-video-cutter (difuminar, recortar, tapar con una imagen) y además «borrar»: rellena la zona con
+# lo que la rodea (delogo), que es lo que mejor queda en vídeos de IA. Varias zonas a la vez; vídeo completo.
+from fastapi import Form
+
+EMBLEMA = os.path.join(HERE, "marca", "frutienganchados.png")
+METODOS = ("borrar", "difuminar", "tapar", "recortar")
+
+
+def _probe_wh(path: str):
+    r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height",
+                        "-of", "csv=p=0", path], capture_output=True, text=True)
+    w, h = (int(x) for x in r.stdout.strip().split(",")[:2])
+    return w, h
+
+
+def filtro_marca(zonas, metodo, W, H):
+    """Filtro de ffmpeg para quitar las zonas [{x,y,w,h}] (en píxeles del vídeo). Devuelve (filtro, usa_emblema)."""
+    zs = []
+    for z in zonas[:6]:
+        x, y, w, h = (int(round(float(z[k]))) for k in ("x", "y", "w", "h"))
+        # delogo necesita 1 px de margen dentro del cuadro
+        x, y = max(1, min(x, W - 4)), max(1, min(y, H - 4))
+        w, h = max(3, min(w, W - x - 1)), max(3, min(h, H - y - 1))
+        zs.append((x, y, w, h))
+    if not zs:
+        raise HTTPException(400, "Marca al menos una zona sobre el logo")
+    if metodo == "recortar":
+        # Se recorta la franja del borde donde está el logo y se vuelve al tamaño original (zoom suave).
+        x, y, w, h = zs[0]
+        if y + h / 2 > H / 2:
+            nh = y - 2
+        else:
+            nh = H - (y + h) - 2
+        nh = max(int(H * 0.6), nh)
+        nw = int(W * nh / H) // 2 * 2
+        oy = 0 if y + h / 2 > H / 2 else H - nh
+        return f"[0:v]crop={nw}:{nh // 2 * 2}:{(W - nw) // 2}:{oy},scale={W}:{H}:flags=lanczos,setsar=1[v]", False
+    if metodo == "difuminar":
+        f, prev = "", "0:v"
+        for i, (x, y, w, h) in enumerate(zs):
+            f += (f"[{prev}]split[b{i}][c{i}];[c{i}]crop={w}:{h}:{x}:{y},boxblur={max(1, min(12, min(w, h) // 4))}:3[d{i}];"
+                  f"[b{i}][d{i}]overlay={x}:{y}[o{i}];")
+            prev = f"o{i}"
+        return f + f"[{prev}]setsar=1[v]", False
+    dl = ",".join(f"delogo=x={x}:y={y}:w={w}:h={h}" for x, y, w, h in zs)
+    if metodo == "tapar":
+        # El emblema FrutiEnganchados encima de cada zona borrada, del tamaño justo para cubrirla.
+        f = f"[0:v]{dl}[base];"
+        prev = "base"
+        for i, (x, y, w, h) in enumerate(zs):
+            lado = int(max(w, h) * 1.15)
+            f += (f"[1:v]scale={lado}:{lado}:force_original_aspect_ratio=decrease[e{i}];"
+                  f"[{prev}][e{i}]overlay=x={x + w // 2}-overlay_w/2:y={y + h // 2}-overlay_h/2[t{i}];")
+            prev = f"t{i}"
+        return f + f"[{prev}]setsar=1[v]", True
+    return f"[0:v]{dl},setsar=1[v]", False
+
+
+@app.post("/quitar-marca")
+async def quitar_marca(video: UploadFile = File(...), zonas: str = Form(...), metodo: str = Form("borrar"),
+                       x_montaje_local: str = Header(default="")):
+    if not LOCAL or not x_montaje_local:
+        raise HTTPException(403, "Solo disponible en el montaje de este PC")
+    if metodo not in METODOS:
+        raise HTTPException(400, "Método no válido")
+    try:
+        zs = json.loads(zonas)
+        assert isinstance(zs, list)
+    except Exception:
+        raise HTTPException(400, "Zonas no válidas")
+    work = tempfile.mkdtemp(prefix="marca_")
+    nombre = os.path.splitext(os.path.basename(video.filename or "video"))[0][:80] or "video"
+    src, out = os.path.join(work, "entrada"), os.path.join(work, "salida.mp4")
+    try:
+        await save_upload(video, src, MAX_COMPRIMIR)
+        W, H = _probe_wh(src)
+        fc, emblema = filtro_marca(zs, metodo, W, H)
+        nv = os.environ.get("VIDEO_ENCODER") == "h264_nvenc"
+        venc = ["-c:v", "h264_nvenc", "-preset", "p6", "-rc", "vbr", "-cq", "18", "-b:v", "0"] if nv else ["-c:v", "libx264", "-crf", "17", "-preset", "medium"]
+        base = ["ffmpeg", "-v", "error", "-y", "-i", src, *(["-loop", "1", "-i", EMBLEMA] if emblema else []),
+                "-filter_complex", fc, "-map", "[v]", "-map", "0:a?", "-shortest" if emblema else "-sn"]
+        tail = ["-pix_fmt", "yuv420p", "-c:a", "copy", "-movflags", "+faststart", out]
+        r = await asyncio.to_thread(subprocess.run, [*base, *venc, *tail], capture_output=True, text=True)
+        if r.returncode != 0 and nv:
+            r = await asyncio.to_thread(subprocess.run, [*base, "-c:v", "libx264", "-crf", "17", "-preset", "medium", *tail], capture_output=True, text=True)
+        if r.returncode != 0:
+            raise HTTPException(500, "ffmpeg no pudo quitar la marca: " + (r.stderr or "")[-300:])
+    except Exception:
+        shutil.rmtree(work, True)
+        raise
+    return FileResponse(out, media_type="video/mp4", filename=f"{nombre}-sin-marca.mp4", background=BackgroundTask(shutil.rmtree, work, True))

@@ -13,6 +13,7 @@ import ViralAnalyzerModule from "@/components/ViralAnalyzerModule";
 import DropshippingModule from "@/components/DropshippingModule";
 import DolaStudioModule from "@/components/DolaStudioModule";
 import AutoMetaSync from "@/components/AutoMetaSync";
+import ToolsModule from "@/components/ToolsModule";
 
 const I = (d: string, size = "h-[18px] w-[18px]") => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className={size + " shrink-0"} aria-hidden="true">
@@ -47,6 +48,7 @@ const MODULES: Record<string, Mod> = {
   personajes: { id: "personajes", label: "Personajes", desc: "Identidad visual y voces de cada serie" },
   formulas: { id: "formulas", label: "Fórmulas", desc: "Estructuras narrativas para reutilizar" },
   produccion: { id: "produccion", label: "Producción", desc: "Etapas, revisión de clips y costos" },
+  herramientas: { id: "herramientas", label: "Herramientas", desc: "Comprimir, mejorar calidad y quitar marcas de agua en tu PC" },
   metricas: { id: "metricas", label: "Métricas", desc: "Rendimiento real de tus publicaciones" },
   virales: { id: "virales", label: "Analizador", desc: "Analiza la estructura de un video" },
   calendario: { id: "calendario", label: "Calendario", desc: "Publicaciones planificadas por cuenta" },
@@ -56,7 +58,7 @@ const MODULES: Record<string, Mod> = {
 type Workspace = { id: string; title: string; short: string; desc: string; defaultModule: string; modules: string[] };
 const WORKSPACES: Workspace[] = [
   { id: "inicio", title: "Inicio inteligente", short: "Inicio", desc: "Vista general del estudio", defaultModule: "inicio", modules: [] },
-  { id: "creative", title: "Creative Studio", short: "Crear", desc: "Historias, personajes y producción", defaultModule: "generador", modules: ["generador", "dola", "personajes", "formulas", "produccion"] },
+  { id: "creative", title: "Creative Studio", short: "Crear", desc: "Historias, personajes y producción", defaultModule: "generador", modules: ["generador", "dola", "personajes", "formulas", "produccion", "herramientas"] },
   { id: "intelligence", title: "Intelligence Hub", short: "Medir", desc: "Métricas y análisis", defaultModule: "metricas", modules: ["metricas", "virales"] },
   { id: "publish", title: "Publish & Grow", short: "Publicar", desc: "Calendario y cuentas", defaultModule: "calendario", modules: ["calendario", "cuentas"] },
 ];
@@ -78,6 +80,7 @@ function ModuleView({ id, focus, onOpenEpisode }: { id: string; focus: SearchRes
     case "metricas": return <MetricsModule focusMetricId={focus?.kind === "Publicación medida" ? focus.id : undefined} />;
     case "virales": return <ViralAnalyzerModule />;
     case "dola": return <DolaStudioModule />;
+    case "herramientas": return <ToolsModule />;
     default: return <DropshippingModule />;
   }
 }
