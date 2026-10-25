@@ -8,9 +8,33 @@ $envDir = Join-Path $env:USERPROFILE "Developer\montaje-env"
 $whisperx = Join-Path $env:USERPROFILE "Developer\whisperx-env"
 $py = Join-Path $envDir "Scripts\python.exe"
 
+# Busca un Python real (el alias «python» de la Microsoft Store no sirve).
+function Find-Python {
+  $cands = @()
+  try { $p = (& py -3 -c "import sys; print(sys.executable)" 2>$null); if ($p) { $cands += $p.Trim() } } catch {}
+  $cands += Get-ChildItem -ErrorAction SilentlyContinue -Path "$env:LOCALAPPDATA\Programs\Python\Python3*\python.exe", "$env:ProgramFiles\Python3*\python.exe", "C:\Python3*\python.exe" | Sort-Object { [int]($_.Directory.Name -replace "\D", "") } -Descending | ForEach-Object { $_.FullName }
+  $cmd = Get-Command python -ErrorAction SilentlyContinue
+  if ($cmd -and $cmd.Source -notmatch "WindowsApps") { $cands += $cmd.Source }
+  $base = Join-Path $whisperx "pyvenv.cfg"
+  if (Test-Path $base) { $h = (Get-Content $base | Where-Object { $_ -match "^home\s*=" }) -replace "^home\s*=\s*", ""; if ($h) { $cands += (Join-Path $h.Trim() "python.exe") } }
+  foreach ($c in $cands) { if ($c -and (Test-Path $c)) { return $c } }
+  return $null
+}
+
 if (-not (Test-Path $py)) {
   Write-Host "Primera vez: preparando el entorno en $envDir ..." -ForegroundColor Yellow
-  python -m venv $envDir
+  $base = Find-Python
+  if (-not $base) {
+    Write-Host ""
+    Write-Host "  No encuentro Python en este PC." -ForegroundColor Red
+    Write-Host "  Instálalo con este comando (en una ventana nueva) y vuelve a abrir «Montar en mi PC»:"
+    Write-Host "    winget install --id Python.Python.3.11 -e" -ForegroundColor Cyan
+    Write-Host ""
+    exit 1
+  }
+  Write-Host "  Python: $base"
+  & $base -m venv $envDir
+  if (-not (Test-Path $py)) { Write-Host "  No se pudo crear el entorno en $envDir." -ForegroundColor Red; exit 1 }
   if (Test-Path (Join-Path $whisperx "Lib\site-packages\faster_whisper")) {
     # Reutiliza faster-whisper y torch con CUDA de WhisperX (sin tocar ese entorno ni descargar 3 GB).
     Set-Content -Encoding ascii (Join-Path $envDir "Lib\site-packages\whisperx-env.pth") (Join-Path $whisperx "Lib\site-packages")
