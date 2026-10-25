@@ -21,32 +21,57 @@ function Find-Python {
   return $null
 }
 
-if (-not (Test-Path $py)) {
-  Write-Host "Primera vez: preparando el entorno en $envDir ..." -ForegroundColor Yellow
-  $base = Find-Python
-  if (-not $base) {
-    Write-Host ""
-    Write-Host "  No encuentro Python en este PC." -ForegroundColor Red
-    Write-Host "  Instálalo con este comando (en una ventana nueva) y vuelve a abrir «Montar en mi PC»:"
-    Write-Host "    winget install --id Python.Python.3.11 -e" -ForegroundColor Cyan
-    Write-Host ""
-    exit 1
-  }
-  Write-Host "  Python: $base"
-  & $base -m venv $envDir
-  if (-not (Test-Path $py)) { Write-Host "  No se pudo crear el entorno en $envDir." -ForegroundColor Red; exit 1 }
-  if (Test-Path (Join-Path $whisperx "Lib\site-packages\faster_whisper")) {
-    # Reutiliza faster-whisper y torch con CUDA de WhisperX (sin tocar ese entorno ni descargar 3 GB).
-    Set-Content -Encoding ascii (Join-Path $envDir "Lib\site-packages\whisperx-env.pth") (Join-Path $whisperx "Lib\site-packages")
-    & $py -m pip install -q "fastapi==0.115.0" "uvicorn==0.30.6" "python-multipart==0.0.9"
-  } else {
-    & $py -m pip install -q -r (Join-Path $montaje "requirements.txt")
-  }
+# ffmpeg es imprescindible para montar.
+if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
+  Write-Host ""
+  Write-Host "  Falta ffmpeg en este PC." -ForegroundColor Red
+  Write-Host "  Instálalo con este comando, cierra esta ventana y vuelve a abrir «Montar en mi PC»:"
+  Write-Host "    winget install --id Gyan.FFmpeg -e" -ForegroundColor Cyan
+  Write-Host ""
+  exit 1
 }
 
 $gpu = $null
 try { $gpu = (& nvidia-smi --query-gpu=name --format=csv,noheader 2>$null | Select-Object -First 1) } catch {}
 $nvenc = (& ffmpeg -hide_banner -encoders 2>$null | Select-String "h264_nvenc") -ne $null
+$reuseWhisperx = Test-Path (Join-Path $whisperx "Lib\site-packages\faster_whisper")
+$listo = Join-Path $envDir ".instalado"
+
+if (-not (Test-Path $listo)) {
+  Write-Host "Primera vez: preparando el entorno en $envDir (tarda unos minutos) ..." -ForegroundColor Yellow
+  if (-not (Test-Path $py)) {
+    $base = Find-Python
+    if (-not $base) {
+      Write-Host ""
+      Write-Host "  No encuentro Python en este PC." -ForegroundColor Red
+      Write-Host "  Instálalo con este comando, cierra esta ventana y vuelve a abrir «Montar en mi PC»:"
+      Write-Host "    winget install --id Python.Python.3.11 -e" -ForegroundColor Cyan
+      Write-Host ""
+      exit 1
+    }
+    Write-Host "  Python: $base"
+    & $base -m venv $envDir
+    if (-not (Test-Path $py)) { Write-Host "  No se pudo crear el entorno en $envDir." -ForegroundColor Red; exit 1 }
+  }
+  & $py -m pip install -q --upgrade pip
+  if ($reuseWhisperx) {
+    # Reutiliza faster-whisper y torch con CUDA de WhisperX (sin tocar ese entorno ni descargar 3 GB).
+    Set-Content -Encoding ascii (Join-Path $envDir "Lib\site-packages\whisperx-env.pth") (Join-Path $whisperx "Lib\site-packages")
+    & $py -m pip install -q "fastapi==0.115.0" "uvicorn==0.30.6" "python-multipart==0.0.9"
+  } else {
+    & $py -m pip install -q -r (Join-Path $montaje "requirements.txt")
+    # Librerías de NVIDIA para que Whisper use la tarjeta gráfica (sin instalar CUDA aparte).
+    if ($LASTEXITCODE -eq 0 -and $gpu) { & $py -m pip install -q nvidia-cublas-cu12 "nvidia-cudnn-cu12==9.*" }
+  }
+  if ($LASTEXITCODE -ne 0) { Write-Host "  La instalación falló (mira el error de arriba). Vuelve a abrir «Montar en mi PC» para reintentar." -ForegroundColor Red; exit 1 }
+  Set-Content -Encoding ascii $listo (Get-Date -Format s)
+}
+
+# Las DLL de NVIDIA instaladas con pip tienen que estar en el PATH.
+foreach ($lib in "cublas", "cudnn") {
+  $bin = Join-Path $envDir "Lib\site-packages\nvidia\$lib\bin"
+  if (Test-Path $bin) { $env:PATH = "$bin;$env:PATH" }
+}
 
 $env:MONTAJE_LOCAL = "1"
 $env:FONT_DIR = Join-Path $montaje "fonts"

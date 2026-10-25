@@ -168,6 +168,8 @@ if DEVICE == "cuda":
 from faster_whisper import WhisperModel
 try:
     model = WhisperModel(os.environ.get("WHISPER_MODEL", "small"), device=DEVICE, compute_type="float16" if DEVICE == "cuda" else "int8")
+    if DEVICE == "cuda":  # sin cuBLAS/cuDNN el fallo llega al transcribir: se prueba con 1 s de silencio
+        list(model.transcribe(np.zeros(16000, np.float32), language="es")[0])
 except Exception as e:  # sin GPU utilizable: sigue en CPU en vez de fallar
     progreso(3, f"La GPU no está disponible ({str(e)[:80]}); Whisper sigue en el procesador")
     DEVICE = "cpu"
