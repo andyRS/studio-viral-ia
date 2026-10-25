@@ -30,6 +30,9 @@ Opcionales:
                       blanco y negro y «Anteriormente...».
   "musica_modo": "extremos" | "todo"   «extremos»: la música (firma de la serie) suena solo en los primeros 4 s
                                      y en los últimos 8 s con el «Continuará…»; «todo» (por defecto): todo el vídeo.
+  "portada": {"serie": "...", "frase": ["línea 1", "línea 2"], "parte": 6, "clip": 3}   portada 1080x1920 junto al
+                               vídeo (<salida>_portada.jpg): franja oscura arriba con la serie y la frase, «PARTE» y el
+                               número enorme en dorado abajo (Poppins + Lora, sin contorno, sombra suave)
   "musica_volumen": 0.05-0.4   volumen de la música de fondo (0.18 por defecto). El archivo lo pone
                                server.py en "musica_archivo"; se repite si es corto y baja sola cuando hablan.
   Un bloque vacío [] sirve para clips sin diálogo (tarjetas "Un año después...").
@@ -51,13 +54,41 @@ tmp = tempfile.mkdtemp()
 shutil.copy(FONT, os.path.join(tmp, "Poppins-Bold.ttf"))
 os.chdir(tmp)
 FONT_F = "Poppins-Bold.ttf"
+# Lora (títulos de portada); si no está, se usa Poppins.
+LORA = os.path.join(os.path.dirname(FONT), "Lora-Bold.ttf")
+LORA_F = FONT_F
+if os.path.exists(LORA):
+    shutil.copy(LORA, os.path.join(tmp, "Lora-Bold.ttf"))
+    LORA_F = "Lora-Bold.ttf"
 
 
-# Marcas de agua conocidas: resolución nativa de sus clips + zona a borrar
+# Marcas de agua conocidas: cada resolución en la que exporta esa herramienta + zona a borrar.
+# Solo se borra en los clips de ESA herramienta (se reconocen por su resolución): los de Melius,
+# Higgsfield u otra no se tocan aunque vayan en el mismo episodio.
 MARCAS = {
-    "dola": {"res": "720:1280", "delogo": "x=603:y=1232:w=104:h=36"},
-    "pavo": {"res": "704:1280", "delogo": "x=614:y=1220:w=66:h=38"},
+    "dola": [{"res": (720, 1280), "box": (603, 1232, 104, 36)}],
+    "pavo": [{"res": (704, 1280), "box": (614, 1220, 66, 38)},
+             {"res": (720, 1260), "box": (630, 1200, 66, 38)}],   # misma marca, mismos márgenes (24 px dcha., 22 px abajo)
 }
+
+
+def tam(f):
+    w, h = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height",
+                           "-of", "csv=p=0", f], capture_output=True, text=True).stdout.strip().split(",")[:2]
+    return int(w), int(h)
+
+
+def marca_de(clip, variantes):
+    """Zona de la marca en ESTE clip (x, y, w, h en sus píxeles) o None si el clip no es de esa herramienta.
+    Acepta también el mismo formato reescalado (misma proporción): la zona se escala igual."""
+    w, h = tam(clip)
+    for v in variantes:
+        vw, vh = v["res"]
+        if abs(w / h - vw / vh) < 0.004:
+            k = w / vw
+            x, y, bw, bh = v["box"]
+            return (round(x * k), round(y * k), max(2, round(bw * k)), max(2, round(bh * k))), (w, h)
+    return None, (w, h)
 
 
 # Texto en pantalla: se parte en líneas que quepan en 1080 px (Poppins Bold mide ~0,6 em por letra)
@@ -308,6 +339,7 @@ progreso(65, f"Subtítulos de colores listos: {len(events)} bloques sin encimars
 
 # 4) unir: «Anteriormente», clips (recortados) con sus tarjetas de tiempo, cierre, gancho y subtítulos
 inputs, fc, cat, n = [], "", "", 0
+ZONAS = []   # marcas borradas: (zona, resolución del clip), para poner el emblema encima
 
 
 def segmento(path, vf_extra=""):
@@ -338,9 +370,13 @@ for ci, c in enumerate(clips):
         segmento(card)
     inputs += ["-i", c]
     dl = ""
-    preset = MARCAS.get(str(G.get("marca", "")).lower())
-    if preset:   # todos los clips se llevan primero a la resolución de esa herramienta y se borra su marca
-        dl = f"scale={preset['res']},setsar=1,delogo={preset['delogo']},"
+    variantes = MARCAS.get(str(G.get("marca", "")).lower())
+    if variantes:   # se borra solo si el clip es de esa herramienta (por su resolución)
+        caja, wh = marca_de(c, variantes)
+        if caja:
+            x, y, bw, bh = caja
+            dl = f"delogo=x={min(x, wh[0] - bw - 1)}:y={min(y, wh[1] - bh - 1)}:w={bw}:h={bh},"
+            ZONAS.append((caja, wh))
     elif G.get("delogo"):   # coordenadas propias, p.ej. "x=603:y=1232:w=104:h=36"
         if not re.fullmatch(r"x=\d{1,4}:y=\d{1,4}:w=\d{1,4}:h=\d{1,4}", str(G["delogo"])):
             raise ValueError("delogo debe indicar x, y, w y h en píxeles")
@@ -381,18 +417,23 @@ if G.get("cierre"):
 # Marca FrutiEnganchados sobre la zona borrada (la cubre entera con unos píxeles de margen).
 LOGO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "marca", "frutienganchados.png")
 zona = None
-preset = MARCAS.get(str(G.get("marca", "")).lower())
-if G.get("logo", True) is not False and os.path.exists(LOGO) and (preset or G.get("delogo")):
-    if preset:
-        W0, H0 = (int(v) for v in preset["res"].split(":"))
-        zx, zy, zw, zh = (int(kv.split("=")[1]) for kv in preset["delogo"].split(":"))
-    else:
-        W0, H0 = (int(v) for v in subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height",
-                                                    "-of", "csv=p=0", clips[0]], capture_output=True, text=True).stdout.strip().split(","))
-        zx, zy, zw, zh = (int(kv.split("=")[1]) for kv in str(G["delogo"]).split(":"))
-    f = max(1080 / W0, 1920 / H0)   # mismo escalado y recorte centrado que los clips
+def a_salida(caja, W0, H0):
+    """Zona de un clip (en sus píxeles) en el vídeo final 1080x1920 (mismo escalado y recorte centrado)."""
+    x, y, w, h = caja
+    f = max(1080 / W0, 1920 / H0)
     ox, oy = (W0 * f - 1080) / 2, (H0 * f - 1920) / 2
-    zona = (zx * f - ox, zy * f - oy, zw * f, zh * f)
+    return (x * f - ox, y * f - oy, w * f, h * f)
+
+
+if G.get("logo", True) is not False and os.path.exists(LOGO) and (ZONAS or G.get("delogo")):
+    if ZONAS:   # clips de distintas resoluciones (704x1280, 720x1260…): el emblema cubre la zona de todos
+        cajas = [a_salida(c, *wh) for c, wh in ZONAS]
+        x0, y0 = min(c[0] for c in cajas), min(c[1] for c in cajas)
+        x1, y1 = max(c[0] + c[2] for c in cajas), max(c[1] + c[3] for c in cajas)
+        zona = (x0, y0, x1 - x0, y1 - y0)
+    else:
+        W0, H0 = tam(clips[0])
+        zona = a_salida(tuple(int(kv.split("=")[1]) for kv in str(G["delogo"]).split(":")), W0, H0)
 MUSICA = G.get("musica_archivo") if G.get("musica_archivo") and os.path.exists(G["musica_archivo"]) else ""
 fc += f"{cat}concat=n={n}:v=1:a=1[vc][{'voz' if MUSICA else 'a'}];"
 if zona:
@@ -471,5 +512,46 @@ for row in enc.stdout:
             last_pct = int(pct); progreso(pct, f"Codificando el vídeo final: {mmss(done)} de {mmss(total)}")
 if enc.wait() != 0:
     raise SystemExit("ffmpeg falló al codificar el vídeo final")
+# Portada fija (mismo diseño en todas las partes): fotograma limpio de una escena (sin subtítulos ni
+# gancho), franja casi negra arriba que se funde con la imagen y zona oscura abajo detrás de «PARTE N».
+P = G.get("portada") if isinstance(G.get("portada"), dict) else None
+if P:
+    try:
+        k = int(P.get("clip", round(len(clips) * 0.35)))
+        k = min(max(k, 0), len(clips) - 1)
+        a, b = recortes[k]
+        foto = os.path.join(tmp, "portada_base.png")
+        variantes = MARCAS.get(str(G.get("marca", "")).lower())
+        caja = marca_de(clips[k], variantes)[0] if variantes else None
+        dl = f"delogo=x={caja[0]}:y={caja[1]}:w={caja[2]}:h={caja[3]}," if caja else ""
+        run(["ffmpeg", "-v", "error", "-y", "-ss", f"{a + (b - a) * 0.45:.2f}", "-i", clips[k], "-frames:v", "1",
+             # La toma se baja (260 px por defecto) para que las caras queden en la zona clara, bajo la franja oscura.
+             "-vf", f"{dl}scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,"
+                    f"crop=1080:{1920 - int(P.get('bajar', 260))}:0:0,pad=1080:1920:0:{int(P.get('bajar', 260))}:black", foto])
+        sombra = ":shadowcolor=black@0.55:shadowx=0:shadowy=6"
+        def texto(t, fuente, size, color, y):
+            TXT_N[0] += 1
+            f = f"txt{TXT_N[0]}.txt"
+            open(f, "w", encoding="utf-8").write(t)
+            return f"drawtext=fontfile={fuente}:textfile={f}:fontsize={size}:fontcolor={color}:x=(w-text_w)/2:y={y}{sombra}"
+        capas = []
+        y = 300
+        for ln in lineas(str(P.get("serie") or ""), 66, 2):
+            capas.append(texto(ln, LORA_F, 66, "white", y)); y += 80
+        y += 14
+        frase = [str(x) for x in (P.get("frase") or []) if str(x).strip()][:2]
+        for ln in [l for f_ in frase for l in lineas(f_, 50, 2)][:3]:
+            capas.append(texto(ln, FONT_F, 50, "white", y)); y += 62
+        capas.append(texto("PARTE", FONT_F, 92, "white", 1295))
+        capas.append(texto(str(P.get("parte") or ""), LORA_F, 340, "0xF2C14E", 1370))
+        B = int(P.get("bajar", 260))   # la franja es opaca hasta donde empieza la toma y luego se funde
+        degradado = ("color=c=black:s=1080x1920,format=rgba,"
+                     f"geq=r=0:g=0:b=0:a='255*max(if(lt(Y,{B + 30}),0.97,0.97*pow(max(0,1-(Y-{B + 30})/560),1.1)),0.9*min(1,max(0,(Y-1120)/520)))'")
+        portada = os.path.splitext(out_mp4)[0] + "_portada.jpg"
+        run(["ffmpeg", "-v", "error", "-y", "-i", foto, "-f", "lavfi", "-i", degradado, "-filter_complex",
+             "[0:v][1:v]overlay=0:0," + ",".join(capas) + "[v]", "-map", "[v]", "-frames:v", "1", "-q:v", "2", portada])
+        progreso(99, f"Portada lista: PARTE {P.get('parte')}")
+    except Exception as e:   # la portada nunca impide entregar el vídeo
+        progreso(99, f"No se pudo crear la portada ({str(e)[:80]})")
 progreso(100, "Vídeo listo")
 print("OK", out_mp4, "bloques:", len(events))

@@ -693,7 +693,7 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
         </div>
         <p className="text-xs text-slate-500">guion.json es el archivo para el montaje con subtitular.py. El .md trae la ficha del episodio, el guion por escenas, las 3 fases y el paquete de redes.</p>
       </div>}
-      {tab === "mesa" && productionReady && <SceneDesk key={episodeId} onDownloaded={onFinish} publish={pack} music={{ series: seriesTitle, logline: out.seriesBible?.logline, episodeTitle: out.title, summary: out.summary, closing: cliffhangerOf(out) }} episodeId={episodeId} scenes={scenes} guion={out.guionJson || {}} title={`${seriesTitle || "serie"} ${part}`} referencesReady={referencesReady} referenceSignature={referenceSignature} style={episodeStyle} part={part} />}
+      {tab === "mesa" && productionReady && <SceneDesk key={episodeId} onDownloaded={onFinish} publish={pack} cover={{ serie: seriesTitle, frase: (out.cover?.lines || out.guionJson?.gancho || []).slice(0, 2), parte: part }} music={{ series: seriesTitle, logline: out.seriesBible?.logline, episodeTitle: out.title, summary: out.summary, closing: cliffhangerOf(out) }} episodeId={episodeId} scenes={scenes} guion={out.guionJson || {}} title={`${seriesTitle || "serie"} ${part}`} referencesReady={referencesReady} referenceSignature={referenceSignature} style={episodeStyle} part={part} />}
       {(tab === "imagenes" || tab === "animacion" || tab === "mesa") && !productionReady && <p className="rounded-xl border border-amber-400/25 bg-amber-400/10 p-4 text-sm text-amber-100">Revisa los personajes canónicos y la versión de sus fichas maestras antes de continuar.</p>}
     </fieldset>
   </>;

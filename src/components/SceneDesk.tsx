@@ -24,7 +24,7 @@ export function sceneNumberOf(fileName: string): { n: number; variant: number } 
 }
 const kindOf = (f: File): Kind | null => f.type.startsWith("video/") || /\.(mp4|mov|webm|m4v)$/i.test(f.name) ? "clip" : f.type.startsWith("image/") || /\.(png|jpe?g|webp)$/i.test(f.name) ? "image" : null;
 
-export default function SceneDesk({ episodeId, scenes, guion, title, referencesReady, referenceSignature, style, part, onDownloaded, publish, music }: { music?: Record<string, any>; episodeId: string; scenes: Scene[]; guion: any; title: string; referencesReady: boolean; referenceSignature: string; style?: string; part?: number; onDownloaded?: () => void; publish?: { platform: string; text: string; hashtags: string; extra?: string }[] }) {
+export default function SceneDesk({ episodeId, scenes, guion, title, referencesReady, referenceSignature, style, part, onDownloaded, publish, music, cover }: { music?: Record<string, any>; cover?: { serie?: string; frase?: string[]; parte?: number }; episodeId: string; scenes: Scene[]; guion: any; title: string; referencesReady: boolean; referenceSignature: string; style?: string; part?: number; onDownloaded?: () => void; publish?: { platform: string; text: string; hashtags: string; extra?: string }[] }) {
   const { data, insert, update, remove } = useData();
   const [images, setImages] = useState<AssetMap>({});
   const [clips, setClips] = useState<AssetMap>({});
@@ -176,7 +176,7 @@ export default function SceneDesk({ episodeId, scenes, guion, title, referencesR
       </li>;
     })}</ol>
     <section className="rounded-2xl border border-amber-400/20 bg-amber-400/[.06] p-4"><h3 className="font-bold">Montar vídeo final</h3><p className="mt-1 text-xs text-slate-300">Se habilita con fichas maestras y todas las escenas aprobadas, y con todos los clips s01… cargados en orden.</p>
-      {ready ? <div className="mt-3"><MontajePanel guion={guion} title={title} filesOverride={ordered} style={style} part={part} musicCues={scenes.map(s => s.music || "")} seconds={Math.round(scenes.length * 4.5) + 3} music={music} onDownloaded={onDownloaded} publish={publish} /></div> : <p className="mt-3 text-sm text-amber-200">Pendiente: {referencesReady ? "" : "fichas maestras; "}{scenes.length - approved} escenas por aprobar; {scenes.length - ordered.length} clips por subir.</p>}
+      {ready ? <div className="mt-3"><MontajePanel guion={guion} title={title} filesOverride={ordered} style={style} part={part} musicCues={scenes.map(s => s.music || "")} seconds={Math.round(scenes.length * 4.5) + 3} music={music} cover={cover} onDownloaded={onDownloaded} publish={publish} /></div> : <p className="mt-3 text-sm text-amber-200">Pendiente: {referencesReady ? "" : "fichas maestras; "}{scenes.length - approved} escenas por aprobar; {scenes.length - ordered.length} clips por subir.</p>}
     </section>
   </div>;
 }

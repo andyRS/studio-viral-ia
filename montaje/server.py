@@ -90,7 +90,7 @@ def autorizado(authorization: str) -> bool:
 @app.get("/salud")
 def salud():
     # «carpeta»: desde dónde corre el montaje del PC (para ver si es la copia actualizada).
-    return {"ok": True, "local": LOCAL, "gpu": GPU, "musica": True, "musica_modo": True, "anterior": True, "recorte": True, **({"carpeta": os.path.dirname(HERE)} if LOCAL else {})}
+    return {"ok": True, "local": LOCAL, "gpu": GPU, "musica": True, "musica_modo": True, "anterior": True, "recorte": True, "portada": True, "pavo_720": True, **({"carpeta": os.path.dirname(HERE)} if LOCAL else {})}
 
 
 # ---------- Trabajos en segundo plano ----------
@@ -217,6 +217,16 @@ def video_trabajo(jid: str):
     if job["estado"] != "listo":
         raise HTTPException(409, "El vídeo todavía no está listo")
     return FileResponse(job["out"], media_type="video/mp4", filename="episodio_montado.mp4")
+
+
+@app.get("/trabajos/{jid}/portada")
+def portada_trabajo(jid: str):
+    """Portada 1080x1920 del episodio (si el guion la pidió): «PARTE N» con el diseño fijo."""
+    job = _trabajo(jid)
+    ruta = os.path.splitext(job.get("out") or "")[0] + "_portada.jpg"
+    if job["estado"] != "listo" or not os.path.exists(ruta):
+        raise HTTPException(404, "Este montaje no tiene portada")
+    return FileResponse(ruta, media_type="image/jpeg", filename="portada.jpg")
 
 @app.post("/montar")
 async def montar(guion: UploadFile = File(...), clips: List[UploadFile] = File(...), musica: Optional[UploadFile] = File(None), anterior: Optional[UploadFile] = File(None), authorization: str = Header(default="")):

@@ -66,7 +66,20 @@ export function defaultCta(style: string, part: number, last: boolean) {
   return last ? "Dale me gusta y comenta qué te pareció" : `Comenta PARTE ${part + 1}`;
 }
 
-export default function MontajePanel({ guion, title, filesOverride, style = "frutinovela", part = 1, musicCues = [], seconds = 0, onDownloaded, publish = [], music: musicCtx = {} }: { music?: Partial<MusicContext>; guion: any; title: string; filesOverride?: File[]; style?: string; part?: number; musicCues?: string[]; seconds?: number; onDownloaded?: () => void; publish?: { platform: string; text: string; hashtags: string; extra?: string }[] }) {
+// Canción de firma de cada serie, guardada en este navegador (IndexedDB): se pone sola en cada capítulo.
+function songDb(): Promise<IDBDatabase | null> {
+  return new Promise(res => { try { const r = indexedDB.open("estudio-viral-canciones", 1); r.onupgradeneeded = () => r.result.createObjectStore("canciones"); r.onsuccess = () => res(r.result); r.onerror = () => res(null); } catch { res(null); } });
+}
+async function getSong(serie: string): Promise<File | null> {
+  const db = await songDb(); if (!db || !serie) return null;
+  return new Promise(res => { try { const q = db.transaction("canciones").objectStore("canciones").get(serie); q.onsuccess = () => res(q.result || null); q.onerror = () => res(null); } catch { res(null); } });
+}
+async function setSong(serie: string, file: File | null) {
+  const db = await songDb(); if (!db || !serie) return;
+  try { const st = db.transaction("canciones", "readwrite").objectStore("canciones"); if (file) st.put(file, serie); else st.delete(serie); } catch {}
+}
+
+export default function MontajePanel({ guion, title, filesOverride, style = "frutinovela", part = 1, musicCues = [], seconds = 0, onDownloaded, publish = [], music: musicCtx = {}, cover: coverData }: { music?: Partial<MusicContext>; cover?: { serie?: string; frase?: string[]; parte?: number }; guion: any; title: string; filesOverride?: File[]; style?: string; part?: number; musicCues?: string[]; seconds?: number; onDownloaded?: () => void; publish?: { platform: string; text: string; hashtags: string; extra?: string }[] }) {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const files = filesOverride ?? selectedFiles;
   const [watermark, setWatermark] = useState<Watermark>("none");
@@ -82,6 +95,10 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
   const [musicMode, setMusicMode] = useState<"extremos" | "todo">("extremos");
   const [recortar, setRecortar] = useState(true);
   const [anterior, setAnterior] = useState<File | null>(null);
+  // Canción de firma recordada para esta serie.
+  const serieKey = String(musicCtx?.series || "");
+  const [songSaved, setSongSaved] = useState(false);
+  useEffect(() => { let off = false; if (serieKey) void getSong(serieKey).then(f => { if (off || !f) return; setSongSaved(true); setMusic(prev => prev || f); }); return () => { off = true; }; }, [serieKey]);
   const musicUrl = useMemo(() => (music ? URL.createObjectURL(music) : ""), [music]);
   useEffect(() => () => { if (musicUrl) URL.revokeObjectURL(musicUrl); }, [musicUrl]);
   const [busy, setBusy] = useState(false);
@@ -113,6 +130,7 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
   function chooseTarget(t: Target) { setTarget(t); try { localStorage.setItem(TARGET_KEY, t); } catch {} }
   const [error, setError] = useState("");
   const [video, setVideo] = useState<string>("");
+  const [cover, setCover] = useState<string>("");
   const timer = useRef<any>(null);
   const blocks = Array.isArray(guion?.clips) ? guion.clips.length : 0;
   const monitorClip = live ? clipFromStep(live.paso, files.length) : -1;
@@ -164,7 +182,7 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
         }
       }
       const fd = new FormData();
-      fd.append("guion", new Blob([JSON.stringify({ ...adaptGuion(guion, files.length, { marca, delogo, cierre: lastEpisode ? "FIN" : guion?.cierre || "Continuará...", cierreCta: cta }), ...(music ? { musica_volumen: Number(musicVol), musica_modo: musicMode } : {}), recortar })], { type: "application/json" }), "guion.json");
+      fd.append("guion", new Blob([JSON.stringify({ ...adaptGuion(guion, files.length, { marca, delogo, cierre: lastEpisode ? "FIN" : guion?.cierre || "Continuará...", cierreCta: cta }), ...(music ? { musica_volumen: Number(musicVol), musica_modo: musicMode } : {}), recortar, ...(coverData?.parte ? { portada: { ...coverData, clip: Math.round(files.length * 0.35) } } : {}) })], { type: "application/json" }), "guion.json");
       for (const f of files) fd.append("clips", f, f.name);
       if (music) fd.append("musica", music, music.name);
       if (anterior) fd.append("anterior", anterior, anterior.name);
@@ -190,6 +208,9 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
       const v = await fetch(`${base}/trabajos/${id}/video`);
       if (!v.ok) { setError(`No se pudo descargar el vídeo (HTTP ${v.status}). Está guardado 30 min en el servidor: vuelve a intentarlo.`); return; }
       setVideo(URL.createObjectURL(await v.blob()));
+      // Portada con el diseño fijo de la serie (servidores antiguos no la tienen: se ignora).
+      const c = await fetch(`${base}/trabajos/${id}/portada`).catch(() => null);
+      if (c?.ok) setCover(URL.createObjectURL(await c.blob()));
     } catch (e: any) {
       setError("No se pudo completar el montaje: " + (e?.message || e) + (target === "pc" ? ". Revisa que la ventana «Montar en mi PC» siga abierta, o elige «Servidor en la nube»." : ". Revisa que el servidor de montaje esté encendido."));
     } finally { clearInterval(timer.current); setBusy(false); }
@@ -256,6 +277,7 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
         {music && <><select aria-label="Dónde suena la música" value={musicMode} onChange={e => setMusicMode(e.target.value as "extremos" | "todo")} disabled={busy} className="text-xs"><option value="extremos">Inicio y final (firma de la serie, recomendado)</option><option value="todo">Todo el vídeo, por debajo de las voces</option></select>
         <select aria-label="Volumen de la música" value={musicVol} onChange={e => setMusicVol(e.target.value)} disabled={busy} className="text-xs"><option value="0.1">Muy suave</option><option value="0.18">Suave (recomendado)</option><option value="0.28">Media</option></select>
         <button type="button" disabled={busy} onClick={() => setMusic(null)} className="text-xs text-slate-400 hover:text-red-300">Quitar música</button></>}
+        {music && serieKey && <label className="flex items-center gap-2 text-xs text-slate-300"><input type="checkbox" checked={songSaved} disabled={busy} onChange={e => { const on = e.target.checked; setSongSaved(on); void setSong(serieKey, on ? music : null); }} /> Canción de firma de «{serieKey}»: ponerla sola en cada capítulo (se guarda en este navegador)</label>}
       </div>
       {music && <audio src={musicUrl} controls className="h-8 w-full max-w-sm" />}
     </div>
@@ -283,6 +305,7 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
     {video && <div className="space-y-2">
       <video src={video} controls className="max-h-[70vh] rounded" />
       <a href={video} download={fname} onClick={() => onDownloaded?.()} className="inline-block rounded bg-emerald-500 px-4 py-2 text-sm font-bold text-black">Descargar {fname}</a>
+      {cover && <div className="mt-3 flex flex-wrap items-end gap-3"><img src={cover} alt="Portada del episodio" className="h-64 rounded-lg border border-white/10" /><a href={cover} download={fname.replace(/\.mp4$/, "-portada.jpg")} className="rounded bg-amber-500 px-4 py-2 text-sm font-bold text-black">Descargar portada</a></div>}
       {onDownloaded && <p className="text-xs text-slate-400">Al descargarlo, este episodio queda terminado y bloqueado, y se abre el paso para crear la parte siguiente.</p>}
       {!!publish.length && <div className="mt-3 space-y-2">
         <p className="text-sm font-bold">Listo para publicar</p>
