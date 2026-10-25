@@ -79,7 +79,7 @@ async function setSong(serie: string, file: File | null) {
   try { const st = db.transaction("canciones", "readwrite").objectStore("canciones"); if (file) st.put(file, serie); else st.delete(serie); } catch {}
 }
 
-export default function MontajePanel({ guion, title, filesOverride, style = "frutinovela", part = 1, musicCues = [], seconds = 0, onDownloaded, publish = [], music: musicCtx = {}, cover: coverData }: { music?: Partial<MusicContext>; cover?: { serie?: string; frase?: string[]; parte?: number }; guion: any; title: string; filesOverride?: File[]; style?: string; part?: number; musicCues?: string[]; seconds?: number; onDownloaded?: () => void; publish?: { platform: string; text: string; hashtags: string; extra?: string }[] }) {
+export default function MontajePanel({ guion, title, filesOverride, style = "frutinovela", part = 1, musicCues = [], seconds = 0, onDownloaded, publish = [], music: musicCtx = {}, cover: coverData, recap = "" }: { recap?: string; music?: Partial<MusicContext>; cover?: { serie?: string; frase?: string[]; parte?: number }; guion: any; title: string; filesOverride?: File[]; style?: string; part?: number; musicCues?: string[]; seconds?: number; onDownloaded?: () => void; publish?: { platform: string; text: string; hashtags: string; extra?: string }[] }) {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const files = filesOverride ?? selectedFiles;
   const [watermark, setWatermark] = useState<Watermark>("none");
@@ -95,6 +95,11 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
   const [musicMode, setMusicMode] = useState<"extremos" | "todo">("extremos");
   const [recortar, setRecortar] = useState(true);
   const [anterior, setAnterior] = useState<File | null>(null);
+  // Frase que sale arriba en el «Anteriormente...»: resume la parte anterior para quien llega nuevo.
+  const [resumen, setResumen] = useState(recap);
+  useEffect(() => { setResumen(recap); }, [recap]);
+  // Ritmo: los clips de IA hablan lento; 1.1 acelera voz y vídeo juntos un 10 % (mismo tono).
+  const [velocidad, setVelocidad] = useState("1.1");
   // Canción de firma recordada para esta serie.
   const serieKey = String(musicCtx?.series || "");
   const [songSaved, setSongSaved] = useState(false);
@@ -170,7 +175,7 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
         base = t.json.url; headers = { Authorization: `Ticket ${t.json.ticket}` };
       }
       // Un servidor sin actualizar ignora la música sin avisar: se comprueba antes de subir nada.
-      const needs = [music && ["musica", "la música de fondo"], music && musicMode === "extremos" && ["musica_modo", "la música solo al inicio y al final"], anterior && ["anterior", "«Anteriormente...»"], recortar && ["recorte", "quitar las pausas"]].filter(Boolean) as [string, string][];
+      const needs = [music && ["musica", "la música de fondo"], music && musicMode === "extremos" && ["musica_modo", "la música solo al inicio y al final"], anterior && ["anterior", "«Anteriormente...»"], anterior && resumen.trim() && ["resumen", "el resumen del «Anteriormente...»"], recortar && ["recorte", "quitar las pausas"], Number(velocidad) > 1 && ["velocidad", "el ritmo ágil"]].filter(Boolean) as [string, string][];
       if (needs.length) {
         const caps = await fetch(`${base}/salud`, { signal: AbortSignal.timeout(8000) }).then(r => r.json()).catch(() => null);
         const missing = needs.filter(([k]) => !caps?.[k]).map(([, label]) => label);
@@ -182,7 +187,7 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
         }
       }
       const fd = new FormData();
-      fd.append("guion", new Blob([JSON.stringify({ ...adaptGuion(guion, files.length, { marca, delogo, cierre: lastEpisode ? "FIN" : guion?.cierre || "Continuará...", cierreCta: cta }), ...(music ? { musica_volumen: Number(musicVol), musica_modo: musicMode } : {}), recortar, ...(coverData?.parte ? { portada: { ...coverData, clip: Math.round(files.length * 0.35) } } : {}) })], { type: "application/json" }), "guion.json");
+      fd.append("guion", new Blob([JSON.stringify({ ...adaptGuion(guion, files.length, { marca, delogo, cierre: lastEpisode ? "FIN" : guion?.cierre || "Continuará...", cierreCta: cta }), ...(music ? { musica_volumen: Number(musicVol), musica_modo: musicMode } : {}), recortar, velocidad: Number(velocidad), ...(anterior && resumen.trim() ? { anterior_resumen: resumen.trim() } : {}), ...(coverData?.parte ? { portada: { ...coverData, clip: Math.round(files.length * 0.35) } } : {}) })], { type: "application/json" }), "guion.json");
       for (const f of files) fd.append("clips", f, f.name);
       if (music) fd.append("musica", music, music.name);
       if (anterior) fd.append("anterior", anterior, anterior.name);
@@ -255,10 +260,19 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
     <div className="space-y-2 rounded-lg border border-white/10 p-3">
       <p className="text-xs text-slate-300">Ritmo viral</p>
       <label className="flex items-start gap-2 text-xs text-slate-300"><input type="checkbox" checked={recortar} onChange={e => setRecortar(e.target.checked)} disabled={busy} className="mt-0.5" /><span><b>Quitar pausas muertas</b> (recomendado): cada clip empieza justo antes de la primera palabra y corta al terminar la frase. Así el vídeo fluye sin silencios, como los virales.</span></label>
-      {Array.isArray(guion?.tarjetas) && guion.tarjetas.length > 0 && <p className="text-[11px] text-slate-400">Saltos de tiempo: {guion.tarjetas.map((t: any) => `«${t.texto}» antes de la escena ${t.antes + 1}`).join(" · ")} (tarjeta negra de 1,6 s).</p>}
+      <label className="flex flex-wrap items-center gap-2 text-xs text-slate-300"><b>Ritmo</b>
+        <select value={velocidad} onChange={e => setVelocidad(e.target.value)} disabled={busy} className="w-auto">
+          <option value="1">Normal (como salen los clips)</option>
+          <option value="1.1">Ágil · 10 % más rápido (recomendado)</option>
+          <option value="1.2">Rápido · 20 % más rápido</option>
+        </select>
+        <span className="text-[11px] text-slate-500">Los clips de IA hablan lento; los virales dicen una frase cada 2-3 s. Voz y labios van juntos y la voz no cambia de tono.</span></label>
+      {Array.isArray(guion?.tarjetas) && guion.tarjetas.length > 0 && <p className="text-[11px] text-slate-400">Saltos de tiempo: {guion.tarjetas.map((t: any) => `«${t.texto}» antes de la escena ${t.antes + 1}`).join(" · ")} (1,3 s sobre la escena siguiente difuminada).</p>}
       {part > 1 && <div className="space-y-1">
-        <p className="text-xs text-slate-300"><b>«Anteriormente...»</b> <span className="text-slate-500">(opcional)</span>: sube el vídeo final de la Parte {part - 1} y el episodio abre con ~11 s de su escena final (las últimas frases de diálogo, sin la del Narrador) en blanco y negro, como el viral.</p>
+        <p className="text-xs text-slate-300"><b>«Anteriormente...»</b> <span className="text-slate-500">(opcional)</span>: sube el vídeo final de la Parte {part - 1} y el episodio abre con ~12 s en blanco y negro: 3-4 frases clave repartidas por toda esa parte (el conflicto, el giro y la última antes del cierre, sin el Narrador) y arriba una frase que la resume. Así quien llega nuevo entiende qué pasó.</p>
         <div className="flex flex-wrap items-center gap-2"><input type="file" accept="video/mp4,video/*" onChange={e => setAnterior(e.target.files?.[0] || null)} disabled={busy} />{anterior && <button type="button" disabled={busy} onClick={() => setAnterior(null)} className="text-xs text-slate-400 hover:text-red-300">Quitar</button>}</div>
+        <label htmlFor="recap-resumen" className="block text-[11px] text-slate-400">Frase de resumen en pantalla (máx. 140 caracteres; vacía = sin frase)</label>
+        <textarea id="recap-resumen" rows={2} maxLength={140} value={resumen} onChange={e => setResumen(e.target.value)} disabled={busy} placeholder="Ej.: Manzanita escondió a su madre del campo para casarse con una millonaria…" className="w-full text-xs" />
       </div>}
     </div>
     <div className="space-y-2 rounded-lg border border-white/10 p-3">

@@ -17,7 +17,7 @@ export function timeJump(text: string) {
 export const NARRATOR = "Narrador";
 // Súbelo cada vez que cambien las reglas de los prompts: los episodios guardados con una versión
 // anterior muestran «Actualizar prompts» (rehace los prompts sin IA y sin tocar el guion).
-export const PROMPT_RULES_VERSION = 12;
+export const PROMPT_RULES_VERSION = 13;
 // v12: «Usa Seedance 2.5.» solo en vídeo; plano según lo que pasa; escenas de cine 90 en inglés con [P0X].
 // v11: los prompts de cine de los 90 empiezan por «Usa Seedance 2.5.» (regla de @peliculasquenoexisten.rd).
 // v10: cristiana con vocabulario neutro y global (sin jerga ni groserías) y acento dominicano suave.
@@ -52,10 +52,11 @@ export function assignLocations<T extends { setting: string; transition?: string
 const kissNote = (s: { setting: string; line: string }, lang: "es" | "en") => /\bb[eé]s(?:[oóa]|an|ar|ando|ame|it[oa])|\bkiss/i.test(`${s.setting} ${s.line}`)
   ? (lang === "es" ? " BESO: en la boca, de frente y bien visible, breve y romántico; la cámara en las caras, sin caricias íntimas ni poses sexuales." : " KISS: on the lips, clearly visible, brief and romantic; camera on the faces, no intimate caressing or sexual poses.") : "";
 // v6: acento por personaje (accentPrompt): marcado para quien lo tenga en su ficha, neutro para el resto.
+// v13: frase a ritmo de conversación (los clips salían con frases de 5-7 s; en los virales duran 2-3 s).
 // Ritmo viral (v4): la voz empieza en el primer segundo, sin silencios de entrada ni de salida, ambiente
 // continuo y sin música dentro del clip (la música va en el montaje; si cada clip trae la suya, salta en cada corte).
-const SOUND_ES = "SONIDO: la voz empieza en el primer segundo, sin silencio de entrada ni de salida; ambiente del lugar continuo de principio a fin; SIN música de fondo (la música se añade en la edición).";
-const SOUND_EN = "SOUND: dialogue starts within the first second, no silent intro or outro; continuous ambient sound of the location; NO background music (music is added in editing).";
+const SOUND_ES = "SONIDO: la voz empieza en el primer segundo, sin silencio de entrada ni de salida; la frase se dice a ritmo de conversación real, ágil y sin arrastrar las palabras ni hacer pausas dentro (unas 3 palabras por segundo: dura 2-3 s, nunca 5-7 s); ambiente del lugar continuo de principio a fin; SIN música de fondo (la música se añade en la edición).";
+const SOUND_EN = "SOUND: dialogue starts within the first second, no silent intro or outro; the line is spoken at a brisk, real-conversation pace, no dragged words or pauses inside it (about 3 words per second: it lasts 2-3 s, never 5-7 s); continuous ambient sound of the location; NO background music (music is added in editing).";
 // Sin esto, en los primeros planos el modelo de vídeo pasa del 3D animado a un actor real con la piel teñida.
 export const ANIMATION_STYLE_LOCK = "ESTILO FIJO: el mismo render 3D animado de la imagen de la escena durante todo el vídeo, también en los primeros planos y con lluvia o luz dura. Nunca acción real, nunca fotorrealista, nunca un actor o persona real; la cara, la piel de fruta, el pelo y las proporciones del personaje no cambian.";
 const clean = (v: unknown) => String(v ?? "").replace(/\s+/g, " ").trim();

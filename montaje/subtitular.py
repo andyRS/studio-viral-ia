@@ -23,10 +23,12 @@ Opcionales:
   "delogo": "x=..:y=..:w=..:h=.."   coordenadas propias si la marca es otra
   "logo": true (por defecto)   encima de la zona borrada va la marca FrutiEnganchados (marca/frutienganchados.png),
                                del tamaño justo para taparla: no se nota el difuminado
+  "velocidad": 1.0-1.25   ritmo: 1.1 = clips un 10 % más rápidos (voz y vídeo juntos, mismo tono)
   "recortar": true (por defecto)   quita el silencio muerto al inicio y al final de cada clip con diálogo
                                    (los clips de IA traen medio segundo o más): el vídeo fluye sin pausas.
-  "tarjetas": [{"antes": 3, "texto": "Horas después..."}]   tarjeta negra de 1,6 s antes del clip 3 (índice desde 0)
-  "anterior_archivo": lo pone server.py: vídeo o clip de la parte anterior; abre el episodio con ~11 s (las últimas frases de diálogo, sin el Narrador) en
+  "tarjetas": [{"antes": 3, "texto": "Horas después..."}]   tarjeta de 1,3 s (la escena siguiente difuminada) antes del clip 3 (índice desde 0)
+  "anterior_resumen": "Manzanita escondió a su madre para casarse rico"   frase que sale arriba en el «Anteriormente...»
+  "anterior_archivo": lo pone server.py: vídeo o clip de la parte anterior; abre el episodio con ~12-14 s (3-4 frases clave repartidas por la historia, sin el Narrador) en
                       blanco y negro y «Anteriormente...».
   "musica_modo": "extremos" | "todo"   «extremos»: la música (firma de la serie) suena solo en los primeros 4 s
                                      y en los últimos 8 s con el «Continuará…»; «todo» (por defecto): todo el vídeo.
@@ -176,7 +178,13 @@ except Exception as e:  # sin GPU utilizable: sigue en CPU en vez de fallar
     model = WhisperModel(os.environ.get("WHISPER_MODEL", "small"), compute_type="int8")
 progreso(4, "Whisper en la GPU (RTX)" if DEVICE == "cuda" else "Whisper en el procesador")
 RECORTAR = G.get("recortar", True) is not False
-CARD_S = 1.6
+# Ritmo: los clips de IA hablan lento (una frase en 5-7 s; en los virales, 2-3 s). 1.1 = un 10 % más rápido,
+# voz y vídeo juntos (sin desincronizar labios) y con el mismo tono de voz (atempo).
+try:
+    VEL = min(1.25, max(1.0, float(G.get("velocidad") or 1.0)))
+except (TypeError, ValueError):
+    VEL = 1.0
+CARD_S = 1.3
 TARJETAS = {}
 for tj in G.get("tarjetas") or []:
     try:
@@ -187,39 +195,53 @@ for tj in G.get("tarjetas") or []:
         TARJETAS[k] = txt[:60]
 ANTERIOR = G.get("anterior_archivo") if G.get("anterior_archivo") and os.path.exists(G["anterior_archivo"]) else ""
 RECAP_S = 0.0
-RECAP_MAX = 11.5   # como el viral: ~11 s con varias frases de la escena clave, no solo el final
+RECAP_MAX = 14.0   # resumen de la parte anterior: 3-4 momentos clave, no solo su final
+RECAP_PIEZAS = []  # tramos (inicio, fin) del vídeo anterior que forman el «Anteriormente...»
+RESUMEN = re.sub(r"\s+", " ", str(G.get("anterior_resumen") or "")).strip()[:140]
 if ANTERIOR:
     da = dur(ANTERIOR)
-    # Vídeo final de la parte anterior (>20 s): se salta su tarjeta final de 3 s y la escena del Narrador
-    # («Lo que X no sabe...»), que no cuenta lo que pasó; se toman las últimas frases de diálogo enteras.
-    # Clip suelto: hasta 11,5 s desde su final.
-    fin = da - 3.2 if da > 20 else da
-    ini = max(0.0, fin - RECAP_MAX)
-    if da > 20:
+    fin = da - 3.2 if da > 12 else da   # >12 s: es un episodio montado (cierra con tarjeta de 3 s)
+    if da > 12:
+        # Vídeo final de la parte anterior: Whisper lo escucha entero y se eligen 3-4 frases de diálogo
+        # repartidas por la historia (el conflicto, el giro y la última antes del cierre), sin el Narrador
+        # ni su propio «Anteriormente...». Así quien llega nuevo entiende qué pasó.
         try:
-            desde = max(0.0, fin - 32)
             wav = os.path.join(tmp, "anterior.wav")
-            run(["ffmpeg", "-v", "error", "-y", "-ss", f"{desde:.2f}", "-t", f"{fin - desde:.2f}", "-i", ANTERIOR, "-ac", "1", "-ar", "16000", wav])
+            run(["ffmpeg", "-v", "error", "-y", "-t", f"{fin:.2f}", "-i", ANTERIOR, "-ac", "1", "-ar", "16000", wav])
             w = wave.open(wav)
             xa = np.frombuffer(w.readframes(w.getnframes()), np.int16).astype(np.float32) / 32768
-            segs = [(desde + sg.start, desde + sg.end, sg.text.strip()) for sg in model.transcribe(xa, language="es")[0]]
-            # Fuera la narración final: el último bloque o lo que empiece como el Narrador.
+            segs = [(sg.start, sg.end, sg.text.strip()) for sg in model.transcribe(xa, language="es")[0]]
             narr = re.compile(r"^(lo que|pero lo que|y lo que|nadie sab|escribe am[eé]n|continuar)", re.I)
-            # (la frase del Narrador puede venir partida en dos bloques: se corta desde donde empieza)
             marca_n = [i for i, sg in enumerate(segs) if sg[0] > fin - 14 and (narr.search(sg[2]) or "no sabe" in sg[2].lower())]
             if marca_n:
                 segs = segs[:marca_n[-1]]
             elif segs and segs[-1][0] > fin - 8:
                 segs.pop()   # el episodio siempre cierra con el Narrador
-            if segs:
-                fin_d = min(fin, segs[-1][1] + 0.5)
-                # empieza al principio de una frase, sin pasarse de 11,5 s
-                inicio = next((s0 for s0, e0, _ in segs if fin_d - s0 <= RECAP_MAX), segs[-1][0])
-                ini, fin = max(0.0, inicio - 0.15), fin_d
+            # ¿Abre en blanco y negro? Es su propio «Anteriormente...»: no se repite.
+            sat = subprocess.run(["ffmpeg", "-v", "error", "-ss", "2", "-i", ANTERIOR, "-frames:v", "1", "-vf", "signalstats,metadata=print:key=lavfi.signalstats.SATAVG:file=-", "-f", "null", "-"],
+                                 capture_output=True, text=True).stdout
+            m_sat = re.search(r"SATAVG=([\d.]+)", sat)
+            if m_sat and float(m_sat.group(1)) < 4:
+                segs = [sg for sg in segs if sg[0] > 12.5]
+            cand = [sg for sg in segs if 0.8 <= sg[1] - sg[0] <= 4.2 and len(sg[2].split()) >= 3]
+            if cand:
+                elegidos = {len(cand) - 1}   # la última frase antes del cierre, siempre
+                for q in (0.15, 0.42, 0.68):
+                    objetivo = q * fin
+                    elegidos.add(min(range(len(cand)), key=lambda i: abs(cand[i][0] - objetivo)))
+                total_r = 0.0
+                for i in sorted(elegidos, key=lambda i: -i):   # de atrás hacia delante: la última nunca sobra
+                    s0, e0, _ = cand[i]
+                    pieza = (max(0.0, s0 - 0.12), min(fin, e0 + 0.3))
+                    if total_r + pieza[1] - pieza[0] > RECAP_MAX:
+                        continue
+                    RECAP_PIEZAS.append(pieza); total_r += pieza[1] - pieza[0]
+                RECAP_PIEZAS.sort()
         except Exception as e:  # sin voz o error: se queda con el final
             progreso(4, f"«Anteriormente...»: no pude escuchar la parte anterior ({str(e)[:60]}); uso su final")
-    RECAP_S = round(max(1.0, min(RECAP_MAX, fin - ini)), 2)
-    RECAP_INI = max(0.0, fin - RECAP_S)
+    if not RECAP_PIEZAS:
+        RECAP_PIEZAS = [(max(0.0, fin - 11.0), fin)]
+    RECAP_S = round(sum(e0 - s0 for s0, e0 in RECAP_PIEZAS), 2)
 offsets, words_per_clip, recortes, t = [], [], [], RECAP_S
 for ci, clip in enumerate(clips):
     progreso(5 + 55 * ci / len(clips), f"Escuchando el clip {ci + 1} de {len(clips)} con Whisper")
@@ -241,19 +263,19 @@ for ci, clip in enumerate(clips):
             best = ws
         if len(best) >= 0.6 * len(prompt.split()):
             break
-    # Recorte de silencios muertos: se empieza justo antes de la primera palabra y se corta medio
-    # segundo largo después de la última (deja ver la reacción). Sin voz detectada, el clip va entero.
+    # Recorte de silencios muertos: se empieza justo antes de la primera palabra y se corta 0,4 s
+    # después de la última (lo justo para ver la reacción, como los virales). Sin voz, el clip va entero.
     a, b = 0.0, D
     if RECORTAR and best and G["clips"][ci]:
         primera, ultima = best[0]["s"], max(x["e"] for x in best)
         if primera > 0.35:
-            a = max(0.0, primera - 0.18)
-        if D - ultima > 0.95:
-            b = min(D, ultima + 0.7)   # 0,7 s de reacción tras la frase
+            a = max(0.0, primera - 0.12)
+        if D - ultima > 0.6:
+            b = min(D, ultima + 0.4)   # 0,4 s de reacción tras la frase
         if b - a < 1.2:
             a, b = 0.0, D
     for x in best:
-        x["s"] += t - a; x["e"] += t - a
+        x["s"] = (x["s"] - a) / VEL + t; x["e"] = (x["e"] - a) / VEL + t
     recortes.append((a, b))
     words_per_clip.append(best)
     if a > 0.05 or D - b > 0.05:
@@ -262,7 +284,7 @@ for ci, clip in enumerate(clips):
         progreso(5 + 55 * (ci + 1) / len(clips), f"Clip {ci + 1}: oí «{' '.join(x['w'] for x in best)[:120]}»")
     elif G["clips"][ci]:
         progreso(5 + 55 * (ci + 1) / len(clips), f"Clip {ci + 1}: no se oyó voz; los subtítulos se reparten por tiempo")
-    t += b - a
+    t += (b - a) / VEL
 _quitado = sum(dur(c) - (b - a) for c, (a, b) in zip(clips, recortes))
 progreso(61, (f"Pausas quitadas: {_quitado:.1f} s en total en {sum(1 for c, (a, b) in zip(clips, recortes) if dur(c) - (b - a) > 0.05)} de {len(clips)} clips. " if RECORTAR else "Sin quitar pausas (desactivado). ") + "Alineando el texto del guion con las voces")
 
@@ -283,7 +305,7 @@ for ci, lines in enumerate(G["clips"]):
                 if j < j2:
                     loc[i1 + k] = (cw[j]["s"], cw[j]["e"])
     c0 = offsets[ci]
-    c1 = offsets[ci] + (recortes[ci][1] - recortes[ci][0]) - 0.2
+    c1 = offsets[ci] + (recortes[ci][1] - recortes[ci][0]) / VEL - 0.2
     known = [k for k, v in enumerate(loc) if v]
     for k in range(len(loc)):
         if loc[k]:
@@ -382,20 +404,42 @@ def segmento(path, vf_extra=""):
 
 
 if ANTERIOR:
-    progreso(66, f"«Anteriormente...»: {RECAP_S:.0f} s de la parte anterior en blanco y negro")
+    progreso(66, f"«Anteriormente...»: {len(RECAP_PIEZAS)} momentos de la parte anterior ({RECAP_S:.0f} s) en blanco y negro"
+             + (f" con el resumen «{RESUMEN}»" if RESUMEN else ""))
     rec = os.path.join(tmp, "anterior.mp4")
-    run(["ffmpeg", "-v", "error", "-y", "-ss", f"{RECAP_INI:.2f}", "-t", f"{RECAP_S:.2f}", "-i", ANTERIOR,
-         "-filter_complex", "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,fps=24,hue=s=0,eq=contrast=1.08,"
-         + texto_dt("Anteriormente...", 76, "white", "(h-text_h)/2", 5)
-         + f",fade=t=out:st={max(0, RECAP_S - 0.25):.2f}:d=0.25[v];[0:a]aresample=48000,aformat=channel_layouts=stereo[a]",
+    ent, f_rec, c_rec = [], "", ""
+    for k, (s0, e0) in enumerate(RECAP_PIEZAS):
+        ent += ["-ss", f"{s0:.2f}", "-t", f"{e0 - s0:.2f}", "-i", ANTERIOR]
+        f_rec += (f"[{k}:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,fps=24,setpts=PTS-STARTPTS[rv{k}];"
+                  f"[{k}:a]aresample=48000,aformat=channel_layouts=stereo,asetpts=PTS-STARTPTS,afade=t=in:d=0.04,afade=t=out:st={max(0, e0 - s0 - 0.08):.2f}:d=0.08[ra{k}];")
+        c_rec += f"[rv{k}][ra{k}]"
+    # Arriba: «Anteriormente...» y, si la app lo manda, una frase que resume la parte anterior.
+    capas = ["hue=s=0", "eq=contrast=1.08", "drawbox=x=0:y=0:w=iw:h=" + ("560" if RESUMEN else "330") + ":color=black@0.45:t=fill",
+             texto_dt("Anteriormente...", 76, "white", 170, 5)]
+    if RESUMEN:
+        sz, ls = ajustar(RESUMEN, 54, 40)
+        yy = 290
+        for ln in ls[:3]:
+            capas.append(texto_dt(ln, sz, "0xFFD166", yy, 4)); yy += int(sz * 1.25)
+    f_rec += (f"{c_rec}concat=n={len(RECAP_PIEZAS)}:v=1:a=1[rc][a];[rc]" + ",".join(capas)
+              + f",fade=t=out:st={max(0, RECAP_S - 0.25):.2f}:d=0.25[v]")
+    run(["ffmpeg", "-v", "error", "-y", *ent, "-filter_complex", f_rec,
          "-map", "[v]", "-map", "[a]", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-c:a", "aac", rec])
     segmento(rec)
 for ci, c in enumerate(clips):
-    if ci in TARJETAS:   # salto de tiempo: negro con el texto, como «Horas después...»
+    if ci in TARJETAS:   # salto de tiempo («Horas después...») sobre la escena que viene, difuminada y oscura:
+        # una pantalla negra hace que la gente deslice; la imagen siguiente ya adelanta lo que viene.
         card = os.path.join(tmp, f"tarjeta{ci}.mp4")
-        run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"color=c=black:s=1080x1920:r=24:d={CARD_S}",
+        fondo = os.path.join(tmp, f"tarjeta{ci}.png")
+        try:
+            run(["ffmpeg", "-v", "error", "-y", "-ss", f"{recortes[ci][0] + 0.1:.2f}", "-i", c, "-frames:v", "1",
+                 "-vf", "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=24:2,eq=brightness=-0.32", fondo])
+            src = ["-loop", "1", "-framerate", "24", "-t", str(CARD_S), "-i", fondo]
+        except subprocess.CalledProcessError:
+            src = ["-f", "lavfi", "-i", f"color=c=black:s=1080x1920:r=24:d={CARD_S}"]
+        run(["ffmpeg", "-v", "error", "-y", *src,
              "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", str(CARD_S),
-             "-vf", texto_dt(TARJETAS[ci], 70, "white", "(h-text_h)/2", 0, ":alpha='min(1,t/0.35)'") + ",format=yuv420p",
+             "-vf", "scale=1080:1920,setsar=1,fps=24," + texto_dt(TARJETAS[ci], 76, "white", "(h-text_h)/2", 5, ":alpha='min(1,t/0.3)'") + ",format=yuv420p",
              "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", card])
         segmento(card)
     inputs += ["-i", c]
@@ -413,9 +457,9 @@ for ci, c in enumerate(clips):
         dl = f"delogo={G['delogo']},"
     a, b = recortes[ci]
     # Corte seco y limpio: trim al tramo con voz y micro-fundido de audio (sin «clic» entre clips).
-    fc += (f"[{n}:v]trim=start={a:.3f}:end={b:.3f},setpts=PTS-STARTPTS,{dl}scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,fps=24[v{n}];"
-           f"[{n}:a]atrim=start={a:.3f}:end={b:.3f},asetpts=PTS-STARTPTS,aresample=48000,aformat=channel_layouts=stereo,"
-           f"afade=t=in:d=0.03,afade=t=out:st={max(0, b - a - 0.04):.3f}:d=0.04[a{n}];")
+    fc += (f"[{n}:v]trim=start={a:.3f}:end={b:.3f},setpts=(PTS-STARTPTS)/{VEL:.3f},{dl}scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,fps=24[v{n}];"
+           f"[{n}:a]atrim=start={a:.3f}:end={b:.3f},asetpts=PTS-STARTPTS,{f'atempo={VEL:.3f},' if VEL > 1 else ''}aresample=48000,aformat=channel_layouts=stereo,"
+           f"afade=t=in:d=0.03,afade=t=out:st={max(0, (b - a) / VEL - 0.04):.3f}:d=0.04[a{n}];")
     cat += f"[v{n}][a{n}]"
     n += 1
 if G.get("cierre"):
