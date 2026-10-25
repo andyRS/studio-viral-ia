@@ -191,7 +191,12 @@ def nucleo_alfa(path, w, h):
         op = np.frombuffer(raw[: w * h], np.uint8).reshape(h, w) > 200
         cx, cy = np.where(op.mean(axis=0) > 0.6)[0], np.where(op.mean(axis=1) > 0.6)[0]
         if len(cx) and len(cy):
-            return cx[0] / w, cy[0] / h, (cx[-1] + 1) / w, (cy[-1] + 1) / h
+            x0, y0, x1, y1 = cx[0], cy[0], cx[-1] + 1, cy[-1] + 1
+            # Logos redondos u ovalados: se encoge hasta que sea opaco del todo (si no, la marca asoma por las esquinas).
+            while x1 - x0 > 4 and y1 - y0 > 4 and op[y0:y1, x0:x1].mean() < 0.995:
+                dx, dy = max(1, (x1 - x0) // 50), max(1, (y1 - y0) // 50)
+                x0, x1, y0, y1 = x0 + dx, x1 - dx, y0 + dy, y1 - dy
+            return x0 / w, y0 / h, x1 / w, y1 / h
     except Exception:
         pass
     return 0.0, 0.0, 1.0, 1.0
