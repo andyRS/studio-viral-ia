@@ -67,6 +67,13 @@ if (-not (Test-Path $listo)) {
   Set-Content -Encoding ascii $listo (Get-Date -Format s)
 }
 
+# El modelo de Whisper (~500 MB) se descarga una sola vez, aquí y no en medio del primer montaje.
+$modelos = Join-Path $env:USERPROFILE ".cache\huggingface\hub\models--Systran--faster-whisper-small"
+if (-not (Test-Path $modelos)) {
+  Write-Host "Descargando el modelo de Whisper (una sola vez, ~500 MB) ..." -ForegroundColor Yellow
+  & $py -c "from faster_whisper import WhisperModel; WhisperModel('small', device='cpu', compute_type='int8')"
+}
+
 # Las DLL de NVIDIA instaladas con pip tienen que estar en el PATH.
 foreach ($lib in "cublas", "cudnn") {
   $bin = Join-Path $envDir "Lib\site-packages\nvidia\$lib\bin"

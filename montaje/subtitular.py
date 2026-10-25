@@ -158,7 +158,7 @@ def norm(w):
 
 
 # 1) palabras con tiempo por clip
-progreso(2, f"Preparando {len(clips)} clips y cargando Whisper")
+progreso(2, f"Preparando {len(clips)} clips y cargando Whisper" + ("" if os.path.isdir(os.path.expanduser("~/.cache/huggingface/hub/models--Systran--faster-whisper-small")) else " (la primera vez descarga el modelo, ~500 MB: unos minutos)"))
 DEVICE = os.environ.get("WHISPER_DEVICE", "cpu")
 if DEVICE == "cuda":
     try:
