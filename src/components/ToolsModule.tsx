@@ -14,7 +14,8 @@ const CALIDADES = [
   { id: "mejorar", label: "Mejorar calidad", desc: "Sube a 1080p con escalado fino, quita ruido y da nitidez. Ideal para clips de 720p antes de publicar." },
 ];
 const METODOS = [
-  { id: "tapar", label: "Tapar con un logo (recomendado)", desc: "Borra la marca y pone encima el logo de tu página (FrutiEnganchados, Un Minuto en Oración…), del tamaño justo para que no se vea nada." },
+  { id: "borrar_ia", label: "Borrar con IA (recomendado)", desc: "La IA redibuja el fondo detrás del logo en cada fotograma: la marca desaparece sin manchas ni logo encima. Con la GPU tarda unos minutos." },
+  { id: "tapar", label: "Tapar con un logo", desc: "Borra la marca y pone encima el logo de tu página (FrutiEnganchados, Un Minuto en Oración…), del tamaño justo para que no se vea nada." },
   { id: "borrar", label: "Borrar", desc: "Rellena la zona con lo que la rodea. Sin logo encima se nota una mancha borrosa." },
   { id: "difuminar", label: "Difuminar", desc: "Desenfoca la zona (como online-video-cutter)." },
   { id: "recortar", label: "Recortar", desc: "Corta la franja del borde con el logo y vuelve al tamaño original (zoom suave)." },
@@ -53,7 +54,22 @@ function useTrabajo() {
   async function run(path: string, fd: FormData, file: File, suffix: string) {
     setBusy(true); setPct(0); setSecs(0); setMsg("Subiendo al montaje del PC…");
     try {
-      const blob = await enviar(path, fd, p => { setPct(p); if (p >= 100) setMsg("Procesando con la GPU de tu PC…"); });
+      let blob = await enviar(path, fd, p => { setPct(p); if (p >= 100) setMsg("Procesando con la GPU de tu PC…"); });
+      // Trabajos largos (borrar con IA): el PC responde con un id y se sigue el progreso como en el montaje.
+      if (blob.type.includes("json")) {
+        const { id } = JSON.parse(await blob.text());
+        let seq = -1, st: any = null;
+        while (true) {
+          const r = await fetch(`${PC_URL}/trabajos/${id}?desde=${seq}`);
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          st = await r.json(); seq = st.seq; setMsg(st.paso || "Procesando…");
+          if (st.estado === "listo" || st.estado === "error") break;
+        }
+        if (st.estado === "error") throw new Error(st.error || "falló");
+        const v = await fetch(`${PC_URL}/trabajos/${id}/video`);
+        if (!v.ok) throw new Error(`no se pudo descargar (HTTP ${v.status}); está guardado 30 min en el PC`);
+        blob = await v.blob();
+      }
       descargar(blob, `${file.name.replace(/\.[^.]+$/, "")}-${suffix}.mp4`);
       setMsg(`✓ Listo: ${mb(file.size)} → ${mb(blob.size)}. Se descargó solo.`);
     } catch (e: any) { setMsg("No se pudo: " + (e?.message || e)); }
@@ -107,7 +123,7 @@ function QuitarMarca({ disabled }: { disabled: boolean }) {
   const [dim, setDim] = useState<{ w: number; h: number } | null>(null);
   const [zonas, setZonas] = useState<Zona[]>([]);
   const [draft, setDraft] = useState<Zona | null>(null);
-  const [metodo, setMetodo] = useState("tapar");
+  const [metodo, setMetodo] = useState("borrar_ia");
   const [logo, setLogo] = useState(FRUTI);
   useEffect(() => { defaultLogo("herramientas").then(setLogo); }, []);
   const box = useRef<HTMLDivElement>(null);
@@ -177,7 +193,7 @@ export default function ToolsModule() {
     setCaps(c);
   }
   useEffect(() => { check(); }, []);
-  const ready = !!caps?.comprimir && !!caps?.quitar_marca && !!caps?.logo_propio;
+  const ready = !!caps?.comprimir && !!caps?.quitar_marca && !!caps?.logo_propio && !!caps?.borrar_ia;
   return <div className="space-y-5">
     <section className="studio-panel p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">

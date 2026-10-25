@@ -67,6 +67,19 @@ if (-not (Test-Path $listo)) {
   Set-Content -Encoding ascii $listo (Get-Date -Format s)
 }
 
+# Borrar marcas con IA (LaMa): onnxruntime (con la GPU si hay NVIDIA) y el modelo (~200 MB), una sola vez.
+$iaOk = $false
+try { & $py -c "import onnxruntime, PIL" 2>$null; $iaOk = ($LASTEXITCODE -eq 0) } catch { $iaOk = $false }
+if (-not $iaOk) {
+  Write-Host "Instalando la IA para borrar marcas de agua (una sola vez) ..." -ForegroundColor Yellow
+  if ($gpu) { & $py -m pip install -q "onnxruntime-gpu[cuda,cudnn]" pillow } else { & $py -m pip install -q onnxruntime pillow }
+}
+$lama = Join-Path $env:USERPROFILE ".cache\estudio-viral\lama_fp32.onnx"
+if (-not (Test-Path $lama)) {
+  Write-Host "Descargando el modelo de IA para borrar marcas (una sola vez, ~200 MB) ..." -ForegroundColor Yellow
+  & $py (Join-Path $montaje "borrar_ia.py") --descargar
+}
+
 # El modelo de Whisper (~500 MB) se descarga una sola vez, aquí y no en medio del primer montaje.
 $modelos = Join-Path $env:USERPROFILE ".cache\huggingface\hub\models--Systran--faster-whisper-small"
 if (-not (Test-Path $modelos)) {

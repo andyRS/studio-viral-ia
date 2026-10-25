@@ -21,6 +21,7 @@ Solo en el PC (modo local):
   POST /comprimir     (multipart: video, calidad=revisar|ligero|redes|mejorar; cabecera X-Montaje-Local) -> mp4
                       (también lo usa la app: Crear > Herramientas)
   POST /quitar-marca  (multipart: video, zonas=[{x,y,w,h}] en píxeles, metodo=borrar|difuminar|tapar|recortar) -> mp4
+                      metodo=borrar_ia -> {"id"}: la IA (LaMa) redibuja el fondo; progreso y vídeo en /trabajos/{id}
 
 GET /salud -> {"ok": true, "local": false, "gpu": "", "musica": true}
   "musica": este servidor monta la música de fondo (versiones anteriores la ignoraban sin avisar).
@@ -97,7 +98,7 @@ def autorizado(authorization: str) -> bool:
 @app.get("/salud")
 def salud():
     # «carpeta»: desde dónde corre el montaje del PC (para ver si es la copia actualizada).
-    return {"ok": True, "local": LOCAL, "gpu": GPU, "musica": True, "musica_modo": True, "anterior": True, "recorte": True, "portada": True, "pavo_720": True, "comprimir": LOCAL, "mejorar": LOCAL, "quitar_marca": LOCAL, "logo_propio": True, "dos_logos": True, "velocidad": True, "resumen": True, "pantallas": True, **({"carpeta": os.path.dirname(HERE)} if LOCAL else {})}
+    return {"ok": True, "local": LOCAL, "gpu": GPU, "musica": True, "musica_modo": True, "anterior": True, "recorte": True, "portada": True, "pavo_720": True, "comprimir": LOCAL, "mejorar": LOCAL, "quitar_marca": LOCAL, "logo_propio": True, "dos_logos": True, "borrar_ia": LOCAL, "velocidad": True, "resumen": True, "pantallas": True, **({"carpeta": os.path.dirname(HERE)} if LOCAL else {})}
 
 
 # ---------- Trabajos en segundo plano ----------
@@ -404,7 +405,34 @@ def inicio():
 from fastapi import Form
 
 EMBLEMA = os.path.join(HERE, "marca", "frutienganchados.png")
-METODOS = ("borrar", "difuminar", "tapar", "recortar")
+METODOS = ("borrar", "difuminar", "tapar", "recortar", "borrar_ia")
+
+
+def _ejecutar_borrar_ia(job, src, out, zonas, work):
+    """Borrado con IA (borrar_ia.py, LaMa) en segundo plano, con progreso como el montaje."""
+    with CUPO:
+        _avisar(job, estado="montando", paso="Preparando la IA", pct=1)
+        try:
+            proc = subprocess.Popen([sys.executable, "-I", "-u", os.path.join(HERE, "borrar_ia.py"), src, out, json.dumps(zonas)],
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            errores = []
+            lector = threading.Thread(target=lambda: errores.extend(proc.stderr.readlines()), daemon=True); lector.start()
+            for linea in proc.stdout:
+                if linea.startswith("PROGRESO "):
+                    _, pct, msg = (linea.rstrip().split(" ", 2) + [""])[:3]
+                    _avisar(job, pct=int(pct), paso=msg, log=(job["log"] + [msg])[-40:])
+            proc.wait(); lector.join(5)
+            if proc.returncode != 0 or not os.path.exists(out):
+                _avisar(job, estado="error", error="Falló el borrado con IA: " + ("".join(errores)[-800:] or "sin detalle"))
+            else:
+                _avisar(job, estado="listo", pct=100, paso="Marca borrada", out=out)
+        except Exception as e:
+            _avisar(job, estado="error", error=f"Falló el borrado con IA: {e}")
+        finally:
+            job["terminado"] = time.time()
+    time.sleep(RETENER_SEGUNDOS)
+    shutil.rmtree(work, ignore_errors=True)
+    TRABAJOS.pop(job["id"], None)
 
 
 def _probe_wh(path: str):
@@ -508,6 +536,15 @@ async def quitar_marca(video: UploadFile = File(...), zonas: str = Form(...), me
     try:
         await save_upload(video, src, MAX_COMPRIMIR)
         W, H = _probe_wh(src)
+        if metodo == "borrar_ia":
+            # Trabajo en segundo plano: responde al instante con el id; la app sigue el progreso
+            # en /trabajos/{id} y descarga en /trabajos/{id}/video, como el montaje.
+            jid = uuid.uuid4().hex
+            job = {"id": jid, "estado": "en cola", "pct": 0, "paso": "Vídeo recibido", "log": ["Vídeo recibido"], "seq": 0, "error": "",
+                   "out": "", "cond": threading.Condition(), "terminado": 0}
+            TRABAJOS[jid] = job
+            threading.Thread(target=_ejecutar_borrar_ia, args=(job, src, os.path.join(work, f"{nombre}-sin-marca.mp4"), zs, work), daemon=True).start()
+            return {"id": jid}
         propio = await _guardar_logo(logo, work)
         fc, emblema = filtro_marca(zs, metodo, W, H, propio or EMBLEMA)
         nv = os.environ.get("VIDEO_ENCODER") == "h264_nvenc"
