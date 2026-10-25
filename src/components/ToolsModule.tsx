@@ -2,6 +2,7 @@
 // Herramientas del PC: comprimir, mejorar la calidad y quitar marcas de agua de cualquier vídeo.
 // Todo corre en el montaje de este PC («Montar en mi PC»): el vídeo no sale a internet y no hay límite de tamaño.
 import { useEffect, useRef, useState, type PointerEvent as RPointerEvent } from "react";
+import LogoPicker, { FRUTI, defaultLogo, logoFile, rememberLogo } from "./LogoPicker";
 
 const PC_URL = "http://127.0.0.1:8765";
 type Zona = { x: number; y: number; w: number; h: number };
@@ -13,8 +14,8 @@ const CALIDADES = [
   { id: "mejorar", label: "Mejorar calidad", desc: "Sube a 1080p con escalado fino, quita ruido y da nitidez. Ideal para clips de 720p antes de publicar." },
 ];
 const METODOS = [
-  { id: "borrar", label: "Borrar", desc: "Rellena la zona con lo que la rodea. Lo que mejor queda en vídeos de IA." },
-  { id: "tapar", label: "Tapar con FrutiEnganchados", desc: "Borra y pone nuestro emblema encima, del tamaño justo." },
+  { id: "tapar", label: "Tapar con un logo (recomendado)", desc: "Borra la marca y pone encima el logo de tu página (FrutiEnganchados, Un Minuto en Oración…), del tamaño justo para que no se vea nada." },
+  { id: "borrar", label: "Borrar", desc: "Rellena la zona con lo que la rodea. Sin logo encima se nota una mancha borrosa." },
   { id: "difuminar", label: "Difuminar", desc: "Desenfoca la zona (como online-video-cutter)." },
   { id: "recortar", label: "Recortar", desc: "Corta la franja del borde con el logo y vuelve al tamaño original (zoom suave)." },
 ];
@@ -106,7 +107,9 @@ function QuitarMarca({ disabled }: { disabled: boolean }) {
   const [dim, setDim] = useState<{ w: number; h: number } | null>(null);
   const [zonas, setZonas] = useState<Zona[]>([]);
   const [draft, setDraft] = useState<Zona | null>(null);
-  const [metodo, setMetodo] = useState("borrar");
+  const [metodo, setMetodo] = useState("tapar");
+  const [logo, setLogo] = useState(FRUTI);
+  useEffect(() => { defaultLogo("herramientas").then(setLogo); }, []);
   const box = useRef<HTMLDivElement>(null);
   const start = useRef<{ x: number; y: number } | null>(null);
   const vref = useRef<HTMLVideoElement>(null);
@@ -156,8 +159,9 @@ function QuitarMarca({ disabled }: { disabled: boolean }) {
             <span><b>{m.label}</b><span className="block text-xs text-slate-400">{m.desc}</span></span>
           </label>)}
         </div>
+        {metodo === "tapar" && <div className="rounded-xl border border-white/10 p-3"><p className="mb-2 text-xs font-semibold text-slate-300">Logo que tapa la marca</p><LogoPicker value={logo} onChange={id => { setLogo(id); rememberLogo("herramientas", id); }} disabled={t.busy} /></div>}
         <button type="button" disabled={disabled || !zonas.length || t.busy}
-          onClick={() => { const fd = new FormData(); fd.append("video", file!); fd.append("zonas", JSON.stringify(zonas.map(z => ({ x: Math.round(z.x), y: Math.round(z.y), w: Math.round(z.w), h: Math.round(z.h) })))); fd.append("metodo", metodo); t.run("/quitar-marca", fd, file!, "sin-marca"); }}
+          onClick={async () => { const fd = new FormData(); fd.append("video", file!); fd.append("zonas", JSON.stringify(zonas.map(z => ({ x: Math.round(z.x), y: Math.round(z.y), w: Math.round(z.w), h: Math.round(z.h) })))); fd.append("metodo", metodo); const lf = metodo === "tapar" ? await logoFile(logo) : null; if (lf) fd.append("logo", lf); t.run("/quitar-marca", fd, file!, "sin-marca"); }}
           className="w-full rounded-xl bg-[#FF9F1C] px-4 py-2.5 text-sm font-bold text-[#090D16] disabled:opacity-50">{t.busy ? "Procesando…" : "Quitar marca"}</button>
         <Estado t={t} />
       </div>
@@ -173,7 +177,7 @@ export default function ToolsModule() {
     setCaps(c);
   }
   useEffect(() => { check(); }, []);
-  const ready = !!caps?.comprimir && !!caps?.quitar_marca;
+  const ready = !!caps?.comprimir && !!caps?.quitar_marca && !!caps?.logo_propio;
   return <div className="space-y-5">
     <section className="studio-panel p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">

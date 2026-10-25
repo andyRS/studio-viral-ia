@@ -67,6 +67,7 @@ MAX_CLIP_BYTES = 200 * 1024 * 1024
 MAX_TOTAL_BYTES = 2 * 1024 * 1024 * 1024
 MAX_SCRIPT_BYTES = 1024 * 1024
 MAX_MUSIC_BYTES = 40 * 1024 * 1024
+MAX_LOGO_BYTES = 8 * 1024 * 1024
 
 async def save_upload(upload: UploadFile, path: str, limit: int) -> int:
     written = 0
@@ -96,7 +97,7 @@ def autorizado(authorization: str) -> bool:
 @app.get("/salud")
 def salud():
     # «carpeta»: desde dónde corre el montaje del PC (para ver si es la copia actualizada).
-    return {"ok": True, "local": LOCAL, "gpu": GPU, "musica": True, "musica_modo": True, "anterior": True, "recorte": True, "portada": True, "pavo_720": True, "comprimir": LOCAL, "mejorar": LOCAL, "quitar_marca": LOCAL, "velocidad": True, "resumen": True, "pantallas": True, **({"carpeta": os.path.dirname(HERE)} if LOCAL else {})}
+    return {"ok": True, "local": LOCAL, "gpu": GPU, "musica": True, "musica_modo": True, "anterior": True, "recorte": True, "portada": True, "pavo_720": True, "comprimir": LOCAL, "mejorar": LOCAL, "quitar_marca": LOCAL, "logo_propio": True, "velocidad": True, "resumen": True, "pantallas": True, **({"carpeta": os.path.dirname(HERE)} if LOCAL else {})}
 
 
 # ---------- Trabajos en segundo plano ----------
@@ -146,11 +147,26 @@ def _ejecutar(job, gpath, out, paths, work):
     TRABAJOS.pop(job["id"], None)
 
 
-async def _guardar_musica(musica: Optional[UploadFile], gpath: str, work: str, anterior: Optional[UploadFile] = None):
+async def _guardar_logo(logo: Optional[UploadFile], work: str) -> str:
+    """Logo propio para tapar marcas (p. ej. «Un Minuto en Oración»): PNG/JPG/WEBP. Devuelve su ruta o ""."""
+    if logo is None or not logo.filename:
+        return ""
+    ext = os.path.splitext(logo.filename)[1].lower()
+    if ext not in (".png", ".jpg", ".jpeg", ".webp"):
+        raise HTTPException(400, "El logo debe ser PNG, JPG o WEBP (mejor PNG con fondo transparente)")
+    path = os.path.join(work, "logo" + ext)
+    await save_upload(logo, path, MAX_LOGO_BYTES)
+    return path
+
+
+async def _guardar_musica(musica: Optional[UploadFile], gpath: str, work: str, anterior: Optional[UploadFile] = None, logo: Optional[UploadFile] = None):
     """Guarda la música de fondo y el vídeo de la parte anterior y apunta a ellos en el guion. Las rutas
     las pone siempre el servidor: las que vengan del navegador se descartan."""
     g = json.load(open(gpath, encoding="utf-8"))
-    g.pop("musica_archivo", None); g.pop("anterior_archivo", None)
+    g.pop("musica_archivo", None); g.pop("anterior_archivo", None); g.pop("logo_archivo", None)
+    lpath = await _guardar_logo(logo, work)
+    if lpath:
+        g["logo_archivo"] = lpath
     if anterior is not None and anterior.filename:
         apath = os.path.join(work, "anterior.mp4")
         await save_upload(anterior, apath, MAX_CLIP_BYTES)
@@ -165,7 +181,7 @@ async def _guardar_musica(musica: Optional[UploadFile], gpath: str, work: str, a
     json.dump(g, open(gpath, "w", encoding="utf-8"), ensure_ascii=False)
 
 
-async def _guardar_entrada(guion: UploadFile, clips: List[UploadFile], musica: Optional[UploadFile] = None, anterior: Optional[UploadFile] = None):
+async def _guardar_entrada(guion: UploadFile, clips: List[UploadFile], musica: Optional[UploadFile] = None, anterior: Optional[UploadFile] = None, logo: Optional[UploadFile] = None):
     if not 1 <= len(clips) <= MAX_CLIPS:
         raise HTTPException(400, f"Se admiten entre 1 y {MAX_CLIPS} clips")
     work = tempfile.mkdtemp(prefix="montaje_")
@@ -177,17 +193,17 @@ async def _guardar_entrada(guion: UploadFile, clips: List[UploadFile], musica: O
             p = os.path.join(work, f"clip{i:02d}.mp4")
             total_bytes += await save_upload(c, p, min(MAX_CLIP_BYTES, MAX_TOTAL_BYTES - total_bytes))
             paths.append(p)
-        await _guardar_musica(musica, gpath, work, anterior)
+        await _guardar_musica(musica, gpath, work, anterior, logo)
     except Exception:
         shutil.rmtree(work, ignore_errors=True); raise
     return work, gpath, paths
 
 
 @app.post("/trabajos")
-async def crear_trabajo(guion: UploadFile = File(...), clips: List[UploadFile] = File(...), musica: Optional[UploadFile] = File(None), anterior: Optional[UploadFile] = File(None), authorization: str = Header(default=""), x_montaje_local: str = Header(default="")):
+async def crear_trabajo(guion: UploadFile = File(...), clips: List[UploadFile] = File(...), musica: Optional[UploadFile] = File(None), anterior: Optional[UploadFile] = File(None), logo: Optional[UploadFile] = File(None), authorization: str = Header(default=""), x_montaje_local: str = Header(default="")):
     if not (autorizado(authorization) or (LOCAL and x_montaje_local == "1")):
         raise HTTPException(401, "Token inválido")
-    work, gpath, paths = await _guardar_entrada(guion, clips, musica, anterior)
+    work, gpath, paths = await _guardar_entrada(guion, clips, musica, anterior, logo)
     jid = uuid.uuid4().hex
     en_cola = sum(1 for j in TRABAJOS.values() if j["estado"] in ("en cola", "montando"))
     job = {"id": jid, "estado": "en cola", "pct": 0, "paso": f"En cola ({en_cola} por delante)" if en_cola else "Clips recibidos",
@@ -388,7 +404,30 @@ def _probe_wh(path: str):
     return w, h
 
 
-def filtro_marca(zonas, metodo, W, H):
+def nucleo_logo(path):
+    """Rectángulo opaco del logo (fracciones 0-1): el del JSON del emblema o, en un logo propio, la franja
+    donde casi todo es opaco según el canal alfa. Sin transparencia, el logo entero."""
+    js = os.path.splitext(path)[0] + ".json"
+    if os.path.exists(js):
+        try:
+            return tuple(json.load(open(js, encoding="utf-8"))["nucleo"])
+        except Exception:
+            pass
+    try:
+        import numpy as np
+        w, h = _probe_wh(path)
+        raw = subprocess.run(["ffmpeg", "-v", "error", "-i", path, "-vf", "format=rgba,alphaextract", "-f", "rawvideo", "-pix_fmt", "gray", "-"],
+                             capture_output=True).stdout
+        op = np.frombuffer(raw[: w * h], np.uint8).reshape(h, w) > 200
+        cx, cy = np.where(op.mean(axis=0) > 0.6)[0], np.where(op.mean(axis=1) > 0.6)[0]
+        if len(cx) and len(cy):
+            return (cx[0] / w, cy[0] / h, (cx[-1] + 1) / w, (cy[-1] + 1) / h)
+    except Exception:
+        pass
+    return (0.0, 0.0, 1.0, 1.0)
+
+
+def filtro_marca(zonas, metodo, W, H, logo=EMBLEMA):
     """Filtro de ffmpeg para quitar las zonas [{x,y,w,h}] (en píxeles del vídeo). Devuelve (filtro, usa_emblema)."""
     zs = []
     for z in zonas[:6]:
@@ -419,13 +458,17 @@ def filtro_marca(zonas, metodo, W, H):
         return f + f"[{prev}]setsar=1[v]", False
     dl = ",".join(f"delogo=x={x}:y={y}:w={w}:h={h}" for x, y, w, h in zs)
     if metodo == "tapar":
-        # El emblema FrutiEnganchados encima de cada zona borrada, del tamaño justo para cubrirla.
-        f = f"[0:v]{dl}[base];"
+        # El logo (FrutiEnganchados o el de la página) encima de cada zona borrada: su parte opaca la cubre
+        # entera con 4 px de margen, centrada encima. Así la marca no se ve nunca, ni difuminada.
+        lw, lh = _probe_wh(logo)
+        n0x, n0y, n1x, n1y = nucleo_logo(logo)
+        f = f"[0:v]{dl}[base];[1:v]format=rgba,split={len(zs)}" + "".join(f"[l{i}]" for i in range(len(zs))) + ";"
         prev = "base"
         for i, (x, y, w, h) in enumerate(zs):
-            lado = int(max(w, h) * 1.15)
-            f += (f"[1:v]scale={lado}:{lado}:force_original_aspect_ratio=decrease[e{i}];"
-                  f"[{prev}][e{i}]overlay=x={x + w // 2}-overlay_w/2:y={y + h // 2}-overlay_h/2[t{i}];")
+            esc = max((w + 8) / ((n1x - n0x) * lw), (h + 8) / ((n1y - n0y) * lh))
+            aw, ah = max(2, int(lw * esc)) // 2 * 2, max(2, int(lh * esc)) // 2 * 2
+            ox = int(x + w / 2 - ((n0x + n1x) / 2) * aw); oy = int(y + h / 2 - ((n0y + n1y) / 2) * ah)
+            f += f"[l{i}]scale={aw}:{ah}[e{i}];[{prev}][e{i}]overlay=x={ox}:y={oy}[t{i}];"
             prev = f"t{i}"
         return f + f"[{prev}]setsar=1[v]", True
     return f"[0:v]{dl},setsar=1[v]", False
@@ -433,7 +476,7 @@ def filtro_marca(zonas, metodo, W, H):
 
 @app.post("/quitar-marca")
 async def quitar_marca(video: UploadFile = File(...), zonas: str = Form(...), metodo: str = Form("borrar"),
-                       x_montaje_local: str = Header(default="")):
+                       logo: Optional[UploadFile] = File(None), x_montaje_local: str = Header(default="")):
     if not LOCAL or not x_montaje_local:
         raise HTTPException(403, "Solo disponible en el montaje de este PC")
     if metodo not in METODOS:
@@ -449,10 +492,11 @@ async def quitar_marca(video: UploadFile = File(...), zonas: str = Form(...), me
     try:
         await save_upload(video, src, MAX_COMPRIMIR)
         W, H = _probe_wh(src)
-        fc, emblema = filtro_marca(zs, metodo, W, H)
+        propio = await _guardar_logo(logo, work)
+        fc, emblema = filtro_marca(zs, metodo, W, H, propio or EMBLEMA)
         nv = os.environ.get("VIDEO_ENCODER") == "h264_nvenc"
         venc = ["-c:v", "h264_nvenc", "-preset", "p6", "-rc", "vbr", "-cq", "18", "-b:v", "0"] if nv else ["-c:v", "libx264", "-crf", "17", "-preset", "medium"]
-        base = ["ffmpeg", "-v", "error", "-y", "-i", src, *(["-loop", "1", "-i", EMBLEMA] if emblema else []),
+        base = ["ffmpeg", "-v", "error", "-y", "-i", src, *(["-loop", "1", "-i", propio or EMBLEMA] if emblema else []),
                 "-filter_complex", fc, "-map", "[v]", "-map", "0:a?", "-shortest" if emblema else "-sn"]
         tail = ["-pix_fmt", "yuv420p", "-c:a", "copy", "-movflags", "+faststart", out]
         r = await asyncio.to_thread(subprocess.run, [*base, *venc, *tail], capture_output=True, text=True)

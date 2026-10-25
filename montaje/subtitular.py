@@ -183,6 +183,20 @@ def chat_capas(de, mensajes, dur):
     return capas
 
 
+def nucleo_alfa(path, w, h):
+    """Parte opaca de un logo propio (fracciones 0-1), para que esa parte tape la marca. Sin alfa: entero."""
+    try:
+        raw = subprocess.run(["ffmpeg", "-v", "error", "-i", path, "-vf", "format=rgba,alphaextract", "-f", "rawvideo", "-pix_fmt", "gray", "-"],
+                             capture_output=True).stdout
+        op = np.frombuffer(raw[: w * h], np.uint8).reshape(h, w) > 200
+        cx, cy = np.where(op.mean(axis=0) > 0.6)[0], np.where(op.mean(axis=1) > 0.6)[0]
+        if len(cx) and len(cy):
+            return cx[0] / w, cy[0] / h, (cx[-1] + 1) / w, (cy[-1] + 1) / h
+    except Exception:
+        pass
+    return 0.0, 0.0, 1.0, 1.0
+
+
 def run(cmd):
     subprocess.run(cmd, check=True)
 
@@ -574,23 +588,24 @@ MUSICA = G.get("musica_archivo") if G.get("musica_archivo") and os.path.exists(G
 fc += f"{cat}concat=n={n}:v=1:a=1[vc][{'voz' if MUSICA else 'a'}];"
 if zona:
     zx, zy, zw, zh = zona
-    lw, lh = (int(v) for v in subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=width,height", "-of", "csv=p=0", LOGO],
+    LOGO_U = G.get("logo_archivo") if G.get("logo_archivo") and os.path.exists(G["logo_archivo"]) else LOGO
+    lw, lh = (int(v) for v in subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=width,height", "-of", "csv=p=0", LOGO_U],
                                              capture_output=True, text=True).stdout.strip().split(","))
     # Núcleo totalmente opaco del emblema (marca/frutienganchados.json): se escala lo justo para que ese
     # núcleo cubra la marca con 4 px de margen por lado y se centra encima. Así es pequeño y siempre la tapa.
     try:
-        n0x, n0y, n1x, n1y = json.load(open(os.path.splitext(LOGO)[0] + ".json", encoding="utf-8"))["nucleo"]
+        n0x, n0y, n1x, n1y = json.load(open(os.path.splitext(LOGO_U)[0] + ".json", encoding="utf-8"))["nucleo"]
     except Exception:
-        n0x, n0y, n1x, n1y = 0.0, 0.0, 1.0, 1.0
+        n0x, n0y, n1x, n1y = nucleo_alfa(LOGO_U, lw, lh)
     esc = max((zw + 8) / ((n1x - n0x) * lw), (zh + 8) / ((n1y - n0y) * lh))
     ancho, alto = lw * esc, lh * esc
     x = zx + zw / 2 - ((n0x + n1x) / 2) * ancho
     y = zy + zh / 2 - ((n0y + n1y) / 2) * alto
     x = max(0, min(1080 - ancho, x))
-    shutil.copy(LOGO, "marca.png")
+    run(["ffmpeg", "-v", "error", "-y", "-i", LOGO_U, "-vf", "format=rgba", "marca.png"])
     li = n + (1 if MUSICA else 0)                   # entrada del logo (después de la música si la hay)
     fc += f"[{li}:v]scale={int(ancho)}:{int(alto)}[logo];[vc][logo]overlay={int(x)}:{int(y)}[vm];[vm]"
-    progreso(69, f"Marca FrutiEnganchados sobre la marca de {G.get('marca') or 'agua'} ({int(ancho)}×{int(alto)} px)")
+    progreso(69, f"Logo {G.get('logo_nombre') or ('propio' if LOGO_U != LOGO else 'FrutiEnganchados')} sobre la marca de {G.get('marca') or 'agua'} ({int(ancho)}×{int(alto)} px)")
 else:
     fc += "[vc]"
 # El gancho sale en los 3 primeros segundos del episodio nuevo (después de «Anteriormente...» si lo hay).

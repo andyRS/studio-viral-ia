@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
+import LogoPicker, { FRUTI, defaultLogo, logoFile, rememberLogo } from "./LogoPicker";
 import { postApi, isAuthError } from "@/lib/api-client";
 import CopyButton from "./CopyButton";
 import { episodeTrackPrompt, seriesThemePrompt, type MusicContext } from "@/lib/music";
@@ -100,6 +101,9 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
   useEffect(() => { setResumen(recap); }, [recap]);
   // Ritmo: los clips de IA hablan lento; 1.1 acelera voz y vídeo juntos un 10 % (mismo tono).
   const [velocidad, setVelocidad] = useState("1.1");
+  // Logo que tapa la marca de agua: el de la página donde se publica (se recuerda por serie).
+  const [logo, setLogo] = useState(FRUTI);
+  useEffect(() => { defaultLogo(String(musicCtx?.series || title), style).then(setLogo); }, [musicCtx?.series, title, style]);
   // Canción de firma recordada para esta serie.
   const serieKey = String(musicCtx?.series || "");
   const [songSaved, setSongSaved] = useState(false);
@@ -175,7 +179,7 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
         base = t.json.url; headers = { Authorization: `Ticket ${t.json.ticket}` };
       }
       // Un servidor sin actualizar ignora la música sin avisar: se comprueba antes de subir nada.
-      const needs = [music && ["musica", "la música de fondo"], music && musicMode === "extremos" && ["musica_modo", "la música solo al inicio y al final"], anterior && ["anterior", "«Anteriormente...»"], anterior && resumen.trim() && ["resumen", "el resumen del «Anteriormente...»"], recortar && ["recorte", "quitar las pausas"], Number(velocidad) > 1 && ["velocidad", "el ritmo ágil"], (guion?.pantallas?.length || guion?.telefono?.length) && ["pantallas", "los chats de WhatsApp y la voz por teléfono"]].filter(Boolean) as [string, string][];
+      const needs = [music && ["musica", "la música de fondo"], music && musicMode === "extremos" && ["musica_modo", "la música solo al inicio y al final"], anterior && ["anterior", "«Anteriormente...»"], anterior && resumen.trim() && ["resumen", "el resumen del «Anteriormente...»"], recortar && ["recorte", "quitar las pausas"], Number(velocidad) > 1 && ["velocidad", "el ritmo ágil"], (guion?.pantallas?.length || guion?.telefono?.length) && ["pantallas", "los chats de WhatsApp y la voz por teléfono"], watermark !== "none" && logo !== FRUTI && ["logo_propio", "el logo de tu página"]].filter(Boolean) as [string, string][];
       if (needs.length) {
         const caps = await fetch(`${base}/salud`, { signal: AbortSignal.timeout(8000) }).then(r => r.json()).catch(() => null);
         const missing = needs.filter(([k]) => !caps?.[k]).map(([, label]) => label);
@@ -191,6 +195,7 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
       for (const f of files) fd.append("clips", f, f.name);
       if (music) fd.append("musica", music, music.name);
       if (anterior) fd.append("anterior", anterior, anterior.name);
+      if (watermark !== "none") { const lf = await logoFile(logo); if (lf) fd.append("logo", lf, lf.name); }
       // 1) Subida: el servidor responde al instante con el número de trabajo.
       const { id } = await upload(`${base}/trabajos`, headers, fd, setUploadPct);
       // 2) Progreso en vivo: cada respuesta llega en cuanto hay un paso nuevo (o a los 20 s).
@@ -251,7 +256,8 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
     {!filesOverride && !!files.length && files.length !== blocks && <p className="text-xs text-amber-200/80">
       El guion tiene {blocks} bloque(s) y subiste {files.length} clip(s). {files.length < blocks ? "Se juntarán bloques seguidos para que cada clip lleve su diálogo." : "Los clips sobrantes irán sin diálogo (como tarjetas)."}
     </p>}
-    <div className="space-y-2"><label htmlFor="watermark-mode" className="block text-xs text-slate-300">Quitar marca de agua</label><select id="watermark-mode" value={watermark} onChange={e => setWatermark(e.target.value as Watermark)} disabled={busy} className="max-w-sm"><option value="none">No · los clips no tienen marca (Higgsfield)</option><option value="dola">Sí · marca de Dola</option><option value="pavo">Sí · marca de Pavo IA</option><option value="custom">Sí · otra marca (indicar área)</option></select>{(watermark === "dola" || watermark === "pavo") && <p className="text-xs text-slate-400">Cada clip se lleva a la resolución de {watermark === "dola" ? "Dola (720 × 1280)" : "Pavo (704 × 1280)"} y se borra la marca, aunque alguno venga en otra resolución. Encima va la marca FrutiEnganchados, del tamaño justo para taparla (no se nota el difuminado).</p>}{watermark === "custom" && <div className="flex flex-wrap gap-2">{(["x", "y", "w", "h"] as const).map(key => <label key={key} className="text-xs text-slate-300">{key === "w" ? "Ancho" : key === "h" ? "Alto" : key}<input type="number" min="0" max="9999" value={rect[key]} onChange={e => setRect(prev => ({ ...prev, [key]: e.target.value }))} className="mt-1 w-20" /></label>)}<p className="w-full text-xs text-slate-400">Coordenadas en píxeles del clip original. Funciona con marcas fijas; revisa el resultado antes de publicar.</p></div>}</div>
+    <div className="space-y-2"><label htmlFor="watermark-mode" className="block text-xs text-slate-300">Quitar marca de agua</label><select id="watermark-mode" value={watermark} onChange={e => setWatermark(e.target.value as Watermark)} disabled={busy} className="max-w-sm"><option value="none">No · los clips no tienen marca (Higgsfield)</option><option value="dola">Sí · marca de Dola</option><option value="pavo">Sí · marca de Pavo IA</option><option value="custom">Sí · otra marca (indicar área)</option></select>{(watermark === "dola" || watermark === "pavo") && <p className="text-xs text-slate-400">Cada clip se lleva a la resolución de {watermark === "dola" ? "Dola (720 × 1280)" : "Pavo (704 × 1280)"} y se borra la marca, aunque alguno venga en otra resolución. Encima va el logo elegido, del tamaño justo para taparla (no se nota el difuminado).</p>}{watermark === "custom" && <div className="flex flex-wrap gap-2">{(["x", "y", "w", "h"] as const).map(key => <label key={key} className="text-xs text-slate-300">{key === "w" ? "Ancho" : key === "h" ? "Alto" : key}<input type="number" min="0" max="9999" value={rect[key]} onChange={e => setRect(prev => ({ ...prev, [key]: e.target.value }))} className="mt-1 w-20" /></label>)}<p className="w-full text-xs text-slate-400">Coordenadas en píxeles del clip original. Funciona con marcas fijas; revisa el resultado antes de publicar.</p></div>}
+      {watermark !== "none" && <div className="rounded-lg border border-white/10 p-3"><p className="mb-2 text-xs text-slate-300">Logo que tapa la marca <span className="text-slate-500">(el de la página donde publicas)</span></p><LogoPicker value={logo} onChange={id => { setLogo(id); rememberLogo(String(musicCtx?.series || title), id); }} disabled={busy} /></div>}</div>
     <div className="space-y-2">
       <label htmlFor="cierre-cta" className="block text-xs text-slate-300">Llamada final <span className="text-slate-500">(línea amarilla bajo «{lastEpisode ? "FIN" : guion?.cierre || "Continuará..."}» en la tarjeta de cierre)</span></label>
       <input id="cierre-cta" value={cta} maxLength={40} onChange={e => { setCta(e.target.value); setCtaEdited(true); }} disabled={busy} className="max-w-sm" />
