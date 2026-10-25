@@ -29,6 +29,7 @@ const ICONS: Record<string, ReactNode> = {
   personajes: I("M16 19v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 17.5V19|M10 10.5a3.25 3.25 0 1 0 0-6.5 3.25 3.25 0 0 0 0 6.5z|M20 19v-1.5a3.5 3.5 0 0 0-2.5-3.35|M15.5 4.15a3.25 3.25 0 0 1 0 6.2"),
   formulas: I("M5 4h14v16H5z|M9 8h6|M9 12h6|M9 16h3"),
   produccion: I("M4 5h4v14H4z|M10 5h4v9h-4z|M16 5h4v6h-4z"),
+  herramientas: I("M14.7 6.3a4 4 0 0 0-5.4 5.4L3.6 17.4a1.9 1.9 0 0 0 2.7 2.7l5.7-5.7a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.5-.5-2.4z"),
   calendario: I("M5 6h14v14H5z|M5 10h14|M9 4v4|M15 4v4"),
   metricas: I("M4 20V10|M10 20V4|M16 20v-7|M22 20H2"),
   virales: I("M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14z|M21 21l-5-5"),
@@ -175,7 +176,7 @@ function HomeModule() {
 function nextAction(id: string): { label: string; module: string } | null {
   if (id === "inicio") return { label: "Crear episodio", module: "generador" };
   if (id === "generador") return { label: "Nueva producción", module: "produccion" };
-  if (["dola", "personajes", "formulas", "produccion"].includes(id)) return { label: "Crear episodio", module: "generador" };
+  if (["dola", "personajes", "formulas", "produccion", "herramientas"].includes(id)) return { label: "Crear episodio", module: "generador" };
   if (id === "metricas") return { label: "Analizar viral", module: "virales" };
   if (id === "virales") return { label: "Ver métricas", module: "metricas" };
   if (id === "calendario") return { label: "Gestionar cuentas", module: "cuentas" };
