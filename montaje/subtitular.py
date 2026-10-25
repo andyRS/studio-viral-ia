@@ -236,7 +236,8 @@ for ci, clip in enumerate(clips):
     elif G["clips"][ci]:
         progreso(5 + 55 * (ci + 1) / len(clips), f"Clip {ci + 1}: no se oyó voz; los subtítulos se reparten por tiempo")
     t += b - a
-progreso(61, "Alineando el texto del guion con las voces")
+_quitado = sum(dur(c) - (b - a) for c, (a, b) in zip(clips, recortes))
+progreso(61, (f"Pausas quitadas: {_quitado:.1f} s en total en {sum(1 for c, (a, b) in zip(clips, recortes) if dur(c) - (b - a) > 0.05)} de {len(clips)} clips. " if RECORTAR else "Sin quitar pausas (desactivado). ") + "Alineando el texto del guion con las voces")
 
 # 2) alinear texto del guion con las palabras oídas
 sw, times = [], []   # sw: (hablante, palabra)
@@ -483,13 +484,17 @@ if MUSICA:
     vol = min(0.4, max(0.05, float(G.get("musica_volumen") or 0.18)))
     EXTREMOS = str(G.get("musica_modo") or "") == "extremos"
     gan = vol / 0.18                                   # 0.18 = «Suave (recomendado)» = nivel de referencia
+    if EXTREMOS:
+        # Solo suena unos segundos (la firma de la serie): va a primer plano, casi al nivel de las voces
+        # (+8 dB). Con el nivel de fondo se perdía bajo el diálogo continuo y no se oía nada.
+        gan *= 2.5
     inputs += ["-stream_loop", "-1", "-i", MUSICA]   # entrada n (el logo, si lo hay, va después)
     fc += (f";[{n}:a]aresample=48000,aformat=channel_layouts=stereo,atrim=0:{total:.2f},"
            f"loudnorm=I=-24:TP=-3:LRA=11,aresample=48000,volume={gan:.2f},"
            # «extremos»: la música sube en los primeros 4 s y en los últimos 8 s; en medio queda en silencio.
            + (f"volume='max(clip(4.5-t,0,1),clip(t-{max(5.0, total - 8.5):.2f},0,1))':eval=frame," if EXTREMOS else "")
-           + f"afade=t=in:d=0.6,afade=t=out:st={max(0, total - 2.5):.2f}:d=2.5[mus];"
-           f"[voz]asplit[voz1][voz2];[mus][voz1]sidechaincompress=threshold=0.08:ratio=2.5:attack=30:release=400[musb];"
+           + f"afade=t=in:d=0.6,afade=t=out:st={max(0, total - 1.5):.2f}:d=1.5[mus];"
+           f"[voz]asplit[voz1][voz2];[mus][voz1]sidechaincompress=threshold=0.08:ratio={1.5 if EXTREMOS else 2.5}:attack=30:release=400[musb];"
            f"[voz2][musb]amix=inputs=2:duration=first:normalize=0[a]")
     if EXTREMOS:
         progreso(69, "Música solo al inicio (4 s) y al final con el «Continuará…»; en medio, voces y ambiente")
