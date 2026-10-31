@@ -26,7 +26,7 @@ export interface DataState {
   accounts: Account[]; series: Series[]; characters: Character[]; formulas: Formula[];
   episodes: Episode[]; productionCards: ProductionCard[]; clipChecks: ClipCheck[]; costs: Cost[];
   calendarEntries: CalendarEntry[]; metrics: Metric[]; viralAnalyses: ViralAnalysis[];
-  products: Product[]; productTests: ProductTest[]; accountProfiles: AccountProfile[];
+  products: Product[]; productTests: ProductTest[]; accountProfiles: AccountProfile[]; storyOutlines: any[];
 }
 
 export type DataMode = "cargando" | "supabase" | "local";
@@ -64,7 +64,7 @@ function localDefaults(): DataState {
   return {
     accounts: seedAccounts, series: [], characters: [], formulas: seedFormulas,
     episodes: [], productionCards: [], clipChecks: [], costs: [], calendarEntries: [], metrics: [],
-    viralAnalyses: [], products: [], productTests: [], accountProfiles: [],
+    viralAnalyses: [], products: [], productTests: [], accountProfiles: [], storyOutlines: [],
   };
 }
 function loadLocal(): DataState {
@@ -95,7 +95,7 @@ async function sinColumnaNueva(row: any, run: (r: any) => Promise<any>) {
   }
   return res;
 }
-const PAGE_OF: Record<string, number> = { episodes: 10, viral_analyses: 20 };
+const PAGE_OF: Record<string, number> = { episodes: 10, viral_analyses: 20, story_outlines: 5 };
 async function fetchAll(supabase: any, table: string, userId: string): Promise<{ rows: any[]; error: any }> {
   const size = PAGE_OF[table] || 200;
   const rows: any[] = [];
@@ -298,6 +298,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     await removeMany("calendarEntries", f.calendarEntries);
     await removeMany("episodes", f.episodes);
     await removeMany("characters", f.characters);
+    // El proyecto largo de la serie (en Supabase cae solo por la clave foránea; en el navegador hay que quitarlo).
+    await removeMany("storyOutlines", (dataRef.current as any).storyOutlines.filter((o: any) => o.seriesId === seriesId).map((o: any) => o.id));
     await removeMany("series", [seriesId]);
     return f;
   }, [removeMany, seriesFootprint]);

@@ -25,7 +25,7 @@ export function parseJson(raw: string): any {
 }
 
 // Llama a la IA y lee el JSON; si la respuesta viene rota, la pide una vez más.
-async function askJson(system: string, user: string) {
+export async function askJson(system: string, user: string) {
   const startedAt = Date.now();
   let raw = "";
   try { raw = await callLLM(system, user, { json: true }); return parseJson(raw); }
