@@ -5,6 +5,7 @@ import { useMemo, useRef, useState } from "react";
 import { useData } from "@/lib/DataContext";
 import { CanonPanel, EscenariosPanel } from "@/components/CanonPanels";
 import { PlanPanel, TomasPanel } from "@/components/ProduccionPanels";
+import { EvaluacionPanel, MontajeLargo, PublicacionPanel } from "@/components/DistribucionPanels";
 import { STYLES, type StyleKey } from "@/lib/knowledge";
 import { bibliaTexto } from "@/lib/personajes";
 import { postApi } from "@/lib/api-client";
@@ -30,7 +31,7 @@ export default function StoryArchitect({ series, style, cast, characters = [], d
   const [notas, setNotas] = useState("");
   const [abierta, setAbierta] = useState<string | null>(null);   // escena con el editor de guion abierto
   const [verHistorial, setVerHistorial] = useState(false);
-  const [pestaña, setPestaña] = useState<"estructura" | "canon" | "escenarios" | "tomas" | "plan">("estructura");
+  const [pestaña, setPestaña] = useState<"estructura" | "canon" | "escenarios" | "tomas" | "plan" | "montaje" | "publicar" | "evaluar">("estructura");
   const parar = useRef(false);
   const r = useMemo(() => saved?.acts.length ? rhythm(saved) : null, [saved]);
   const avisosPorEscena = useMemo(() => {
@@ -48,7 +49,10 @@ export default function StoryArchitect({ series, style, cast, characters = [], d
   }
   async function ia(body: any) {
     const personajes = characters.map(bibliaTexto).filter(Boolean);
-    const res = await postApi("/api/outline", { canon: saved?.canon, escenarios: saved?.escenarios, personajes, ...body, style, title: series.title, idea: series.description, cast });
+    // Sin imágenes ni historiales: la IA no los usa y el pedido no debe pesar megas (límite de Vercel).
+    const sinFotos = (es?: any[]) => es?.map(e => ({ ...e, imagenes: [] }));
+    const ligero = (o?: Outline) => o && ({ ...o, history: undefined, escenarios: sinFotos(o.escenarios), acts: o.acts.map(a => ({ ...a, sequences: a.sequences.map(q => ({ ...q, scenes: q.scenes.map(sc => ({ ...sc, scriptHistory: undefined, tomas: sc.tomas?.map(t => ({ ...t, imagen: undefined })) })) })) })) });
+    const res = await postApi("/api/outline", { canon: saved?.canon, escenarios: sinFotos(saved?.escenarios), personajes, ...body, ...(body.outline ? { outline: ligero(body.outline) } : {}), style, title: series.title, idea: series.description, cast });
     if (res.status === 401) throw new Error("Inicia sesión para usar la IA.");
     if (!res.json?.ok) throw new Error(res.json?.error || `HTTP ${res.status}`);
     return res.json.data;
@@ -60,7 +64,7 @@ export default function StoryArchitect({ series, style, cast, characters = [], d
 
   const crear = () => run("Creando la estructura…", async () => {
     const d = await ia({ action: "estructura", structure: estructura, minutes: minutos, notes: notas });
-    const o = { ...normOutline(d, series.id, d.structure, d.minutes), id: saved?.id, canon: saved?.canon, escenarios: saved?.escenarios, produccion: saved?.produccion, history: saved?.history };
+    const o = { ...normOutline(d, series.id, d.structure, d.minutes), id: saved?.id, canon: saved?.canon, escenarios: saved?.escenarios, produccion: saved?.produccion, distribucion: saved?.distribucion, evaluacion: saved?.evaluacion, history: saved?.history };
     o.acts = d.acts;
     await guardar(o);
     setMsg(`Estructura creada: ${o.acts.length} actos y ${allScenes(o).length} escenas. Revisa, bloquea lo que te guste y regenera solo lo que no.`);
@@ -123,13 +127,16 @@ export default function StoryArchitect({ series, style, cast, characters = [], d
       {!series.style && <label className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-400/25 bg-amber-400/[.06] p-2 text-xs text-amber-100">Estilo visual del proyecto (la serie aún no lo tiene guardado):
         <select value={style} onChange={e => { void update("series", series.id, { style: e.target.value }); }} className="w-auto py-1 text-xs">{Object.entries(STYLES).map(([k, v]) => <option key={k} value={k}>{(v as any).label}</option>)}</select></label>}
       <div role="tablist" className="flex flex-wrap gap-1 rounded-xl bg-white/5 p-1 text-xs">
-        {([["estructura", "Estructura"], ["canon", `Fuentes y canon${saved?.canon?.fuentes?.length ? ` (${saved.canon.fuentes.length})` : ""}`], ["escenarios", `Escenarios${saved?.escenarios?.length ? ` (${saved.escenarios.length})` : ""}`], ["tomas", "Tomas y storyboard"], ["plan", "Plan y costos"]] as const).map(([id, label]) =>
+        {([["estructura", "Estructura"], ["canon", `Fuentes y canon${saved?.canon?.fuentes?.length ? ` (${saved.canon.fuentes.length})` : ""}`], ["escenarios", `Escenarios${saved?.escenarios?.length ? ` (${saved.escenarios.length})` : ""}`], ["tomas", "Tomas y storyboard"], ["plan", "Plan y costos"], ["montaje", "Montaje"], ["publicar", "Publicación"], ["evaluar", "Evaluación"]] as const).map(([id, label]) =>
           <button key={id} type="button" role="tab" aria-selected={pestaña === id} onClick={() => setPestaña(id)} className={`rounded-lg px-3 py-1.5 ${pestaña === id ? "bg-violet-500 font-semibold text-white" : "text-slate-300"}`}>{label}</button>)}
       </div>
       {pestaña === "canon" && <CanonPanel outline={base} guardar={guardar} revisarIA={revisarIA} busy={!!busy} />}
       {pestaña === "escenarios" && <EscenariosPanel outline={base} guardar={guardar} busy={!!busy} />}
       {pestaña === "tomas" && <TomasPanel outline={base} guardar={guardar} ia={ia} run={run} busy={!!busy} style={style as StyleKey} characters={characters} />}
       {pestaña === "plan" && <PlanPanel outline={base} guardar={guardar} busy={!!busy} />}
+      {pestaña === "montaje" && <MontajeLargo outline={base} guardar={guardar} busy={!!busy} series={series} style={style} characters={characters} />}
+      {pestaña === "publicar" && <PublicacionPanel outline={base} guardar={guardar} busy={!!busy} series={series} ia={ia} run={run} />}
+      {pestaña === "evaluar" && <EvaluacionPanel outline={base} guardar={guardar} busy={!!busy} series={series} ia={ia} run={run} />}
 
       {pestaña === "estructura" && !saved?.acts.length && <div className="grid gap-3 sm:grid-cols-3">
         <label className="text-xs text-slate-300">Estructura<select value={estructura} onChange={e => setEstructura(Number(e.target.value) as 3 | 5)} className="mt-1"><option value={3}>3 actos</option><option value={5}>5 actos</option></select></label>

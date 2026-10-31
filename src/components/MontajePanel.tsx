@@ -11,7 +11,7 @@ type Live = { estado: string; pct: number; paso: string; log: string[] };
 type Target = "pc" | "nube";
 
 // Servidor de montaje en el PC del usuario (montaje/local/«Montar en mi PC.bat»): GPU NVIDIA, sin subir los clips a internet.
-const PC_URL = "http://127.0.0.1:8765";
+export const PC_URL = "http://127.0.0.1:8765";
 const TARGET_KEY = "estudio-viral:montaje-destino";
 async function detectPc(): Promise<{ gpu: string } | null> {
   try {
@@ -177,8 +177,9 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
   useEffect(() => { try { setLogo2(localStorage.getItem(`estudio-viral:logo:${logoKey2}`) || ""); } catch {} }, [logoKey2]);
   const [names, setNames] = useState<[string, string]>(["", ""]);
   // Versiones por red que salen del mismo montaje (se recuerda la elección en este navegador).
+  const horizontal = guion?.formato === "16:9";
   const REDES = [
-    { id: "facebook", label: "Facebook", desc: "abre con los 3 s más fuertes y «Horas antes...»" },
+    ...(horizontal ? [] : [{ id: "facebook", label: "Facebook", desc: "abre con los 3 s más fuertes y «Horas antes...»" }]),
     { id: "tiktok", label: "TikTok en partes", desc: "partes de ~1 min cortadas entre clips, con «Sigue en la Parte N»" },
     { id: "shorts", label: "YouTube Shorts", desc: "menos de 60 s, cierra con «Historia completa en el perfil»" },
   ];
@@ -271,7 +272,7 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
         base = t.json.url; headers = { Authorization: `Ticket ${t.json.ticket}` };
       }
       // Un servidor sin actualizar ignora la música sin avisar: se comprueba antes de subir nada.
-      const needs = [music && ["musica", "la música de fondo"], music && musicMode === "extremos" && ["musica_modo", "la música solo al inicio y al final"], anterior && ["anterior", "«Anteriormente...»"], anterior && resumen.trim() && ["resumen", "el resumen del «Anteriormente...»"], recortar && ["recorte", "quitar las pausas"], Number(velocidad) > 1 && ["velocidad", "el ritmo ágil"], Object.values(pro).some(Boolean) && ["pro", "el acabado profesional"], (guion?.pantallas?.length || guion?.telefono?.length) && ["pantallas", "los chats de WhatsApp y la voz por teléfono"], watermark !== "none" && logo !== FRUTI && ["logo_propio", "el logo de tu página"], watermark !== "none" && !!logo2 && logo2 !== logo && ["dos_logos", "la segunda versión con otro logo"], versiones.length > 0 && ["versiones", "las versiones por red"]].filter(Boolean) as [string, string][];
+      const needs = [music && ["musica", "la música de fondo"], music && musicMode === "extremos" && ["musica_modo", "la música solo al inicio y al final"], anterior && ["anterior", "«Anteriormente...»"], anterior && resumen.trim() && ["resumen", "el resumen del «Anteriormente...»"], recortar && ["recorte", "quitar las pausas"], Number(velocidad) > 1 && ["velocidad", "el ritmo ágil"], Object.values(pro).some(Boolean) && ["pro", "el acabado profesional"], (guion?.pantallas?.length || guion?.telefono?.length) && ["pantallas", "los chats de WhatsApp y la voz por teléfono"], watermark !== "none" && logo !== FRUTI && ["logo_propio", "el logo de tu página"], watermark !== "none" && !!logo2 && logo2 !== logo && ["dos_logos", "la segunda versión con otro logo"], versiones.length > 0 && ["versiones", "las versiones por red"], horizontal && ["horizontal", "el formato 16:9 del proyecto largo"], !!guion?.recortes?.length && ["recortes", "los clips verticales para TikTok y Reels"]].filter(Boolean) as [string, string][];
       if (needs.length) {
         const caps = await fetch(`${base}/salud`, { signal: AbortSignal.timeout(8000) }).then(r => r.json()).catch(() => null);
         const missing = needs.filter(([k]) => !caps?.[k]).map(([, label]) => label);
@@ -283,7 +284,7 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
         }
       }
       const fd = new FormData();
-      fd.append("guion", new Blob([JSON.stringify({ ...adaptGuion(guion, files.length, { marca, delogo, cierre: guion?.versiculo || (lastEpisode ? "FIN" : guion?.cierre || "Continuará..."), cierreCta: cta }), ...(music ? { musica_volumen: Number(musicVol), musica_modo: musicMode } : {}), recortar, velocidad: Number(velocidad), versiones, parte: part, pro, estilo: style, kit, ...(style === "cristiana" || style === "biblica" || style === "epica" ? { cristiana: true } : {}), ...(anterior && resumen.trim() ? { anterior_resumen: resumen.trim() } : {}), ...(watermark !== "none" && logo2 && logo2 !== logo ? { logo_nombre: await logoName(logo), logo2_nombre: await logoName(logo2), ...(logo2 === FRUTI ? { logo2: "frutienganchados" } : {}) } : {}), ...(coverData?.parte ? { portada: { ...coverData, clip: Math.round(files.length * 0.35) } } : {}) })], { type: "application/json" }), "guion.json");
+      fd.append("guion", new Blob([JSON.stringify({ ...adaptGuion(guion, files.length, { marca, delogo, cierre: horizontal ? undefined : guion?.versiculo || (lastEpisode ? "FIN" : guion?.cierre || "Continuará..."), cierreCta: horizontal ? "" : cta }), ...(music ? { musica_volumen: Number(musicVol), musica_modo: musicMode } : {}), recortar, velocidad: Number(velocidad), versiones: horizontal ? [] : versiones, parte: part, pro, estilo: style, kit, ...(style === "cristiana" || style === "biblica" || style === "epica" ? { cristiana: true } : {}), ...(anterior && resumen.trim() ? { anterior_resumen: resumen.trim() } : {}), ...(watermark !== "none" && logo2 && logo2 !== logo ? { logo_nombre: await logoName(logo), logo2_nombre: await logoName(logo2), ...(logo2 === FRUTI ? { logo2: "frutienganchados" } : {}) } : {}), ...(coverData?.parte || coverData?.frase?.length ? { portada: { ...coverData, clip: Math.round(files.length * 0.35) } } : {}) })], { type: "application/json" }), "guion.json");
       for (const f of files) fd.append("clips", f, f.name);
       if (music) fd.append("musica", music, music.name);
       if (anterior) fd.append("anterior", anterior, anterior.name);
@@ -361,11 +362,11 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
         <label className="flex items-center gap-2 text-xs text-slate-300"><input type="checkbox" className="w-auto" checked={!!logo2} disabled={busy} onChange={e => { const v = e.target.checked ? (logo === FRUTI ? "un-minuto-en-oracion" : FRUTI) : ""; setLogo2(v); rememberLogo(logoKey2, v); }} /> <b>Sacar también otra versión con otro logo</b> <span className="text-slate-500">(para publicar en dos páginas; sale en el mismo montaje)</span></label>
         {!!logo2 && <div><p className="mb-2 text-xs text-slate-400">Logo de la segunda versión</p><LogoPicker value={logo2} onChange={id => { setLogo2(id); rememberLogo(logoKey2, id); }} disabled={busy} />{logo2 === logo && <p className="mt-1 text-[11px] text-amber-200">Elige un logo distinto al de arriba.</p>}</div>}
       </div>}</div>
-    <div className="space-y-2">
+    {!horizontal && <div className="space-y-2">
       <label htmlFor="cierre-cta" className="block text-xs text-slate-300">Llamada final <span className="text-slate-500">(línea amarilla bajo «{lastEpisode ? "FIN" : guion?.cierre || "Continuará..."}» en la tarjeta de cierre)</span></label>
       <input id="cierre-cta" value={cta} maxLength={40} onChange={e => { setCta(e.target.value); setCtaEdited(true); }} disabled={busy} className="max-w-sm" />
       <label className="flex items-center gap-2 text-xs text-slate-300"><input type="checkbox" checked={lastEpisode} onChange={e => setLastEpisode(e.target.checked)} disabled={busy} /> Último episodio de la serie (el cierre dice «FIN»)</label>
-    </div>
+    </div>}
     <div className="space-y-2 rounded-lg border border-white/10 p-3">
       <p className="text-xs text-slate-300">Ritmo viral</p>
       <label className="flex items-start gap-2 text-xs text-slate-300"><input type="checkbox" checked={recortar} onChange={e => setRecortar(e.target.checked)} disabled={busy} className="mt-0.5" /><span><b>Quitar pausas muertas</b> (recomendado): cada clip empieza justo antes de la primera palabra y corta al terminar la frase. Así el vídeo fluye sin silencios, como los virales.</span></label>
@@ -384,9 +385,9 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
           ["camara", "Cámara y textos animados", "punch-in en la palabra fuerte, temblor en la revelación, movimiento lento en el Narrador, textos con entrada suave"],
         ] as [keyof typeof pro, string, string][]).map(([k, label, desc]) => <label key={k} className="flex items-start gap-2 text-xs text-slate-300"><input type="checkbox" className="mt-0.5 w-auto" checked={pro[k]} onChange={() => togglePro(k)} disabled={busy} /><span><b>{label}</b> · <span className="text-slate-400">{desc}</span></span></label>)}
       </fieldset>
-      <fieldset className="space-y-1"><legend className="text-xs text-slate-300"><b>Versiones por red</b> <span className="text-slate-500">(salen del mismo montaje, además del vídeo principal)</span></legend>
+      {!horizontal && <fieldset className="space-y-1"><legend className="text-xs text-slate-300"><b>Versiones por red</b> <span className="text-slate-500">(salen del mismo montaje, además del vídeo principal)</span></legend>
         {REDES.map(r => <label key={r.id} className="flex items-start gap-2 text-xs text-slate-300"><input type="checkbox" className="mt-0.5 w-auto" checked={versiones.includes(r.id)} onChange={() => toggleVersion(r.id)} disabled={busy} /><span><b>{r.label}</b> · <span className="text-slate-400">{r.desc}</span></span></label>)}
-      </fieldset>
+      </fieldset>}
       {Array.isArray(guion?.tarjetas) && guion.tarjetas.length > 0 && <p className="text-[11px] text-slate-400">Saltos de tiempo: {guion.tarjetas.map((t: any) => `«${t.texto}» antes de la escena ${t.antes + 1}`).join(" · ")} (1,3 s sobre la escena siguiente difuminada).</p>}
       {part > 1 && <div className="space-y-1">
         <p className="text-xs text-slate-300"><b>«Anteriormente...»</b> <span className="text-slate-500">(opcional)</span>: sube el vídeo final de la Parte {part - 1} y el episodio abre con ~12 s en blanco y negro: 3-4 frases clave repartidas por toda esa parte (el conflicto, el giro y la última antes del cierre, sin el Narrador) y arriba una frase que la resume. Así quien llega nuevo entiende qué pasó.</p>
@@ -454,7 +455,7 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
       {extras.length > 0 && job && <div className="rounded-lg border border-white/10 p-3">
         <p className="mb-2 text-xs font-semibold text-slate-300">Versiones por red</p>
         <div className="flex flex-wrap gap-2">{extras.map(e => {
-          const red = e.red === "facebook" ? "Facebook" : e.red === "shorts" ? "Shorts" : `TikTok ${e.parte}/${e.total}`;
+          const red = e.red === "facebook" ? "Facebook" : e.red === "shorts" ? "Shorts" : e.red === "clip" ? `clip vertical ${e.parte}` : `TikTok ${e.parte}/${e.total}`;
           const logoTxt = video2 && names[e.logo - 1] ? ` · ${names[e.logo - 1]}` : "";
           const file = fname.replace(/\.mp4$/, `-${e.red}${e.parte ? `-${e.parte}` : ""}${video2 && names[e.logo - 1] ? `-${slug(names[e.logo - 1])}` : ""}.mp4`);
           return <button key={e.k} type="button" disabled={bajando >= 0} onClick={async () => {

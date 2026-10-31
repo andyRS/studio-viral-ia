@@ -121,3 +121,46 @@ Si una toma no tiene diálogo, omite "dialogo".`;
   if (!tomas.length) throw new Error("La IA no devolvió tomas. Vuelve a intentarlo.");
   return { tomas };
 }
+
+// Distribución (Facebook y YouTube + clips para TikTok y Reels): títulos, descripción, miniaturas, tráiler,
+// clips, llamada a la acción según la cuenta y plan de publicación. Solo propuestas: el usuario elige.
+export async function planDistribucion(input: any) {
+  const o: Outline = input?.outline;
+  const escenas = allScenes(o).map(sc => ({ id: sc.id, encabezado: sc.heading, resumen: sc.summary, tension: sc.tension }));
+  const perfil = input?.perfilCuenta || {};
+  const system = `Eres estratega de contenido para Facebook y YouTube (vídeos de 15-25 min) con clips derivados para TikTok, Reels y Shorts, en español latino neutro.
+Cuenta: ${perfil.handle ? `@${perfil.handle}` : "sin perfil"} · público: ${perfil.audience || "hispano"} · objetivo: ${perfil.objective || "crecer con historias que enganchan"}.
+${perfil.cta ? `Llamada a la acción de la cuenta: ${perfil.cta}.` : ""}${(perfil.contentRules || []).length ? `\nReglas de la cuenta (cúmplelas):\n- ${(perfil.contentRules as string[]).slice(0, 14).join("\n- ")}` : ""}
+Reglas: títulos con curiosidad real sin mentir ni exagerar lo que no pasa (nada de clickbait engañoso), menos de 70 caracteres; la descripción engancha en las 2 primeras líneas, resume sin destripar el final y no pide «like», «comenta» ni «comparte» (Meta penaliza el engagement bait); las miniaturas son conceptos visuales con un texto de 2-5 palabras; los clips son escenas que se entienden solas y terminan en tensión; el tráiler usa 3-5 escenas fuertes sin revelar el final.
+Responde SOLO JSON: {"titulos":["5 títulos"],"descripcion":"","etiquetas":["10-15 etiquetas"],"miniaturas":[{"concepto":"qué se ve","texto":"texto grande"}],"trailer":{"sceneIds":["ids"],"texto":"frase del narrador para el tráiler"},"clips":[{"sceneId":"id","titulo":"título del clip (va arriba en el vídeo)","texto":"texto para TikTok y Reels","hashtags":"#..."}],"cta":"llamada a la acción adecuada a la cuenta","plan":[{"dia":0,"red":"YouTube|Facebook|TikTok|Instagram|YouTube Shorts","pieza":"qué se publica"}]}`;
+  const raw = await askJson(system, JSON.stringify({ titulo: input?.title, idea: input?.idea, estilo: input?.style, duracion_min: o?.targetMinutes, escenas }));
+  const ids = new Set(escenas.map(e => e.id));
+  const str = (v: any, n = 600) => String(v ?? "").trim().slice(0, n);
+  const arr = (v: any) => (Array.isArray(v) ? v : []);
+  return {
+    at: new Date().toISOString(),
+    titulos: arr(raw?.titulos).map((t: any) => str(t, 100)).filter(Boolean).slice(0, 6),
+    descripcion: str(raw?.descripcion, 3000), etiquetas: arr(raw?.etiquetas).map((t: any) => str(t, 40)).filter(Boolean).slice(0, 20),
+    miniaturas: arr(raw?.miniaturas).map((m: any) => ({ concepto: str(m?.concepto, 300), texto: str(m?.texto, 60) })).filter((m: any) => m.concepto).slice(0, 4),
+    trailer: { sceneIds: arr(raw?.trailer?.sceneIds).map(String).filter((id: string) => ids.has(id)).slice(0, 6), texto: str(raw?.trailer?.texto, 300) },
+    clips: arr(raw?.clips).filter((c: any) => ids.has(String(c?.sceneId))).map((c: any) => ({ sceneId: String(c.sceneId), titulo: str(c.titulo, 90), texto: str(c.texto, 600), hashtags: str(c.hashtags, 200) })).slice(0, 12),
+    cta: str(raw?.cta, 300),
+    plan: arr(raw?.plan).map((p: any) => ({ dia: Math.max(0, Math.min(60, Math.round(Number(p?.dia) || 0))), red: str(p?.red, 30), pieza: str(p?.pieza, 200) })).filter((p: any) => p.pieza).slice(0, 30),
+  };
+}
+
+// Evaluación narrativa con rúbrica explicable (0-100 por criterio). Es una revisión creativa, no una predicción.
+export async function evaluarNarrativa(input: any) {
+  const o: Outline = input?.outline;
+  const criterios = input?.criterios as [string, string][];
+  const guion = allScenes(o).map((sc, i) => `${i + 1}. ${sc.heading} — ${sc.summary} (tensión ${sc.tension})${sc.script?.length ? `\n   ${sc.script.slice(0, 6).map(e => `${e.speaker ? e.speaker + ": " : ""}${e.text}`).join(" / ")}` : ""}`).join("\n");
+  const system = `Eres un editor de guion exigente. Evalúa este proyecto con una rúbrica de 0 a 100 por criterio, explicando el porqué con hechos concretos del guion y una mejora concreta y aplicable (qué escena cambiar y cómo). Sé honesto: un 90 es excepcional. No es una predicción de vistas, es una revisión creativa.
+Criterios: ${criterios.map(([id, l]) => `${id} = ${l}`).join("; ")}.
+Responde SOLO JSON: {"criterios":[{"id":"titulo","nota":0,"porque":"","mejora":""}],"resumen":"2-3 frases con lo más urgente"}`;
+  const raw = await askJson(system, JSON.stringify({ titulo: input?.title, idea: input?.idea, guion }));
+  const validos = new Set(criterios.map(([id]) => id));
+  const lista = (Array.isArray(raw?.criterios) ? raw.criterios : []).filter((c: any) => validos.has(String(c?.id)))
+    .map((c: any) => ({ id: String(c.id), nota: Math.max(0, Math.min(100, Math.round(Number(c.nota) || 0))), porque: String(c.porque || "").slice(0, 500), mejora: String(c.mejora || "").slice(0, 500) }));
+  if (!lista.length) throw new Error("La IA no devolvió la evaluación. Vuelve a intentarlo.");
+  return { at: new Date().toISOString(), criterios: lista, resumen: String(raw?.resumen || "").slice(0, 600) };
+}

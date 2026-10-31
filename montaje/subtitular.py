@@ -44,6 +44,12 @@ Opcionales:
                                número enorme en dorado abajo (Poppins + Lora, sin contorno, sombra suave)
   "musica_volumen": 0.05-0.4   volumen de la música de fondo (0.18 por defecto). El archivo lo pone
                                server.py en "musica_archivo"; se repite si es corto y baja sola cuando hablan.
+  "formato": "16:9"   proyecto largo (Facebook y YouTube): vídeo 1920x1080, subtítulos abajo y textos adaptados;
+               sin chats de WhatsApp («pantallas» se ignora en este formato).
+               Las versiones TikTok/Shorts salen en vertical 1080x1920 (la imagen al centro y fondo difuminado)
+               y «facebook» no se hace (el vídeo principal ya es para Facebook y YouTube).
+  "recortes": [{"desde": 3, "hasta": 6, "titulo": "El ángel detenido"}]   clips verticales sueltos para TikTok y Reels
+               (<salida>_clip_N.mp4) de los clips 3 a 6 (índices desde 0, ambos incluidos) con el título arriba.
   Un bloque vacío [] sirve para clips sin diálogo (tarjetas "Un año después...").
 Variables de entorno: FONT_DIR (carpeta con Poppins-Bold.ttf), WHISPER_MODEL (small por defecto).
 """
@@ -57,6 +63,11 @@ guion_path, out_mp4 = os.path.abspath(sys.argv[1]), os.path.abspath(sys.argv[2])
 clips = [os.path.abspath(c) for c in sys.argv[3:]]
 G = json.load(open(guion_path, encoding="utf-8"))
 assert len(G["clips"]) == len(clips), "un bloque de diálogo por clip"
+# Formato: vertical 9:16 (microdramas) o horizontal 16:9 (proyecto largo para Facebook y YouTube).
+HORIZ = str(G.get("formato", "")).strip() == "16:9"
+W, H = (1920, 1080) if HORIZ else (1080, 1920)
+RES, RESX = f"{W}:{H}", f"{W}x{H}"
+PW_, PH_ = round(W * 1.12 / 2) * 2, round(H * 1.12 / 2) * 2   # «punch-in» del momento fuerte
 tmp = tempfile.mkdtemp()
 # Los filtros de ffmpeg no aceptan rutas tipo "C:\..." (Windows): se trabaja dentro de tmp con
 # rutas relativas (fuente, textos y subtítulos copiados ahí). En Linux funciona igual.
@@ -102,7 +113,7 @@ def marca_de(clip, variantes):
 
 # Texto en pantalla: se parte en líneas que quepan en 1080 px (Poppins Bold mide ~0,6 em por letra)
 # y cada línea se centra por separado. Antes una frase larga se salía por los lados.
-ANCHO_UTIL = 960
+ANCHO_UTIL = 1500 if HORIZ else 960
 
 
 def lineas(texto, size, max_lineas=3):
@@ -157,7 +168,8 @@ def texto_izq(texto, size, color, x, y, extra=""):
 def chat_capas(de, mensajes, dur):
     """Chat de WhatsApp dibujado sobre el clip (arriba, sin tapar los subtítulos): cabecera verde con el
     contacto y burbujas que aparecen una a una, como en los virales. Legible siempre (no depende de la IA)."""
-    PX, PW, y0 = 70, 860, 430   # ancho 860: fuera de la columna de botones de TikTok/Instagram (derecha)   # debajo del gancho de texto (primeros 3 s) y encima de los subtítulos
+    PX, PW, y0 = 70, 860, 430
+    _ = 0   # ancho 860: fuera de la columna de botones de TikTok/Instagram (derecha)   # debajo del gancho de texto (primeros 3 s) y encima de los subtítulos
     de = "".join(c for c in str(de) if ord(c) < 0x2190).strip()
     capas = [f"drawbox=x={PX}:y={y0}:w={PW}:h=118:color=0x075E54@0.97:t=fill",
              texto_izq(de or "WhatsApp", 46, "white", PX + 40, y0 + 18),
@@ -273,7 +285,8 @@ for tj in G.get("tarjetas") or []:
         TARJETAS[k] = txt[:60]
 # La vida de hoy: chats de WhatsApp dibujados encima de su clip y clips con la voz por teléfono.
 PANTALLAS = {}
-for pt in G.get("pantallas") or []:
+# En 16:9 (proyecto largo) no se dibujan chats de WhatsApp: no se usan en ese formato.
+for pt in ([] if HORIZ else (G.get("pantallas") or [])):
     try:
         k = int(pt.get("clip"))
     except (TypeError, ValueError, AttributeError):
@@ -492,14 +505,14 @@ def bgr(h):
 
 ass = ["""[Script Info]
 ScriptType: v4.00+
-PlayResX: 1080
-PlayResY: 1920
+PlayResX: """ + str(W) + """
+PlayResY: """ + str(H) + """
 WrapStyle: 0
 ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Sub,Poppins,84,&H00FFFFFF,&H00FFFFFF,&H00000000,&H90000000,1,0,0,0,100,100,1,0,1,7,3,2,130,130,470,1
+Style: Sub,Poppins,""" + ("68" if HORIZ else "84") + """,&H00FFFFFF,&H00FFFFFF,&H00000000,&H90000000,1,0,0,0,100,100,1,0,1,""" + ("5,2,2,260,260,64" if HORIZ else "7,3,2,130,130,470") + """,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -657,15 +670,15 @@ if ANTERIOR:
     ent, f_rec, c_rec = [], "", ""
     for k, (s0, e0) in enumerate(RECAP_PIEZAS):
         ent += ["-ss", f"{s0:.2f}", "-t", f"{e0 - s0:.2f}", "-i", ANTERIOR]
-        f_rec += (f"[{k}:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,fps=24,setpts=PTS-STARTPTS[rv{k}];"
+        f_rec += (f"[{k}:v]scale={RES}:force_original_aspect_ratio=increase,crop={RES},setsar=1,fps=24,setpts=PTS-STARTPTS[rv{k}];"
                   f"[{k}:a]aresample=48000,aformat=channel_layouts=stereo,asetpts=PTS-STARTPTS,afade=t=in:d=0.04,afade=t=out:st={max(0, e0 - s0 - 0.08):.2f}:d=0.08[ra{k}];")
         c_rec += f"[rv{k}][ra{k}]"
     # Arriba: «Anteriormente...» y, si la app lo manda, una frase que resume la parte anterior.
-    capas = ["hue=s=0", "eq=contrast=1.08", "drawbox=x=0:y=0:w=iw:h=" + ("560" if RESUMEN else "330") + ":color=black@0.45:t=fill",
-             texto_dt("Anteriormente...", 76, "white", 170, 5)]
+    capas = ["hue=s=0", "eq=contrast=1.08", "drawbox=x=0:y=0:w=iw:h=" + (("300" if RESUMEN else "190") if HORIZ else ("560" if RESUMEN else "330")) + ":color=black@0.45:t=fill",
+             texto_dt("Anteriormente...", 76, "white", 60 if HORIZ else 170, 5)]
     if RESUMEN:
         sz, ls = ajustar(RESUMEN, 54, 40)
-        yy = 290
+        yy = 160 if HORIZ else 290
         for ln in ls[:3]:
             capas.append(texto_dt(ln, sz, ACENTO, yy, 4)); yy += int(sz * 1.25)
     f_rec += (f"{c_rec}concat=n={len(RECAP_PIEZAS)}:v=1:a=1[rc][a];[rc]" + ",".join(capas)
@@ -680,13 +693,13 @@ for ci, c in enumerate(clips):
         fondo = os.path.join(tmp, f"tarjeta{ci}.png")
         try:
             run(["ffmpeg", "-v", "error", "-y", "-ss", f"{recortes[ci][0] + 0.1:.2f}", "-i", c, "-frames:v", "1",
-                 "-vf", "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=24:2,eq=brightness=-0.32", fondo])
+                 "-vf", f"scale={RES}:force_original_aspect_ratio=increase,crop={RES},boxblur=24:2,eq=brightness=-0.32", fondo])
             src = ["-loop", "1", "-framerate", "24", "-t", str(CARD_S), "-i", fondo]
         except subprocess.CalledProcessError:
-            src = ["-f", "lavfi", "-i", f"color=c=black:s=1080x1920:r=24:d={CARD_S}"]
+            src = ["-f", "lavfi", "-i", f"color=c=black:s={RESX}:r=24:d={CARD_S}"]
         run(["ffmpeg", "-v", "error", "-y", *src,
              "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", str(CARD_S),
-             "-vf", "scale=1080:1920,setsar=1,fps=24," + ("fade=t=in:st=0:d=0.12:color=white," if PRO_CAMARA else "")
+             "-vf", f"scale={RES},setsar=1,fps=24," + ("fade=t=in:st=0:d=0.12:color=white," if PRO_CAMARA else "")
              + texto_dt(TARJETAS[ci], 76, "white", "'(h-text_h)/2+30*pow(max(0,1-t/0.35),3)'", 5, ":alpha='min(1,t/0.3)'", FUENTE_TIT) + ",format=yuv420p",
              "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", card])
         segmento(card, segundos=CARD_S)
@@ -718,20 +731,20 @@ for ci, c in enumerate(clips):
     if GAIN_RGB[ci] is not None:
         gr, gg, gb = GAIN_RGB[ci]
         col = f",colorchannelmixer=rr={gr:.3f}:gg={gg:.3f}:bb={gb:.3f}"
-    base = f"setpts=(PTS-STARTPTS)/{VEL:.3f},{dl}scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,fps=24{col}"
+    base = f"setpts=(PTS-STARTPTS)/{VEL:.3f},{dl}scale={RES}:force_original_aspect_ratio=increase,crop={RES},setsar=1,fps=24{col}"
     if PUNCH[ci] is not None:
         T = PUNCH[ci]
         fc += (f"[{n}:v]split=2[p{n}a][p{n}b];[p{n}a]trim=start={va:.3f}:end={T:.3f},{base}[q{n}a];"
-               f"[p{n}b]trim=start={T:.3f}:end={vb:.3f},{base},scale=1210:2150,crop=1080:1920:65:'(ih-1920)*0.42',setsar=1[q{n}b];"
+               f"[p{n}b]trim=start={T:.3f}:end={vb:.3f},{base},scale={PW_}:{PH_},crop={RES}:{(PW_ - W) // 2}:'(ih-{H})*0.42',setsar=1[q{n}b];"
                f"[q{n}a][q{n}b]concat=n=2:v=1:a=0[r{n}];[r{n}]")
     else:
         fc += f"[{n}:v]trim=start={va:.3f}:end={vb:.3f},{base},"
     extra_v = []
     if PRO_CAMARA and ci == FUERTE:   # temblor de 0,4 s en el golpe de la revelación
-        extra_v.append("scale=1120:1992,crop=1080:1920:'20+if(lt(t,0.4),14*sin(t*80)*(1-t/0.4),0)':'36+if(lt(t,0.4),10*cos(t*95)*(1-t/0.4),0)',setsar=1")
+        extra_v.append(f"scale={W + 40}:{H + 72},crop={RES}:'20+if(lt(t,0.4),14*sin(t*80)*(1-t/0.4),0)':'36+if(lt(t,0.4),10*cos(t*95)*(1-t/0.4),0)',setsar=1")
     if PRO_CAMARA and HABLA0[ci].lower().startswith("narrador"):   # movimiento lento (Ken Burns) en el Narrador
         nf = max(1, int((vb - va) / VEL * 24))
-        extra_v.append(f"zoompan=z='1+0.06*on/{nf}':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920:fps=24,setsar=1")
+        extra_v.append(f"zoompan=z='1+0.06*on/{nf}':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={RESX}:fps=24,setsar=1")
     fc += ",".join(["null"] + extra_v) + f"{chat}{ajusta((vb - va) / VEL)}[v{n}];"
     gan = f"volume={GANANCIA[ci]:.2f}dB," if abs(GANANCIA[ci]) > 0.3 else ""
     fc += (f"[{n}:a]atrim=start={a:.3f}:end={b:.3f},asetpts=PTS-STARTPTS,{f'atempo={VEL:.3f},' if VEL > 1 else ''}{tel}{gan}aresample=48000,aformat=channel_layouts=stereo,"
@@ -745,14 +758,14 @@ if G.get("cierre"):
     end = os.path.join(tmp, "end.mp4")
     last = os.path.join(tmp, "last.png")
     run(["ffmpeg", "-v", "error", "-y", "-ss", f"{max(0, recortes[-1][1] - 0.3):.2f}", "-i", clips[-1], "-frames:v", "1",
-         "-vf", "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920", last])
+         "-vf", f"scale={RES}:force_original_aspect_ratio=increase,crop={RES}", last])
     cta = str(G.get("cierre_cta") or "").strip()
     if re.match(r"(?i)llamada final", cta):   # se coló el rótulo del campo en vez de la frase
         cta = ""
     s1, l1 = ajustar(G["cierre"], 110, 72)
     s2, l2 = ajustar(cta, 64, 44) if cta else (0, [])
     alto = len(l1) * int(s1 * 1.2) + (40 + len(l2) * int(s2 * 1.25) if l2 else 0)
-    y = 960 - alto // 2
+    y = H // 2 - alto // 2
     capas = ["boxblur=20:2", "eq=brightness=-0.35"]
     for ln in l1:
         capas.append(texto_dt(ln, s1, "white", y, 6, "", FUENTE_TIT)); y += int(s1 * 1.2)
@@ -770,8 +783,8 @@ zona = None
 def a_salida(caja, W0, H0):
     """Zona de un clip (en sus píxeles) en el vídeo final 1080x1920 (mismo escalado y recorte centrado)."""
     x, y, w, h = caja
-    f = max(1080 / W0, 1920 / H0)
-    ox, oy = (W0 * f - 1080) / 2, (H0 * f - 1920) / 2
+    f = max(W / W0, H / H0)
+    ox, oy = (W0 * f - W) / 2, (H0 * f - H) / 2
     return (x * f - ox, y * f - oy, w * f, h * f)
 
 
@@ -803,7 +816,7 @@ if zona:
             n0x, n0y, n1x, n1y = nucleo_alfa(ruta, lw, lh)
         esc = max((zw + 8) / ((n1x - n0x) * lw), (zh + 8) / ((n1y - n0y) * lh))
         ancho, alto = lw * esc, lh * esc
-        x = max(0, min(1080 - ancho, zx + zw / 2 - ((n0x + n1x) / 2) * ancho))
+        x = max(0, min(W - ancho, zx + zw / 2 - ((n0x + n1x) / 2) * ancho))
         y = zy + zh / 2 - ((n0y + n1y) / 2) * alto
         png = f"marca{k_logo + 1}.png"
         run(["ffmpeg", "-v", "error", "-y", "-i", ruta, "-vf", "format=rgba", png])
@@ -817,7 +830,7 @@ if LOOK:
 H0 = RECAP_S
 alpha = (f"alpha='if(lt(t,{H0 + 0.2:.2f}),max(0,(t-{H0:.2f})/0.2),if(lt(t,{H0 + 2.6:.2f}),1,max(0,1-(t-{H0 + 2.6:.2f})/0.4)))':enable='between(t,{H0:.2f},{H0 + 3:.2f})'"
          if PRO_CAMARA else f"alpha='if(lt(t,{H0 + 2.6:.2f}),1,max(0,1-(t-{H0 + 2.6:.2f})/0.4))':enable='between(t,{H0:.2f},{H0 + 3:.2f})'")
-y = 205
+y = 90 if HORIZ else 205
 gancho = G.get("gancho", [])
 size = min([ajustar(line, 66, 46)[0] for line in gancho] or [66])   # las dos líneas, del mismo tamaño
 for k, line in enumerate(gancho):
@@ -917,7 +930,7 @@ for png, *_ in LOGOS:
 if SFX_IDX:   # pista de efectos: va la última, después de los logos
     fc = fc.replace("[sfxin]", f"[{len([x for x in inputs if x == '-i'])}:a]")
     inputs += ["-i", "efectos.wav"]
-progreso(70, f"Codificando el vídeo final 1080x1920 ({mmss(total)}) con {'la GPU (NVENC)' if VCODEC[1] == 'h264_nvenc' else 'x264'}")
+progreso(70, f"Codificando el vídeo final {RESX} ({mmss(total)}) con {'la GPU (NVENC)' if VCODEC[1] == 'h264_nvenc' else 'x264'}")
 # Dos versiones (dos logos): una sola pasada que escribe <salida>.mp4 y <salida>_2.mp4.
 salidas = [("[v]", "[a]", out_mp4)]
 if len(LOGOS) > 1:
@@ -941,7 +954,42 @@ if enc.wait() != 0:
 # Portada fija (mismo diseño en todas las partes): fotograma limpio de una escena (sin subtítulos ni
 # gancho), franja casi negra arriba que se funde con la imagen y zona oscura abajo detrás de «PARTE N».
 P = G.get("portada") if isinstance(G.get("portada"), dict) else None
-if P:
+if P and HORIZ:
+    # Miniatura 16:9 (YouTube y Facebook): fotograma limpio, degradado oscuro a la izquierda, la frase grande
+    # a la izquierda y la serie arriba; «PARTE N» en dorado si la hay.
+    try:
+        k = min(max(int(P.get("clip", round(len(clips) * 0.35))), 0), len(clips) - 1)
+        a, b = recortes[k]
+        foto = os.path.join(tmp, "portada_base.png")
+        run(["ffmpeg", "-v", "error", "-y", "-ss", f"{a + (b - a) * 0.45:.2f}", "-i", clips[k], "-frames:v", "1",
+             "-vf", f"scale={RES}:force_original_aspect_ratio=increase,crop={RES},eq=contrast=1.08:saturation=1.12", foto])
+        sombra = ":shadowcolor=black@0.7:shadowx=0:shadowy=6:borderw=4:bordercolor=black@0.6"
+        def texto_m(t, fuente, size, color, x, y):
+            TXT_N[0] += 1
+            f = f"txt{TXT_N[0]}.txt"
+            open(f, "w", encoding="utf-8").write(t)
+            return f"drawtext=fontfile={fuente}:textfile={f}:fontsize={size}:fontcolor={color}:x={x}:y={y}{sombra}"
+        frase = " ".join(str(x) for x in (P.get("frase") or []) if str(x).strip()) or str(P.get("serie") or "")
+        ANCHO_UTIL = 1000
+        size, ls = ajustar(frase, 120, 76)
+        capas = []
+        if P.get("serie"):
+            capas.append(texto_m(str(P["serie"]).upper()[:48], FONT_F, 44, ACENTO, 90, 90))
+        y = H - 120 - len(ls[:3]) * int(size * 1.12)
+        for j, ln in enumerate(ls[:3]):
+            capas.append(texto_m(ln, LORA_F, size, "white" if j < len(ls[:3]) - 1 else "0xF2C14E", 90, y)); y += int(size * 1.12)
+        if P.get("parte"):
+            capas.append(texto_m(f"PARTE {P['parte']}", FONT_F, 64, "0xF2C14E", "w-text_w-90", 90))
+        degradado = (f"color=c=black:s={RESX},format=rgba,"
+                     "geq=r=0:g=0:b=0:a='255*min(0.92,max(0.9*pow(max(0,1-X/1250),1.3),0.75*max(0,(Y-560)/520)))'")
+        portada = os.path.splitext(out_mp4)[0] + "_portada.jpg"
+        run(["ffmpeg", "-v", "error", "-y", "-i", foto, "-f", "lavfi", "-i", degradado, "-filter_complex",
+             "[0:v][1:v]overlay=0:0," + ",".join(capas) + ",scale=1280:720[v]", "-map", "[v]", "-frames:v", "1", "-q:v", "2", portada])
+        ANCHO_UTIL = 1500
+        progreso(99, "Miniatura 16:9 lista (1280x720)")
+    except Exception as e:
+        progreso(99, f"No se pudo crear la miniatura ({str(e)[:80]})")
+elif P:
     try:
         k = int(P.get("clip", round(len(clips) * 0.35)))
         k = min(max(k, 0), len(clips) - 1)
@@ -952,7 +1000,7 @@ if P:
         dl = f"delogo=x={caja[0]}:y={caja[1]}:w={caja[2]}:h={caja[3]}," if caja else ""
         run(["ffmpeg", "-v", "error", "-y", "-ss", f"{a + (b - a) * 0.45:.2f}", "-i", clips[k], "-frames:v", "1",
              # La toma se baja (260 px por defecto) para que las caras queden en la zona clara, bajo la franja oscura.
-             "-vf", f"{dl}scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,"
+             "-vf", f"{dl}scale={RES}:force_original_aspect_ratio=increase,crop={RES},"
                     f"crop=1080:{1920 - int(P.get('bajar', 260))}:0:0,pad=1080:1920:0:{int(P.get('bajar', 260))}:black", foto])
         sombra = ":shadowcolor=black@0.55:shadowx=0:shadowy=6"
         def texto(t, fuente, size, color, y):
@@ -1104,36 +1152,50 @@ def tarjeta_de(video, t, textos, dur, path):
     foto = path + ".png"
     run(["ffmpeg", "-v", "error", "-y", "-ss", f"{max(0, t):.2f}", "-i", video, "-frames:v", "1",
          "-vf", "boxblur=24:2,eq=brightness=-0.35", foto])
-    capas, y = [], 860
+    capas, y = [], int(H * 0.45)
     for k, (txt, size, color) in enumerate(textos):
         for ln in lineas(txt, size, 2):
             capas.append(texto_dt(ln, size, color, y, 5)); y += int(size * 1.25)
         y += 18
     run(["ffmpeg", "-v", "error", "-y", "-loop", "1", "-framerate", "24", "-t", f"{dur}", "-i", foto,
          "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", f"{dur}",
-         "-vf", "scale=1080:1920,setsar=1," + ",".join(capas) + ",format=yuv420p", *VCODEC, "-pix_fmt", "yuv420p",
+         "-vf", f"scale={RES},setsar=1," + ",".join(capas) + ",format=yuv420p", *VCODEC, "-pix_fmt", "yuv420p",
          "-c:a", "aac", "-b:a", "192k", "-shortest", path])
     return path
 
 
-def unir(trozos, destino, etiqueta=""):
+def unir(trozos, destino, etiqueta="", titulo="", pie=""):
     """Une tramos [(vídeo, inicio, fin)] (fin=None: hasta el final) en un MP4, opcionalmente con una
-    etiqueta arriba los primeros 2,5 s («Parte 2/3»)."""
+    etiqueta arriba los primeros 2,5 s («Parte 2/3»). Con el vídeo en 16:9 sale VERTICAL 1080x1920 para
+    TikTok, Reels y Shorts: el centro de la imagen (4:3, con los subtítulos) en medio, el mismo vídeo
+    difuminado de fondo, el título arriba y una línea abajo («Película completa en el perfil»)."""
     ent, fcv, cat = [], "", ""
     for k, (v, a, b) in enumerate(trozos):
         ent += ["-ss", f"{a:.3f}", *(["-t", f"{b - a:.3f}"] if b is not None else []), "-i", v]
-        fcv += (f"[{k}:v]scale=1080:1920,setsar=1,fps=24,setpts=PTS-STARTPTS[v{k}];"
+        fcv += (f"[{k}:v]scale={RES},setsar=1,fps=24,setpts=PTS-STARTPTS[v{k}];"
                 f"[{k}:a]aresample=48000,aformat=channel_layouts=stereo,asetpts=PTS-STARTPTS[a{k}];")
         cat += f"[v{k}][a{k}]"
     fcv += f"{cat}concat=n={len(trozos)}:v=1:a=1[vc][a]"
-    fcv += (";[vc]drawbox=x=40:y=60:w=330:h=96:color=black@0.55:t=fill:enable='lt(t,2.5)',"
+    if HORIZ:
+        capas_t = []
+        if titulo:
+            sz, ls = ajustar(titulo, 76, 52)
+            y_ = 280 - len(ls) * int(sz * 1.2) // 2
+            for ln in ls:
+                capas_t.append(texto_dt(ln, sz, "white", y_, 5)); y_ += int(sz * 1.2)
+        if pie:
+            capas_t.append(texto_dt(pie, 46, ACENTO, 1500, 4))
+        fcv += (";[vc]split[vb][vf];[vb]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=28:3,eq=brightness=-0.3[vbg];"
+                "[vf]crop=1440:1080,scale=1080:810,setsar=1[vfg];[vbg][vfg]overlay=0:555" + ("," + ",".join(capas_t) if capas_t else "") + "[vz]")
+    src = "[vz]" if HORIZ else "[vc]"
+    fcv += (f";{src}drawbox=x=40:y=60:w=330:h=96:color=black@0.55:t=fill:enable='lt(t,2.5)',"
             + texto_dt(etiqueta, 56, "0xFFD23F", 78, 3, ":enable='lt(t,2.5)'").replace("x=(w-text_w)/2", "x=40+(330-text_w)/2") + "[v]"
-            if etiqueta else ";[vc]null[v]")
+            if etiqueta else f";{src}null[v]")
     run(["ffmpeg", "-v", "error", "-y", *ent, "-filter_complex", fcv, "-map", "[v]", "-map", "[a]", *VCODEC,
          "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", destino])
 
 
-if VERSIONES:
+if VERSIONES or G.get("recortes"):
     try:
         fin_util = total - (3 if G.get("cierre") else 0)
         cortes = sorted(INICIO_CLIP[ci] + DUR_CLIP[ci] for ci in range(len(clips)))   # final de cada clip
@@ -1154,7 +1216,7 @@ if VERSIONES:
                 fuerte, mejor = ci, e_
         for _, _, ruta in salidas:
             base = os.path.splitext(ruta)[0]
-            if "facebook" in VERSIONES and fuerte is not None:
+            if "facebook" in VERSIONES and fuerte is not None and not HORIZ:
                 t0 = INICIO_CLIP[fuerte]; t1 = t0 + min(3.2, DUR_CLIP[fuerte])
                 card = tarjeta_de(ruta, max(0, RECAP_S) + 0.2, [("Horas antes...", 84, "white")], 1.1, os.path.join(tmp, f"c_fb{len(base)}.mp4"))
                 unir([(ruta, t0, t1), (card, 0, None), (ruta, 0, None)], base + "_facebook.mp4")
@@ -1176,16 +1238,29 @@ if VERSIONES:
                     if b_ is not None:   # cierra con «Sigue en la Parte k+1/n»
                         card = tarjeta_de(ruta, b_ - 0.2, [("Continuará...", 92, "white"), (f"Sigue en la Parte {k + 2}/{n_p}", 60, "0xFFD23F")], 1.6, os.path.join(tmp, f"c_tt{k}_{len(base)}.mp4"))
                         trozos.append((card, 0, None))
-                    unir(trozos, base + f"_tiktok_{k + 1}.mp4", f"Parte {k + 1}/{n_p}" if k else "")
+                    unir(trozos, base + f"_tiktok_{k + 1}.mp4", f"Parte {k + 1}/{n_p}" if k else "", str(G.get("titulo") or ""), "Completa en el perfil" if HORIZ else "")
                 progreso(99, f"Versión TikTok: {n_p} partes de ~{fin_util / n_p:.0f} s cortadas entre clips")
             if "shorts" in VERSIONES:
-                if total <= 59:
+                if total <= 59 and not HORIZ:
                     shutil.copy(ruta, base + "_shorts.mp4")
+                elif total <= 59:
+                    unir([(ruta, 0, None)], base + "_shorts.mp4", "", str(G.get("titulo") or ""), "Completa en el perfil")
                 else:
                     c = max((c for c in cortes if c <= 54), default=min(54.0, fin_util))
                     card = tarjeta_de(ruta, c - 0.2, [("Continuará...", 92, "white"), ("Historia completa en el perfil", 56, "0xFFD23F")], 3, os.path.join(tmp, f"c_sh{len(base)}.mp4"))
-                    unir([(ruta, 0, c), (card, 0, None)], base + "_shorts.mp4")
+                    unir([(ruta, 0, c), (card, 0, None)], base + "_shorts.mp4", "", str(G.get("titulo") or ""), "Completa en el perfil" if HORIZ else "")
                 progreso(99, f"Versión Shorts: {min(total, 59):.0f} s")
+            # Recortes: clips verticales sueltos (TikTok y Reels) de un tramo de clips, con su título arriba.
+            for k, r in enumerate([r for r in (G.get("recortes") or []) if isinstance(r, dict)][:12]):
+                try:
+                    d_, h_ = max(0, int(r.get("desde", 0))), min(len(clips) - 1, int(r.get("hasta", r.get("desde", 0))))
+                    if h_ < d_:
+                        continue
+                    a_, b_ = INICIO_CLIP[d_], INICIO_CLIP[h_] + DUR_CLIP[h_]
+                    unir([(ruta, a_, b_)], base + f"_clip_{k + 1}.mp4", "", str(r.get("titulo") or ""), str(r.get("pie") or ("Película completa en el perfil" if HORIZ else "")))
+                    progreso(99, f"Clip {k + 1}: clips {d_ + 1}-{h_ + 1} ({b_ - a_:.0f} s){' en vertical' if HORIZ else ''}")
+                except Exception as e:
+                    progreso(99, f"No se pudo crear el clip {k + 1} ({str(e)[:80]})")
     except Exception as e:   # las versiones nunca impiden entregar el vídeo principal
         progreso(99, f"No se pudieron crear las versiones por red ({str(e)[:100]})")
 

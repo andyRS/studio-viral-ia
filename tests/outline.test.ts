@@ -1,6 +1,7 @@
 // Prueba de la lógica del proyecto largo (sin red ni navegador): npm test
 import { validarCita, validarCitas } from "../src/lib/biblia";
 import { bibliaTexto } from "../src/lib/personajes";
+import { capitulos, guionDeActo } from "../src/lib/distribucion";
 import { dividirEscena, duracionClip, partirToma, planProduccion, PERFILES_BASE, promptsDeToma } from "../src/lib/tomas";
 import { canonAvisos, detectarEscenarios, lugarDe, normOutline, replaceNode, snapshot, restore, saveScript, rhythm, isProtected, diffLines, lineOf, mapNode, allScenes } from "../src/lib/outline";
 let fallos = 0;
@@ -69,4 +70,21 @@ let pl = planProduccion(c, flow);
 ok(pl.creditos === null && pl.usd === null && pl.tomas > 0, "sin tarifa del usuario no hay coste inventado");
 pl = planProduccion(c, { ...flow, creditosSegundo: 2, creditosImagen: 0, usdCredito: 0.01, reintentos: 1 });
 ok(pl.creditos === pl.segundosClips * 2 && pl.usd === Math.round(pl.creditos! * 0.01 * 100) / 100, "con tarifa, el coste sale de los segundos generados");
+
+// Fase 5: guion de montaje por acto y capítulos
+let lp = normOutline({ acts: [
+  { title: "Acto I", sequences: [{ title: "El ayuno", scenes: [{ heading: "EXT. RÍO TIGRIS - AMANECER", summary: "Daniel ora.", tension: 4, minutes: 1 }, { heading: "EXT. CIELO - VISIÓN", summary: "Tres semanas después, el ángel lucha contra el príncipe de Persia.", tension: 9, minutes: 1 }] }] },
+  { title: "Acto II", sequences: [{ title: "La respuesta", scenes: [{ heading: "EXT. RÍO", summary: "El ángel llega.", tension: 6, minutes: 1 }] }] }] }, "s", 3, 20);
+const [e1, e2, e3] = allScenes(lp);
+lp = mapNode(lp, e1.id, n => ({ ...n, tomas: dividirEscena({ ...e1, script: escena.script }, flow) }));
+lp = mapNode(lp, e2.id, n => ({ ...n, tomas: dividirEscena({ ...e2, script: [{ type: "dialogo", speaker: "Ángel", text: "El príncipe de Persia se me opuso." }] }, flow) }));
+lp = mapNode(lp, e3.id, n => ({ ...n, tomas: dividirEscena({ ...e3, script: [{ type: "accion", text: "Llega la luz." }] }, flow) }));
+const g1 = guionDeActo(lp, 0, { titulo: "Daniel", characters: [{ name: "Daniel", subtitleColor: "#7fd1ff" }], gancho: ["Veintiún días", "sin respuesta"] });
+const g2 = guionDeActo(lp, 1, { titulo: "Daniel", characters: [] });
+ok(g1.formato === "16:9" && g1.clips.length === 4 && g1.colores.DANIEL === "7FD1FF" && g1.colores["ÁNGEL"] === "FFFFFF", "guion del acto: una entrada por toma, colores en mayúsculas y 16:9");
+ok(!!g1.gancho && !("cierre" in g1) && g2.cierre === "FIN" && !("gancho" in g2), "gancho solo en el primer acto y «FIN» solo en el último");
+ok(g1.tarjetas?.[0]?.antes === 3 && /Tres semanas después/i.test(g1.tarjetas[0].texto), "salto de tiempo entre escenas como tarjeta");
+ok(g1.recortes?.length === 1 && g1.recortes[0].desde === 3, "clip vertical de la escena de más tensión");
+const cp = capitulos(lp);
+ok(cp[0].startsWith("0:00 ") && cp.length === 2, "capítulos de YouTube empiezan en 0:00, uno por secuencia");
 if (fallos) { console.log(`${fallos} prueba(s) fallaron`); process.exit(1); }

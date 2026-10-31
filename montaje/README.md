@@ -32,6 +32,8 @@ pone el gancho los primeros 3 s, las tarjetas y la tarjeta final, y quita la mar
 - `marca` (opcional): `"dola"` o `"pavo"`. Reescala cada clip a la resolución de esa herramienta (Dola 720x1280, Pavo 704x1280) y borra su marca de agua, aunque algún clip venga en otra resolución. Para otra marca, `delogo` con coordenadas propias (`x=..:y=..:w=..:h=..`, se valida).
 - `cierre` + `cierre_cta` (opcionales): tarjeta final de 3 s sobre el último cuadro difuminado y oscurecido; `cierre` en blanco grande ("Continuará..." o "FIN" en el último episodio) y `cierre_cta` en amarillo debajo ("Comenta PARTE 2", "Escribe AMÉN"). Los emojis se quitan porque la fuente no los dibuja.
 - v2: los bloques de subtítulos ya nunca se enciman.
+- `formato: "16:9"` (proyecto largo para Facebook y YouTube): vídeo 1920x1080, subtítulos abajo, gancho arriba, sin chats de WhatsApp y miniatura 1280x720 (`<salida>_portada.jpg`). Se monta un acto por trabajo (hasta 80 clips).
+- `recortes: [{"desde": 3, "hasta": 6, "titulo": "..."}]`: clips verticales 1080x1920 (`<salida>_clip_N.mp4`) para TikTok y Reels, con la imagen al centro, fondo difuminado, título arriba y «Película completa en el perfil» abajo.
 
 ## Uso por línea de comandos
 ```
@@ -49,6 +51,7 @@ Chrome pide una vez permiso para que la página acceda a la red local: hay que p
 - `GET /salud` → `{"ok": true}`
 - `POST /trabajos` (multipart, mismos campos y autorización que `/montar`) → `{"id": "..."}` al instante. Es lo que usa la app.
 - `GET /trabajos/{id}?desde=N` → estado en vivo `{"estado","pct","paso","log","seq","error"}`. Espera hasta 20 s a que haya un paso nuevo (la página ve el montaje en vivo y la conexión abierta evita que Fly apague la máquina a mitad).
+- `POST /unir` (solo en el PC, cabecera `X-Montaje-Local: 1`): campos `partes` (2-12 actos montados, en orden) → la película completa en un MP4, sin recodificar.
 - `GET /trabajos/{id}/video` → el vídeo terminado; se guarda 30 min. El id (aleatorio, 128 bits) hace de llave, así un montaje largo no depende del pase de 15 min.
 - Un montaje a la vez; los demás quedan «en cola». `subtitular.py` informa su avance con líneas `PROGRESO <pct> <mensaje>`.
 - Velocidad: `WHISPER_MODEL=base` y `X264_PRESET=veryfast` (en el Dockerfile). Para ir aún más rápido, una máquina con más CPU: en `fly.toml`, `cpu_kind = "performance"`.

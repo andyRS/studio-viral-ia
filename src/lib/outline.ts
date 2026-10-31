@@ -31,6 +31,8 @@ export type Outline = {
   id?: string; seriesId: string; structure: 3 | 5; targetMinutes: number; acts: OutlineAct[];
   history?: OutlineSnapshot[]; updatedAt?: string; canon?: Canon; escenarios?: Escenario[];
   produccion?: import("./tomas").Produccion;   // fase 4: motor elegido, perfiles y tarifas
+  distribucion?: import("./distribucion").Distribucion;   // fase 5: títulos, clips y plan de publicación
+  evaluacion?: import("./distribucion").Evaluacion;       // fase 5: rúbrica narrativa
 };
 export const NIVELES: Record<Nivel, string> = {
   textual: "Estrictamente textual: solo lo que dice el texto; cada escena con su pasaje",

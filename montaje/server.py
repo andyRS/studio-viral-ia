@@ -63,7 +63,7 @@ def _gpu() -> str:
 
 GPU = _gpu()
 HERE = os.path.dirname(os.path.abspath(__file__))
-MAX_CLIPS = 24
+MAX_CLIPS = 80   # proyecto largo: se monta por actos (hasta 80 tomas cada uno)
 MAX_CLIP_BYTES = 200 * 1024 * 1024
 MAX_TOTAL_BYTES = 2 * 1024 * 1024 * 1024
 MAX_SCRIPT_BYTES = 1024 * 1024
@@ -98,7 +98,7 @@ def autorizado(authorization: str) -> bool:
 @app.get("/salud")
 def salud():
     # «carpeta»: desde dónde corre el montaje del PC (para ver si es la copia actualizada).
-    return {"ok": True, "local": LOCAL, "gpu": GPU, "musica": True, "musica_modo": True, "anterior": True, "recorte": True, "portada": True, "pavo_720": True, "comprimir": LOCAL, "mejorar": LOCAL, "quitar_marca": LOCAL, "logo_propio": True, "dos_logos": True, "borrar_ia": LOCAL, "pro": True, "versiones": True, "revision": True, "velocidad": True, "resumen": True, "pantallas": True, **({"carpeta": os.path.dirname(HERE)} if LOCAL else {})}
+    return {"ok": True, "local": LOCAL, "gpu": GPU, "musica": True, "musica_modo": True, "anterior": True, "recorte": True, "portada": True, "pavo_720": True, "comprimir": LOCAL, "mejorar": LOCAL, "quitar_marca": LOCAL, "logo_propio": True, "dos_logos": True, "borrar_ia": LOCAL, "pro": True, "versiones": True, "revision": True, "velocidad": True, "resumen": True, "pantallas": True, "horizontal": True, "recortes": True, "unir": LOCAL, **({"carpeta": os.path.dirname(HERE)} if LOCAL else {})}
 
 
 # ---------- Trabajos en segundo plano ----------
@@ -130,7 +130,7 @@ def _ejecutar(job, gpath, out, paths, work):
                     _, pct, msg = (linea.rstrip().split(" ", 2) + [""])[:3]
                     log = (job["log"] + [msg])[-40:]
                     _avisar(job, pct=int(pct), paso=msg, log=log)
-                if time.time() - inicio > 1800:
+                if time.time() - inicio > 1800 + 45 * len(paths):   # los actos largos tienen más tiempo
                     proc.kill(); break
             proc.wait(); lector.join(5)
             if proc.returncode != 0 or not os.path.exists(out):
@@ -162,6 +162,9 @@ def _extras(out):
         k = 1
         while os.path.exists(f"{pre}_tiktok_{k}.mp4"):
             res.append({"red": "tiktok", "parte": k, "logo": logo, "archivo": f"{pre}_tiktok_{k}.mp4"}); k += 1
+        k = 1
+        while os.path.exists(f"{pre}_clip_{k}.mp4"):   # recortes verticales (TikTok y Reels) del proyecto largo
+            res.append({"red": "clip", "parte": k, "logo": logo, "archivo": f"{pre}_clip_{k}.mp4"}); k += 1
     return res
 
 
@@ -368,6 +371,34 @@ async def comprimir(video: UploadFile = File(...), calidad: str = "revisar", x_m
         shutil.rmtree(work, True)
         raise
     return FileResponse(out, media_type="video/mp4", filename=f"{nombre}-{calidad}.mp4", background=BackgroundTask(shutil.rmtree, work, True))
+
+
+# Une los actos ya montados en la película completa (mismo códec: copia directa, sin recodificar).
+@app.post("/unir")
+async def unir_actos(partes: List[UploadFile] = File(...), x_montaje_local: str = Header(default="")):
+    if not LOCAL or not x_montaje_local:
+        raise HTTPException(403, "Solo disponible en el montaje de este PC")
+    if not 2 <= len(partes) <= 12:
+        raise HTTPException(400, "Sube entre 2 y 12 actos, en orden")
+    work = tempfile.mkdtemp(prefix="unir_")
+    out = os.path.join(work, "pelicula.mp4")
+    try:
+        lista = os.path.join(work, "lista.txt")
+        with open(lista, "w", encoding="utf-8") as f:
+            for i, p in enumerate(partes):
+                ruta = os.path.join(work, f"acto{i}.mp4")
+                await save_upload(p, ruta, MAX_COMPRIMIR)
+                f.write(f"file 'acto{i}.mp4'\n")
+        r = await asyncio.to_thread(subprocess.run, ["ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", "lista.txt", "-c", "copy", "-movflags", "+faststart", "pelicula.mp4"], capture_output=True, text=True, cwd=work)
+        if r.returncode != 0:   # actos con códecs distintos: se recodifica
+            r = await asyncio.to_thread(subprocess.run, ["ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", "lista.txt", "-c:v", "libx264", "-crf", "18", "-preset", "fast",
+                                                         "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", "pelicula.mp4"], capture_output=True, text=True, cwd=work)
+        if r.returncode != 0:
+            raise HTTPException(500, "ffmpeg no pudo unir los actos: " + (r.stderr or "")[-300:])
+    except Exception:
+        shutil.rmtree(work, True)
+        raise
+    return FileResponse(out, media_type="video/mp4", filename="pelicula-completa.mp4", background=BackgroundTask(shutil.rmtree, work, True))
 
 
 PAGINA = r"""<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
