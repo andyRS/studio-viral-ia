@@ -230,7 +230,7 @@ export function normPhone(v: any, style: StyleKey): PhoneScene | undefined {
   if (!v || typeof v !== "object") return undefined;
   const t = norm(String(v.type || v.tipo || "")).replace(/\s+/g, "_");
   const type = /whats|chat|mensaje/.test(t) ? "whatsapp" : /video/.test(t) ? "videollamada" : /nota|voz|audio|contestadora/.test(t) ? "nota_de_voz" : /llama|telef/.test(t) ? "llamada" : "";
-  if (!type || (style === "cine90" && (type === "whatsapp" || type === "videollamada"))) return undefined;
+  if (!type || style === "epica" || (style === "cine90" && (type === "whatsapp" || type === "videollamada"))) return undefined;   // épica bíblica: sin teléfonos
   const messages = (Array.isArray(v.messages || v.mensajes) ? v.messages || v.mensajes : []).map((m: unknown) => clean(m).slice(0, 90)).filter(Boolean).slice(0, 4);
   if (type === "whatsapp" && !messages.length) return undefined;
   return { type, ...(clean(v.contact || v.contacto) ? { contact: clean(v.contact || v.contacto).slice(0, 30) } : {}), ...(messages.length ? { messages } : {}) };
@@ -285,7 +285,7 @@ CHARACTERS: ${member ? `${member.name}: ${member.visualEN || member.visualES}; o
 SCENE: ${location ? `${location} (same set as the other scenes here). ` : ""}${setting}.
 SHOTS: ${shot.en}, ${shot.moveEn}. From 0.3 s, with no pause before, ${narrator ? "slow push-in while the narrator says" : `${member!.name}, already in full ${s.emotion}, says while the camera dollies slowly toward the face`} (in Spanish, exact words): "${s.line}" Right after the line: 1 s ${narrator ? "holding on the scene" : `close-up of ${member!.name} holding the emotion`}, then the same shot continues without cuts.
 ${SOUND_EN}${kissNote(s, "en")}
-PRONUNCIATION: ${narrator ? accentPrompt(null, "en") : accentPrompt(member, "en")}.
+PRONUNCIATION: ${narrator ? accentPrompt(null, "en", style) : accentPrompt(member, "en", style)}.
 VOICES: ${voice}${voicesEnd(style)}${bibleVid(style)}`;
   }
   const guard = style === "cristiana" ? ` ${CHRISTIAN_SCENE_GUARD[0].toUpperCase()}${CHRISTIAN_SCENE_GUARD.slice(1)}.` : "";
@@ -322,7 +322,7 @@ CHARACTERS: ${listener.name}: ${listener.visualEN || listener.visualES}; outfit:
 SCENE: ${location ? `${location} (same set as the other scenes here). ` : ""}${tidy(s.setting)}${phoneVisual(s, caller, others, style, "en")}
 SHOTS: ${shot.en}, ${shot.moveEn}. From 0.3 s, ${caller.name}'s voice is heard THROUGH THE ${s.phone?.type === "nota_de_voz" ? "ANSWERING MACHINE" : "PHONE"} (thin telephone sound) saying (in Spanish, exact words): "${s.line}" ${listener.name} listens in silence, lips closed, reacting with ${s.emotion}; the camera slowly pushes in on the face.
 ${SOUND_EN}
-PRONUNCIATION: ${accentPrompt(caller, "en")}.
+PRONUNCIATION: ${accentPrompt(caller, "en", style)}.
 VOICES: only ${caller.name}'s voice, through the phone (${caller.voice}); nobody on screen moves their lips.${voicesEnd(style)}${bibleVid(style)}`;
   }
   const guard = style === "cristiana" ? ` ${CHRISTIAN_SCENE_GUARD[0].toUpperCase()}${CHRISTIAN_SCENE_GUARD.slice(1)}.` : "";
@@ -418,7 +418,7 @@ export function buildProduction(raw: any, ctx: Ctx) {
   const tarjetas = scenes.map((s, i) => ({ antes: i, texto: timeJump(`${s.transition || ""} ${s.setting || ""}`) })).filter(t => t.antes > 0 && t.texto);
   // Drama bíblico: cada vídeo se entiende solo; la tarjeta final es el versículo (p. ej. «Génesis 50:20»).
   const bible = isBibleStyle(style) ? { story: clean(raw?.bible?.story), verse: clean(raw?.bible?.verse), verseText: clean(raw?.bible?.verseText), message: clean(raw?.bible?.message),
-    ...(style === "epica" ? { mode: clean(raw?.bible?.mode), invisible: clean(raw?.bible?.invisible), impact: clean(raw?.bible?.impact), apocryphal: !!raw?.bible?.apocryphal } : {}) } : undefined;
+    ...(style === "epica" ? { invisible: clean(raw?.bible?.invisible), impact: clean(raw?.bible?.impact), apocryphal: !!raw?.bible?.apocryphal } : {}) } : undefined;
   const guionJson = { colores, gancho: hook, cierre: bible?.verse || "Continuará...", ...(bible?.verse ? { versiculo: bible.verse } : {}), clips: scenes.map(s => [[s.speaker, s.line]]), ...(tarjetas.length ? { tarjetas } : {}), ...phoneMontage(scenes) };
   const total = scenes.length * SCENE_SECONDS;
   const scriptBlocks = scenes.map(s => ({ block: s.n, time: `${(s.n - 1) * SCENE_SECONDS}-${s.n * SCENE_SECONDS}s`, scene: s.setting, dialogue: [{ speaker: s.speaker, text: s.line }], onScreen: s.speaker === NARRATOR ? [] : [s.speaker] }));

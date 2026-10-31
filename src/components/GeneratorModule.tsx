@@ -78,9 +78,9 @@ const IDEAS: Record<StyleKey, string[]> = {
     "Daniel en el foso: un empleado cristiano no firma un negocio sucio y lo acusan (Daniel 6:22)",
   ],
   epica: [
-    "B-Puente: una madre ora en el pasillo del hospital y vemos al ángel de guardia en la puerta del cuarto (Salmo 34:7)",
-    "B-Épico: el criado de Eliseo ve la ciudad rodeada; el profeta ora y el cielo se llena de carros de fuego (2 Reyes 6:16)",
-    "B-Épico: Enoc, el que caminó con Dios (inspirado en la tradición de Enoc; Génesis 5:24 y Judas 14)",
+    "El criado de Eliseo ve Dotán rodeada por el ejército sirio; el profeta ora y el cielo se llena de carros de fuego (2 Reyes 6:16)",
+    "Agar y su hijo mueren de sed en el desierto de Beerseba; el ángel le abre los ojos y ve un pozo (Génesis 21:17)",
+    "Enoc, el que caminó con Dios (inspirado en la tradición de Enoc; Génesis 5:24 y Judas 14)",
   ],
   cine90: [
     "Una mujer encuentra en una tienda de antigüedades las cartas de amor que su madre nunca envió",
@@ -803,7 +803,7 @@ function EpisodeSheet({ ficha, bible, score, cast, scenes, seconds }: { ficha: a
             <p className="text-[11px] font-semibold uppercase tracking-[.14em] text-amber-300">{bible.story || "Historia bíblica"} · {bible.verse}</p>
             {bible.verseText && <p className="mt-1 italic text-slate-200">«{bible.verseText}»</p>}
             {bible.message && <p className="mt-1 font-semibold text-white">Mensaje: {bible.message}</p>}
-            {bible.mode && <p className="mt-1 text-xs text-slate-300"><b>{bible.mode}</b>{bible.invisible ? ` · Lo invisible que se revela: ${bible.invisible}` : ""}{bible.impact ? ` · Plano de impacto (segundo 0): ${bible.impact}` : ""}</p>}
+            {(bible.invisible || bible.impact) && <p className="mt-1 text-xs text-slate-300">{bible.invisible ? `Lo invisible que se revela: ${bible.invisible}` : ""}{bible.invisible && bible.impact ? " · " : ""}{bible.impact ? `Plano de impacto (segundo 0): ${bible.impact}` : ""}</p>}
             {bible.apocryphal && <p className="mt-1 text-xs text-amber-200">Relato apócrifo: preséntalo como «inspirado en», nunca como Palabra de Dios. El aviso va en la descripción.</p>}
             <p className="mt-1 text-[11px] text-slate-400">El versículo sale en la tarjeta final del montaje (últimos 3 s).</p>
           </div>}

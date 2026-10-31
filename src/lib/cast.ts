@@ -16,6 +16,10 @@ export function accentOf(member?: Partial<CastMember> | null): string {
 }
 export function accentPrompt(member: Partial<CastMember> | null | undefined, lang: "es" | "en" = "es", style?: string): string {
   const a = accentOf(member);
+  // Épica bíblica: personajes bíblicos, siempre español latino neutro (nunca acento dominicano).
+  if (style === "epica") return lang === "es"
+    ? "Español latino neutro, solemne y claro, sin acento dominicano; cada palabra completa; nunca acento inglés"
+    : "Clear, solemn neutral Latin American Spanish, no Dominican accent; every word complete; never English accent";
   // Cristiana: vocabulario neutro y global, sin jerga; la voz, con un acento dominicano suave.
   if (style === "cristiana" && (!a || /neutr|dominican/.test(a))) return lang === "es"
     ? "Acento dominicano suave y claro, con vocabulario neutro y respetuoso (sin jerga ni vulgaridades); cada palabra completa; nunca acento inglés"
