@@ -113,6 +113,9 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
   const [styleChosen, setStyleChosen] = useState(false);
   const setStyle = (k: StyleKey) => { setStyleRaw(k); setStyleChosen(true); };
   const [accountId, setAccountId] = useState("");
+  // Serie anclada a un canal: formato y cuentas de otras redes que reciben sus clips.
+  const [formato, setFormato] = useState<"corto" | "largo">("corto");
+  const [clipIds, setClipIds] = useState<string[]>([]);
   const [duration, setDuration] = useState(88);
   const [notes, setNotes] = useState("");
   // «Usar esta idea»: rellena la idea y deja en las notas lo que la IA debe respetar (base bíblica,
@@ -165,6 +168,10 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
   const bank = useMemo(() => bankAll.filter(h => !hiddenHooks.includes(hookKey(h.hook))), [bankAll, hiddenHooks]);
   const bankTop = bank.slice(0, 10).map(h => ({ gancho: h.hook, vistas: h.views, plataformas: h.platforms }));
   const account = data.accounts.find((a: any) => a.id === accountId) || data.accounts[0];
+  // El canal de una serie nueva se elige siempre a mano (nunca la primera cuenta por defecto).
+  const canal = data.accounts.find((a: any) => a.id === accountId);
+  const largoPosible = canal?.platform === "Facebook" || canal?.platform === "YouTube";
+  useEffect(() => { if (!largoPosible) setFormato("corto"); setClipIds(ids => ids.filter(id => id !== accountId)); }, [accountId, largoPosible]);
   // Perfil de cuenta: se manda a la IA en todo lo que se genera para esa cuenta (y su elenco fijo compartido).
   const profileOf = (accId?: string) => (data.accountProfiles || []).find((p: any) => p.accountId === accId);
   const sharedCastOf = (accId?: string) => {
@@ -206,6 +213,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
 
   async function createStory(override?: { idea: string; notes: string }) {
     const idea_ = override?.idea ?? idea, notes_ = override?.notes ?? notes, kind_ = override ? "nueva" : kind;
+    if (!canal) { setNotice("Elige primero el canal de la serie (red y cuenta): cada serie nace anclada a un canal."); return; }
     if (!styleChosen && !override) { setNotice("Elige primero el estilo de la historia."); return; }
     if (!idea_.trim() && !(kind_ === "replica" && replica.trim())) { setNotice(kind === "replica" ? "Describe el viral que quieres replicar." : "Escribe la idea de la historia o elige una de las sugerencias."); return; }
     setLoading(true); setNotice(""); setAuthError(false);
@@ -218,7 +226,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
       const body = { idea: idea_, style, duration, account, notes: notes_, learnings, chosenHook, replica: kind_ === "replica" ? replica : "", accountProfile: profileFor(account?.id), usadas };
       const res = await call("/api/series", body, () => templateSeries(body)); if (!res) return;
       const d = res.data;
-      const s = await insert("series", { title: d.series?.title || idea_.slice(0, 60), description: d.series?.logline || idea_, accountId: account?.id });
+      const s = await insert("series", { title: d.series?.title || idea_.slice(0, 60), description: d.series?.logline || idea_, accountId: canal.id, format: formato, clipAccountIds: clipIds });
       // Elenco fijo de la cuenta: si la IA reutiliza a un personaje compartido, se copia su ficha aprobada.
       const shared = sharedCastOf(account?.id);
       for (const c of d.characters || []) {
@@ -303,18 +311,15 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
             <tbody>{bank.slice(0, 12).map((h, i) => <tr key={i} className="border-t border-slate-800"><td className="p-2 font-medium">{h.hook}</td><td className="p-2 text-slate-400">{h.source}</td><td className="p-2">{h.views ? h.views.toLocaleString() : <span className="text-slate-500">sin métricas</span>}</td><td className="p-2 text-xs text-slate-400">{h.platforms.join(", ") || "—"}</td><td className="p-2 text-right"><button type="button" onClick={() => saveHidden([...hiddenHooks, hookKey(h.hook)])} className="text-xs text-slate-400 hover:text-red-300" title="Ocultar este gancho del banco y de las sugerencias">Ocultar</button></td></tr>)}</tbody></table></div>
           <p className="mt-1 text-xs text-slate-500">Registra las vistas en Métricas con el mismo título del episodio para revisar qué ganchos rindieron más.{hiddenHooks.length > 0 && <> · <button type="button" onClick={() => saveHidden([])} className="text-sky-300 hover:text-sky-200">Mostrar {hiddenHooks.length} oculto(s)</button></>}</p>
         </>}
-        {!!seriesList.length && <>
-          <h3 className="mt-8 text-sm font-semibold uppercase tracking-wider text-slate-400">Tus series</h3>
-          <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {seriesList.map((s: any) => <SeriesCard key={s.id} s={s} chars={data.characters.filter((c: any) => c.seriesId === s.id)} onOpen={() => openSeries(s.id)} onDelete={() => { void deleteSeries(s); }} />)}
-          </div>
-        </>}
+        {!!seriesList.length && <SeriesPorRed seriesList={seriesList} accounts={data.accounts} characters={data.characters}
+          onOpen={openSeries} onDelete={(x: any) => { void deleteSeries(x); }} onAnchor={(x: any, accId: string) => update("series", x.id, { ...data.series.find((y: any) => y.id === x.id), accountId: accId })} />}
       </>}
 
       {view === "nueva" && <>
         <Back />
         <h2 className="text-xl font-bold">Historia nueva</h2>
         <div className="mt-4 space-y-4">
+          <CanalPicker accounts={data.accounts} accountId={accountId} onAccount={setAccountId} formato={formato} onFormato={setFormato} largoPosible={largoPosible} clipIds={clipIds} onClipIds={setClipIds} />
           <fieldset>
             <legend className="field-label">Estilo <span className="normal-case tracking-normal text-amber-300">· obligatorio{styleChosen ? "" : ": elige uno"}</span></legend>
             <div className="grid gap-2 sm:grid-cols-3">
@@ -336,8 +341,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
             <div className="mt-3"><IdeasPanel style={style} accountProfile={profileFor(account?.id)} online={mode === "supabase"} existing={data.series.map((x: any) => `${x.title}. ${x.description || ""}`)} onUse={useIdea} busy={loading} /></div>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
-            <div><label htmlFor="generator-account" className="field-label block">Cuenta principal</label>
-              <select id="generator-account" value={account?.id || ""} onChange={e => setAccountId(e.target.value)}>{data.accounts.map((a: any) => <option key={a.id} value={a.id}>{a.name} · {a.platform}</option>)}</select></div>
+
             <div><label htmlFor="generator-duration" className="field-label block">Duración del vídeo montado</label>
               <select id="generator-duration" value={duration} onChange={e => setDuration(Number(e.target.value))}>{DURATIONS.map(d => <option key={d} value={d}>{d} s · {sceneCountFor(d)} escenas</option>)}</select></div>
           </div>
@@ -373,6 +377,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
                   <div className="min-w-0 flex-1">
                     <p className="text-[11px] font-semibold uppercase tracking-wider text-amber-300/80">{STYLES[current.style as StyleKey]?.label || "Serie"}</p>
                     <h3 className="mt-1 text-2xl font-bold">{current.title}</h3>
+                    <CanalSerie serie={data.series.find((x: any) => x.id === current.id)} accounts={data.accounts} onSave={(patch: any) => update("series", current.id, { ...data.series.find((x: any) => x.id === current.id), ...patch })} />
                     {current.description && <p className="mt-1 text-sm text-slate-300">{current.description}</p>}
                   </div>
                   <button type="button" onClick={async () => { if (await deleteSeries(current)) { setSeriesId(""); setView("inicio"); } }} className="text-xs text-slate-500 hover:text-red-300">Eliminar serie</button>
@@ -740,11 +745,87 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
 }
 
 // Tarjeta de serie del inicio: toda la tarjeta abre la serie.
+// Orden de las redes en el Generador: primero los canales de vídeo largo.
+const REDES: string[] = ["Facebook", "YouTube", "TikTok", "Instagram", "YouTube Shorts"];
+const REDES_LARGO = new Set(["Facebook", "YouTube"]);
+const cuentasPorRed = (accounts: any[]) => REDES.map(red => ({ red, cuentas: accounts.filter((a: any) => a.platform === red) })).filter(g => g.cuentas.length);
+
+// Paso obligatorio al crear una serie: el canal (red + cuenta), su formato y a qué otras cuentas van los clips.
+function CanalPicker({ accounts, accountId, onAccount, formato, onFormato, largoPosible, clipIds, onClipIds }: { accounts: any[]; accountId: string; onAccount: (id: string) => void; formato: "corto" | "largo"; onFormato: (f: "corto" | "largo") => void; largoPosible: boolean; clipIds: string[]; onClipIds: (ids: string[]) => void }) {
+  if (!accounts.length) return <div className="rounded-xl border border-amber-400/30 bg-amber-400/10 p-4 text-sm text-amber-100">Antes de crear una serie, crea la cuenta donde se va a publicar en <b>Publish & Grow → Cuentas</b>.</div>;
+  const otras = accounts.filter((a: any) => a.id !== accountId);
+  return <fieldset className={`rounded-xl border p-4 ${accountId ? "border-white/10" : "border-amber-400/40 bg-amber-400/[.05]"}`}>
+    <legend className="field-label">Canal de la serie <span className="normal-case tracking-normal text-amber-300">· obligatorio{accountId ? "" : ": elige dónde se publica"}</span></legend>
+    <select value={accountId} onChange={e => onAccount(e.target.value)} aria-label="Canal de la serie">
+      <option value="">Elige la red y la cuenta…</option>
+      {cuentasPorRed(accounts).map(g => <optgroup key={g.red} label={g.red === "YouTube" ? "YouTube (vídeos largos)" : g.red}>{g.cuentas.map((a: any) => <option key={a.id} value={a.id}>{a.name} · {a.platform}</option>)}</optgroup>)}
+    </select>
+    {accountId && <div className="mt-3 grid gap-3 sm:grid-cols-2">
+      <div><p className="text-xs text-slate-300">Formato</p>
+        <div className="mt-1 flex flex-wrap gap-2">{([["corto", "Corto · 9:16 (Reels, TikTok, Shorts)"], ["largo", "Largo · 16:9 (Facebook, YouTube)"]] as const).map(([k, l]) =>
+          <button key={k} type="button" disabled={k === "largo" && !largoPosible} aria-pressed={formato === k} onClick={() => onFormato(k)} className={`rounded-full border px-3 py-1.5 text-xs disabled:opacity-40 ${formato === k ? "border-amber-400/60 bg-amber-400/10 text-amber-100" : "border-white/10 text-slate-300"}`}>{l}</button>)}</div>
+        {!largoPosible && <p className="mt-1 text-[11px] text-slate-500">El formato largo es para canales de Facebook o YouTube.</p>}
+        {formato === "largo" && <p className="mt-1 text-[11px] text-slate-400">Se guarda como serie larga. El guion por actos y el montaje 16:9 llegan en las fases siguientes; por ahora se escribe por partes.</p>}
+      </div>
+      {otras.length > 0 && <div><p className="text-xs text-slate-300">Clips para otras cuentas <span className="text-slate-500">(opcional)</span></p>
+        <div className="mt-1 space-y-1">{otras.map((a: any) => <label key={a.id} className="flex items-center gap-2 text-xs text-slate-300"><input type="checkbox" className="w-auto" checked={clipIds.includes(a.id)} onChange={e => onClipIds(e.target.checked ? [...clipIds, a.id] : clipIds.filter(x => x !== a.id))} />{a.name} · {a.platform}</label>)}</div></div>}
+    </div>}
+  </fieldset>;
+}
+
+// Canal de una serie abierta: se ve siempre y se puede cambiar.
+function CanalSerie({ serie, accounts, onSave }: { serie: any; accounts: any[]; onSave: (patch: any) => void }) {
+  const [editando, setEditando] = useState(false);
+  if (!serie) return null;
+  const acc = accounts.find((a: any) => a.id === serie.accountId);
+  const clips = (serie.clipAccountIds || []).map((id: string) => accounts.find((a: any) => a.id === id)).filter(Boolean);
+  return <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+    {acc ? <span className="rounded-full border border-sky-400/30 bg-sky-400/10 px-2.5 py-1 font-semibold text-sky-100">📡 {acc.platform} · {acc.name}{serie.format === "largo" ? " · Largo 16:9" : " · Corto 9:16"}</span>
+      : <span className="rounded-full border border-amber-400/40 bg-amber-400/10 px-2.5 py-1 font-semibold text-amber-100">Sin canal</span>}
+    {clips.map((a: any) => <span key={a.id} className="rounded-full border border-white/10 px-2 py-0.5 text-slate-300">✂ {a.platform} · {a.name}</span>)}
+    {!editando ? <button type="button" onClick={() => setEditando(true)} className="text-slate-400 underline hover:text-white">{acc ? "Cambiar canal" : "Anclar a un canal"}</button>
+      : <select autoFocus defaultValue={serie.accountId || ""} onChange={e => { if (e.target.value) { onSave({ accountId: e.target.value, ...(REDES_LARGO.has(accounts.find((a: any) => a.id === e.target.value)?.platform) ? {} : { format: "corto" }) }); setEditando(false); } }} onBlur={() => setEditando(false)} className="w-auto text-xs">
+        <option value="">Elige el canal…</option>
+        {cuentasPorRed(accounts).map(g => <optgroup key={g.red} label={g.red}>{g.cuentas.map((a: any) => <option key={a.id} value={a.id}>{a.name} · {a.platform}</option>)}</optgroup>)}
+      </select>}
+  </div>;
+}
+
+// «Tus series» renglonadas por red: red → cuenta → series (con sus partes). Las que no tienen canal, al final.
+function SeriesPorRed({ seriesList, accounts, characters, onOpen, onDelete, onAnchor }: { seriesList: any[]; accounts: any[]; characters: any[]; onOpen: (id: string) => void; onDelete: (s: any) => void; onAnchor: (s: any, accountId: string) => void }) {
+  const ids = new Set(accounts.map((a: any) => a.id));
+  const sinCanal = seriesList.filter((x: any) => !x.accountId || !ids.has(x.accountId));
+  const card = (x: any) => <SeriesCard key={x.id} s={x} chars={characters.filter((c: any) => c.seriesId === x.id)} onOpen={() => onOpen(x.id)} onDelete={() => onDelete(x)} />;
+  return <div className="mt-8 space-y-6">
+    <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400">Tus series por red</h3>
+    {cuentasPorRed(accounts).map(g => {
+      const conSeries = g.cuentas.filter((a: any) => seriesList.some((x: any) => x.accountId === a.id));
+      if (!conSeries.length) return null;
+      return <section key={g.red} aria-label={`Series de ${g.red}`} className="rounded-2xl border border-white/10 bg-white/[.02] p-4">
+        <h4 className="flex items-center gap-2 text-base font-bold">{g.red === "YouTube" ? "YouTube · vídeos largos" : g.red}<span className="text-xs font-normal text-slate-400">{seriesList.filter((x: any) => conSeries.some((a: any) => a.id === x.accountId)).length} series</span></h4>
+        {conSeries.map((a: any) => <div key={a.id} className="mt-3">
+          <p className="text-xs font-semibold text-sky-200">{a.name}</p>
+          <div className="mt-2 grid gap-3 md:grid-cols-2 xl:grid-cols-3">{seriesList.filter((x: any) => x.accountId === a.id).map(card)}</div>
+        </div>)}
+      </section>;
+    })}
+    {sinCanal.length > 0 && <section aria-label="Series sin canal" className="rounded-2xl border border-amber-400/30 bg-amber-400/[.04] p-4">
+      <h4 className="text-base font-bold text-amber-100">Sin canal <span className="text-xs font-normal text-amber-200/80">· ánclalas a una red para verlas en su fila</span></h4>
+      <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">{sinCanal.map((x: any) => <div key={x.id} className="space-y-2">{card(x)}
+        <select defaultValue="" onChange={e => e.target.value && onAnchor(x, e.target.value)} aria-label={`Anclar ${x.title} a un canal`} className="text-xs">
+          <option value="">Anclar a un canal…</option>
+          {cuentasPorRed(accounts).map(g => <optgroup key={g.red} label={g.red}>{g.cuentas.map((a: any) => <option key={a.id} value={a.id}>{a.name} · {a.platform}</option>)}</optgroup>)}
+        </select></div>)}</div>
+    </section>}
+  </div>;
+}
+
 function SeriesCard({ s, chars, onOpen, onDelete }: { s: any; chars: any[]; onOpen: () => void; onDelete: () => void }) {
   return <div className="group relative flex flex-col rounded-2xl border border-white/10 bg-[#121826] p-4 transition hover:-translate-y-0.5 hover:border-amber-400/50">
     <button type="button" onClick={onOpen} className="absolute inset-0 rounded-2xl" aria-label={`Abrir la serie ${s.title}`} />
     <p className="text-[11px] font-semibold uppercase tracking-wider text-amber-300/80">{STYLES[s.style as StyleKey]?.label || "Serie"}</p>
     <p className="mt-1 text-lg font-bold">{s.title}</p>
+    <p className="mt-0.5 text-[11px] text-sky-200/80">{s.format === "largo" ? "Largo · 16:9" : "Corto · 9:16"}{s.clipAccountIds?.length ? ` · clips en ${s.clipAccountIds.length} cuenta${s.clipAccountIds.length === 1 ? "" : "s"}` : ""}</p>
     <p className="mt-1 line-clamp-2 text-sm text-slate-400">{s.last?.output?.summary || s.description}</p>
     <div className="mt-3 flex items-center gap-2">
       <span className="flex -space-x-1.5">{chars.slice(0, 5).map((c: any) => c.imageUrl

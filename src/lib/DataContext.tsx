@@ -81,6 +81,20 @@ function saveLocalCollection(collection: CollectionName, items: any[]) {
 // Lectura por partes: una tabla grande (los episodios guardan guion, prompts y elenco) leída de una vez
 // pasaba el límite de tiempo de Supabase («canceling statement due to statement timeout»). Se lee en
 // páginas pequeñas y, si una página se pasa de tiempo, se reintenta hasta 3 veces con espera.
+// Si falta una columna nueva (migración sin ejecutar todavía), se guarda sin ella en vez de fallar y se avisa.
+let avisoColumna: ((msg: string) => void) | null = null;
+async function sinColumnaNueva(row: any, run: (r: any) => Promise<any>) {
+  let res = await run(row);
+  for (let i = 0; i < 3 && res.error; i++) {
+    const m = /column "?([a-z_]+)"? (?:of relation \S+ )?does not exist|Could not find the '([a-z_]+)' column/i.exec(res.error.message || "");
+    const col = m?.[1] || m?.[2];
+    if (!col || !(col in row)) break;
+    const { [col]: _quitada, ...resto } = row; row = resto;
+    avisoColumna?.(`Falta ejecutar una migración en Supabase (columna «${col}»): se guardó sin ese dato. Ejecuta los archivos de supabase/migrations en el SQL Editor.`);
+    res = await run(row);
+  }
+  return res;
+}
 const PAGE_OF: Record<string, number> = { episodes: 10, viral_analyses: 20 };
 async function fetchAll(supabase: any, table: string, userId: string): Promise<{ rows: any[]; error: any }> {
   const size = PAGE_OF[table] || 200;
@@ -196,9 +210,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     return () => { cancelled = true; try { listener?.subscription?.unsubscribe(); } catch {} try { if (channel && supabaseRef.current) supabaseRef.current.removeChannel(channel); } catch {} };
   }, [applyLocal, loadSupabase]);
 
+  avisoColumna = setError;
   const insert = useCallback(async (collection: CollectionName, item: any) => {
     if (modeRef.current === "supabase" && supabaseRef.current && userId && !missingRef.current.has(collection)) {
-      const { data: row, error: insErr } = await supabaseRef.current.from(TABLE_OF[collection]).insert(toRow(collection, item, userId)).select().single();
+      const { data: row, error: insErr } = await sinColumnaNueva(toRow(collection, item, userId), r => supabaseRef.current.from(TABLE_OF[collection]).insert(r).select().single());
       if (insErr) { setError("Error guardando en Supabase: " + insErr.message); throw insErr; }
       const mapped = fromRow(collection, row);
       setData((prev) => ({ ...prev, [collection]: [...(prev as any)[collection], mapped] }));
@@ -217,9 +232,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const current = (dataRef.current as any)[collection].find((x: any) => x.id === id);
     const merged = { ...(current || { id }), ...patch, id };
     if (modeRef.current === "supabase" && supabaseRef.current && userId && !missingRef.current.has(collection)) {
-      const { data: row, error: updErr } = await supabaseRef.current
-        .from(TABLE_OF[collection]).update(toRow(collection, merged, userId))
-        .eq("id", id).eq("user_id", userId).select().single();
+      const { data: row, error: updErr } = await sinColumnaNueva(toRow(collection, merged, userId), r => supabaseRef.current
+        .from(TABLE_OF[collection]).update(r).eq("id", id).eq("user_id", userId).select().single());
       if (updErr) { setError("Error actualizando en Supabase: " + updErr.message); throw updErr; }
       const mapped = fromRow(collection, row);
       setData((prev) => ({ ...prev, [collection]: (prev as any)[collection].map((x: any) => (x.id === id ? mapped : x)) }));

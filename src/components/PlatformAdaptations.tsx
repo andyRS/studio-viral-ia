@@ -13,7 +13,7 @@ export function BaseFormulaCard(){
 
 export default function PlatformAdaptations({ adaptations }:{ adaptations: PlatformAdaptation[] }){
   if(!adaptations?.length) return null;
-  const icons:any = { "Instagram":"📸", "Facebook":"👍", "TikTok":"🎵", "YouTube Shorts":"▶️" };
+  const icons:any = { "Instagram":"📸", "Facebook":"👍", "TikTok":"🎵", "YouTube Shorts":"▶️", "YouTube":"▶️" };
   return <div>
     <h3 className="font-bold text-lg">4B. Adaptación por plataforma — 4 fichas separadas</h3>
     <p className="text-xs text-slate-400">Cada ficha tiene su duración, montaje, portada, descripción, hashtags, horario, CTA y archivo propio. Copia cada una por separado.</p>

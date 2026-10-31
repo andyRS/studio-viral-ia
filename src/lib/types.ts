@@ -1,4 +1,4 @@
-export type Platform = "Instagram"|"Facebook"|"TikTok"|"YouTube Shorts";
+export type Platform = "Instagram"|"Facebook"|"TikTok"|"YouTube Shorts"|"YouTube";
 import type { PlatformAdaptation } from "./platforms";
 export type { PlatformAdaptation } from "./platforms";
 export type Niche = "frutinovelas"|"cine90"|"cristiano"|"dropshipping";
@@ -9,7 +9,9 @@ export interface AccountProfile { id:string; accountId:string; handle:string; pl
   setting?:string; results?:string; contentRules:string[]; schedule:{ day:string; piece:string }[]; scheduleNotes?:string[];
   cta:string; commentWords:string[]; hashtags?:string[]; signatureSongs:Record<string,string>; bio:string; notes?:string;
   reference?:string; followers?:number; ideas?:{ title:string; idea:string }[] }
-export interface Series { id:string; title:string; description:string; accountId?:string }
+// Serie anclada a un canal (cuenta + red): formato largo (16:9, Facebook/YouTube) o corto (9:16), y las
+// cuentas de otras redes a las que van sus clips.
+export interface Series { id:string; title:string; description:string; accountId?:string; format?:"largo"|"corto"; clipAccountIds?:string[] }
 export interface Character { id:string; seriesId:string; name:string; imageUrl?:string; visualES:string; visualEN:string; clothing:string; subtitleColor:string; speechStyle:string; pronunciations:string[];
   referenceVersion?:number; referenceApprovedAt?:string; referenceHistory?:{version:number; imageUrl:string; approvedAt:string}[];
   fruit?:string;        // "plátano", "aguacate"… (obligatorio en frutinovela/cristiana)

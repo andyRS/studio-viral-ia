@@ -18,6 +18,7 @@ const PLATFORM_STYLE: Record<string, { short: string; badge: string; bg: string 
   Facebook: { short: "FB", badge: "bg-blue-600 text-white", bg: "from-blue-700 via-blue-900 to-slate-900" },
   TikTok: { short: "TT", badge: "bg-black text-cyan-300 ring-1 ring-cyan-400/50", bg: "from-slate-900 via-cyan-900 to-pink-900" },
   "YouTube Shorts": { short: "YT", badge: "bg-red-600 text-white", bg: "from-red-700 via-red-900 to-slate-900" },
+  YouTube: { short: "YT", badge: "bg-red-600 text-white", bg: "from-red-700 via-red-900 to-slate-900" },
 };
 const pstyle = (p: string) => PLATFORM_STYLE[p] || { short: p.slice(0, 2).toUpperCase(), badge: "bg-slate-600 text-white", bg: "from-slate-700 to-slate-900" };
 
