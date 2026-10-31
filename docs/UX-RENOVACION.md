@@ -79,3 +79,12 @@ Esta revisión sustituye la limitación anterior de no poder inspeccionar visual
 Se recuperó y reforzó su función de bienvenida y visión general, separándolo del editor. Nueva bienvenida cinematográfica con hero petróleo/hielo/dorado; cuatro indicadores navegables; panel de tarjetas de producción, borradores y fichas pendientes; calendario; episodios recientes; acceso a métricas. Los objetivos de cuenta siguen disponibles. La mesa de trabajo anterior se trasladó a CreativeDesk dentro del Generador.
 
 Se comprobó en navegador la bienvenida y el acceso desde Visualizaciones a Intelligence Hub. Vista móvil 390 × 844 sin desbordamiento horizontal: documento/contenido 380 px. No se generaron datos de prueba ni se alteraron registros de la cuenta. Las validaciones con biblioteca vacía no sustituyen una revisión de todos los estados con sesión autenticada.
+
+
+## Integración con persistencia · 31 octubre 2026
+
+Se integró la implementación `a2aefac` del agente de desarrollo, leyendo `docs/PERSISTENCIA.md` y resolviendo únicamente los solapamientos de GeneratorModule y StoryArchitect. Se conservan creación reanudable, importación explícita, clasificación de fallos, respaldo por usuario y contratos de conflictos. PersistenceNotice añade su presentación global con acciones reales y mensajes persistentes; SessionBar conserva el indicador resumido.
+
+`npm run check` pasa sobre el conjunto integrado: TypeScript, ESLint, 47 comprobaciones y build de 18 páginas. ESLint mantiene seis avisos conocidos de dependencias y semántica existentes; no se desactivaron reglas para ocultarlos. No se ejecutaron migraciones ni se probó una sesión autenticada de Supabase. El archivo de montaje previamente modificado por el usuario queda fuera de los commits y conserva el mismo SHA-256 antes y después de la integración.
+
+Estado actual del traspaso: puntos 1–5 y 10 completados e integrados por desarrollo; parte del 13 cubierta por 18 pruebas nuevas. La migración `20261104_revisiones.sql` está en el repositorio y sigue pendiente de ejecución en Supabase junto con las anteriores que no se hayan aplicado. Las fases de IA observables y el almacenamiento de medios siguen pendientes de contrato.

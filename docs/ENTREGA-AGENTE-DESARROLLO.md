@@ -2,7 +2,13 @@
 
 Responsabilidades acordadas: este trabajo implementa diseño UX/UI y presentación. Migraciones, persistencia avanzada y desarrollo de servicios corresponden al otro agente. No se han cambiado `src/lib`, rutas API, Supabase, dependencias ni archivos de montaje.
 
-## Prioridad alta · integridad y continuidad
+## Estado de integración · 31 octubre 2026
+
+Los puntos **1–5 y 10** ya fueron implementados por el agente de persistencia e integrados desde `a2aefac`. Se conservan aquí como diagnóstico histórico, no como trabajo pendiente para repetir. El contrato vigente está en [PERSISTENCIA.md](PERSISTENCIA.md). Hay 47 comprobaciones existentes; las de sesión real con Supabase siguen pendientes. La migración `20261104_revisiones.sql` está incluida y no fue ejecutada por este agente.
+
+El diseño conserva SessionBar y añade PersistenceNotice en el contenido principal: aviso persistente de guardado fallido con descarga de copia, y lista de conflictos con acciones de reaplicar o conservar servidor. No oculta el estado de fallo tras un tiempo ni declara un guardado exitoso por cerrar un aviso. Los flujos de creación reanudable e importación explícita se preservan en GeneratorModule y StoryArchitect.
+
+## Prioridad alta · integridad y continuidad (diagnóstico histórico)
 
 1. **Guardado local verificable.** `src/lib/store.ts`: `save` captura y silencia errores de localStorage. Una imagen base64 o un historial grande puede superar cuota y la interfaz seguir mostrando el estado en memoria. Devolver resultado/error, conservar borrador recuperable y mostrar fallo de guardado real. Validar cuota llena y almacenamiento denegado.
 2. **Separación de respaldo por usuario.** `src/lib/DataContext.tsx`: el respaldo de tablas opcionales utiliza claves locales compartidas; no contienen userId. Revisar aislamiento al cambiar de cuenta, migración de claves e importación explícita. No mezclar automáticamente proyectos locales de usuarios distintos.

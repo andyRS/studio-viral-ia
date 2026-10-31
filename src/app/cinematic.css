@@ -155,3 +155,17 @@ input:focus-visible,select:focus-visible,textarea:focus-visible { border-color:v
 .creative-desk-title { margin:.45rem 0; font-size:clamp(24px,2.4vw,34px); font-weight:500; letter-spacing:-.045em; line-height:1.25; }
 .creative-desk .canvas-editorial h3 { margin:.7rem 0; font-size:clamp(24px,2.5vw,38px); font-weight:500; line-height:1.15; letter-spacing:-.045em; text-wrap:balance; }
 .creative-desk .inspector-title h3 { font-size:11px; font-weight:600; }.creative-desk-facts { margin-top:1rem; }.creative-desk-facts > div { display:flex; justify-content:space-between; gap:1rem; padding:.6rem 0; border-bottom:1px solid var(--line); font-size:11px; }.creative-desk-facts dt { color:#91aebf; }.creative-desk-facts dd { color:#c0e2ec; }
+
+/* Persistent save failures and explicit conflict choices, shared across modules. */
+.persistence-notice { display:grid; gap:.75rem; margin-bottom:1.25rem; }
+.persistence-failure,.persistence-conflicts { border:1px solid rgba(253,164,175,.35); border-radius:.9rem; padding:1rem 1.1rem; background:linear-gradient(120deg,rgba(190,60,83,.1),rgba(190,60,83,.025)),var(--card); }
+.persistence-failure { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:1rem; }
+.persistence-notice strong { display:block; color:#ffe2e6; font-size:13px; font-weight:600; }
+.persistence-notice p { margin-top:.35rem; color:#c5bccb; font-size:12px; line-height:1.7; overflow-wrap:anywhere; }
+.persistence-notice .persistence-detail { color:#f2bac3; font-size:11px; }
+.persistence-conflicts { border-color:rgba(245,188,105,.3); background:linear-gradient(120deg,rgba(175,125,58,.075),transparent),var(--card); }
+.persistence-conflicts strong { color:#ead8bc; }
+.persistence-conflicts li { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:.75rem; padding:1rem 0; border-top:1px solid var(--line); }
+.persistence-conflicts ul { margin-top:1rem; }.persistence-actions { display:flex; flex-wrap:wrap; gap:.5rem; }
+.persistence-notice .studio-secondary-action { font-size:11px; }
+@media (max-width:767px) { .persistence-actions { width:100%; }.persistence-actions button { flex:1; } }

@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import PersistenceNotice from "@/components/PersistenceNotice";
 import MissionControl from "@/components/MissionControl";
 import { DataProvider, SessionBar, useData } from "@/lib/DataContext";
 import AccountsModule from "@/components/AccountsModule";
@@ -315,6 +316,7 @@ function DashboardInner() {
             <span className="min-w-0 flex-1"><strong className="block text-white">{selectedResult.title}</strong><span className="text-[#c3d0e2]">{selectedResult.kind} · {selectedResult.detail}</span></span>
             <button onClick={() => setSelectedResult(null)} aria-label="Cerrar resultado de búsqueda" className="rounded-md px-2 text-[#c3d0e2] hover:text-white">✕</button>
           </div>}
+          <PersistenceNotice />
           {error && <p className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">{error}</p>}
           <div key={`${active}-${focusVersion}`} className="module-enter"><ModuleView id={active} focus={selectedResult} onOpenEpisode={openProductionEpisode} onNavigate={go} onCreate={createStory} onEpisode={openEpisode} /></div>
         </div>
