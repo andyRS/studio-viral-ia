@@ -44,6 +44,53 @@ function clipFromStep(paso: string, n: number) {
 // El servidor espera un bloque de diálogo por clip. Si hay menos clips que bloques
 // (p. ej. un solo clip de Dola de 60 s), se juntan bloques consecutivos; si hay más,
 // los clips sobrantes van sin diálogo (tarjetas).
+// Lo que la app puede arreglar sola a partir de la revisión: pregunta antes y, si se acepta, vuelve a montar.
+type Arreglo = { id: string; texto: string; nota?: string; vel?: string; rec?: boolean; quitarCta?: boolean; choca?: string };
+export function Mejoras({ revision, style, velocidad, recortar, cta, onApply }: { revision: any; style: string; velocidad: string; recortar: boolean; cta: string; onApply: (a: { vel?: string; rec?: boolean; quitarCta?: boolean }) => void }) {
+  const tipos = new Set<string>((revision?.avisos || []).map((a: any) => a.tipo));
+  const v = Number(velocidad) || 1;
+  const dur = Number(revision?.duracion) || 0;
+  const estima = (nv: number) => Math.round((dur - 3) * v / nv + 3);
+  const arreglos: Arreglo[] = [];
+  if (tipos.has("pausas") && !recortar) arreglos.push({ id: "pausas", texto: "Activar «Quitar pausas muertas»", rec: true });
+  if (tipos.has("lento") && v < 1.2) arreglos.push({ id: "lento", texto: `Subir el Ritmo a «Rápido» (20 %): las frases se oyen más ágiles; el vídeo quedará en ~${estima(1.2)} s`, vel: "1.2", choca: "facebook60" });
+  if (tipos.has("facebook60") && v > 1) {
+    const nuevo = estima(1);
+    arreglos.push({ id: "facebook60", texto: `Volver al Ritmo «Normal» para alargar el vídeo: quedará en ~${nuevo} s`, vel: "1", choca: "lento",
+      nota: nuevo < 60 ? `Aun así faltarían ~${60 - nuevo} s para los 60 s de Facebook: añade escenas en el Generador (14 escenas dan ~65 s).` : undefined });
+  }
+  if (tipos.has("llamadas") && /comenta|am[eé]n|like|s[ií]gueme|comparte/i.test(cta)) arreglos.push({ id: "llamadas", texto: `Quitar la llamada final «${cta}» de la tarjeta de cierre`, quitarCta: true });
+  // Lo que no se puede arreglar solo (hay que subir algo o regenerar un clip).
+  const manuales: string[] = [];
+  if (tipos.has("facebook60") && v <= 1) manuales.push(`Para llegar a 60 s en Facebook hay que añadir escenas en el Generador (ahora dura ${Math.round(dur)} s).`);
+  if (tipos.has("lento") && v >= 1.2) manuales.push("El Ritmo ya está en «Rápido»: para frases más ágiles, regenera esos clips (los prompts nuevos ya piden 2-3 s por frase).");
+  if (tipos.has("anteriormente")) manuales.push("«Anteriormente...»: sube el vídeo final de la parte anterior y escribe la frase de resumen.");
+  if (tipos.has("sin_voz") || tipos.has("negro")) manuales.push("Clips sin voz o con pantalla negra: cámbialos con «Cambiar clip» en la mesa de escenas.");
+  // Si chocan «más rápido» y «más largo», se marca por defecto lo que importa en esta cuenta: en las cristianas
+  // (Facebook, monetización) la duración; en las demás, el ritmo.
+  const prefer = style === "cristiana" || style === "biblica" || style === "epica" ? "facebook60" : "lento";
+  const [sel, setSel] = useState<Record<string, boolean>>(() => Object.fromEntries(arreglos.map(a => [a.id, !a.choca || a.id === prefer || !arreglos.some(b => b.id === a.choca)])));
+  const [cerrado, setCerrado] = useState(false);
+  if (cerrado || (!arreglos.length && !manuales.length)) return null;
+  const toggle = (a: Arreglo) => setSel(prev => ({ ...prev, [a.id]: !prev[a.id], ...(a.choca && !prev[a.id] ? { [a.choca]: false } : {}) }));
+  const elegidos = arreglos.filter(a => sel[a.id]);
+  return <div className="rounded-lg border border-sky-400/30 bg-sky-400/[.06] p-3 text-xs text-slate-200">
+    {arreglos.length > 0 && <>
+      <p className="text-sm font-bold text-sky-200">¿Aplico estas mejoras y vuelvo a montar?</p>
+      <ul className="mt-2 space-y-1.5">{arreglos.map(a => <li key={a.id}><label className="flex items-start gap-2">
+        <input type="checkbox" className="mt-0.5 w-auto" checked={!!sel[a.id]} onChange={() => toggle(a)} />
+        <span>{a.texto}{a.nota && <span className="block text-amber-200">{a.nota}</span>}</span></label></li>)}</ul>
+      {arreglos.some(a => a.choca && arreglos.some(b => b.id === a.choca)) && <p className="mt-2 text-[11px] text-slate-400">«Más rápido» y «más largo» no se pueden a la vez: elige uno. Para Facebook pesa más la duración; para TikTok, el ritmo.</p>}
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button type="button" disabled={!elegidos.length} onClick={() => onApply({ vel: elegidos.find(a => a.vel)?.vel, rec: elegidos.some(a => a.rec), quitarCta: elegidos.some(a => a.quitarCta) })} className="rounded bg-sky-500 px-3 py-2 font-bold text-black disabled:opacity-50">Sí, aplicar y volver a montar</button>
+        <button type="button" onClick={() => setCerrado(true)} className="rounded px-3 py-2 text-slate-300 hover:bg-white/5">No, dejarlo así</button>
+      </div>
+    </>}
+    {manuales.length > 0 && <div className={arreglos.length ? "mt-3 border-t border-white/10 pt-2" : ""}><p className="font-semibold text-slate-300">Esto lo tienes que hacer tú:</p><ul className="mt-1 list-disc space-y-0.5 pl-4 text-slate-400">{manuales.map((m, i) => <li key={i}>{m}</li>)}</ul>
+      {!arreglos.length && <button type="button" onClick={() => setCerrado(true)} className="mt-2 text-slate-400 underline">Entendido</button>}</div>}
+  </div>;
+}
+
 // Revisión automática del montaje: nota, lo que está bien y lo que conviene arreglar antes de publicar.
 function Revision({ r }: { r: any }) {
   const nota = Number(r?.nota ?? 0);
@@ -143,6 +190,10 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
   const musicUrl = useMemo(() => (music ? URL.createObjectURL(music) : ""), [music]);
   useEffect(() => () => { if (musicUrl) URL.revokeObjectURL(musicUrl); }, [musicUrl]);
   const [busy, setBusy] = useState(false);
+  // Mejoras de la revisión automática que la app puede aplicar sola: se cambian los ajustes y se vuelve a
+  // montar en el render siguiente (así montar() ya ve los ajustes nuevos).
+  const [remontar, setRemontar] = useState(false);
+  useEffect(() => { if (remontar && !busy) { setRemontar(false); montar(); } }, [remontar]);   // eslint-disable-line react-hooks/exhaustive-deps
   const [elapsed, setElapsed] = useState(0);
   const [uploadPct, setUploadPct] = useState(0);
   const [live, setLive] = useState<Live | null>(null);
@@ -379,6 +430,13 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
       </div>
       {video2 && <p className="text-xs text-slate-400">Mismo vídeo con dos logos: arriba se ve la versión {names[0]}.</p>}
       {revision && <Revision r={revision} />}
+      {revision && !busy && <Mejoras key={job?.id || "r"} revision={revision} style={style} velocidad={velocidad} recortar={recortar} cta={cta}
+        onApply={({ vel, rec, quitarCta }) => {
+          if (vel) setVelocidad(vel);
+          if (rec) setRecortar(true);
+          if (quitarCta) { setCta(""); setCtaEdited(true); }
+          setRemontar(true);
+        }} />}
       {extras.length > 0 && job && <div className="rounded-lg border border-white/10 p-3">
         <p className="mb-2 text-xs font-semibold text-slate-300">Versiones por red</p>
         <div className="flex flex-wrap gap-2">{extras.map(e => {
