@@ -14,6 +14,7 @@ export interface AccountProfile { id:string; accountId:string; handle:string; pl
 export interface Series { id:string; title:string; description:string; accountId?:string; format?:"largo"|"corto"; clipAccountIds?:string[] }
 export interface Character { id:string; seriesId:string; name:string; imageUrl?:string; visualES:string; visualEN:string; clothing:string; subtitleColor:string; speechStyle:string; pronunciations:string[];
   referenceVersion?:number; referenceApprovedAt?:string; referenceHistory?:{version:number; imageUrl:string; approvedAt:string}[];
+  bible?:import("./personajes").CharacterBible;   // biblia extendida (rasgos fijos, vestuario, voz, candado…)
   fruit?:string;        // "plátano", "aguacate"… (obligatorio en frutinovela/cristiana)
   fruitEmoji?:string;   // 🍌 🥑 🥥 …
   role?:string;         // protagonista, rival, madre…

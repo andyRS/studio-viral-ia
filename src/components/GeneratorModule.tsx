@@ -389,7 +389,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
                   <span className={`stat-chip ${missingCurrentMasters.length ? "!border-amber-400/40 !text-amber-200" : "!border-emerald-400/40 !text-emerald-200"}`}>{missingCurrentMasters.length ? `Fichas maestras: faltan ${missingCurrentMasters.length}` : "✓ Fichas maestras aprobadas"}</span>
                 </div>
               </div>
-              <StoryArchitect key={current.id} series={data.series.find((x: any) => x.id === current.id)} style={current.style} cast={currentCast.map((c: any) => c.name)} defaultOpen={data.series.find((x: any) => x.id === current.id)?.format === "largo"} />
+              <StoryArchitect key={current.id} series={data.series.find((x: any) => x.id === current.id)} style={current.style} cast={currentCast.map((c: any) => c.name)} characters={currentCast} defaultOpen={data.series.find((x: any) => x.id === current.id)?.format === "largo"} />
               {currentNeedsRepair && <div className="rounded-xl border border-amber-400/30 bg-amber-400/10 p-4 text-sm text-amber-100">
                 <p className="font-bold">Esta serie necesita un guion y personajes validados antes de continuar.</p>
                 <p className="mt-1 text-xs leading-5">El borrador anterior se conserva. Gemini puede crear una serie nueva desde la misma idea, con apariencia y vestuario consistentes.</p>

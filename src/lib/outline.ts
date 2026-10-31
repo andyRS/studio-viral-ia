@@ -1,21 +1,41 @@
 // Proyecto largo (Facebook / YouTube, 15-25 min): actos → secuencias → escenas, con candado por pieza,
 // regeneración parcial que respeta lo bloqueado, guion por escena con historial y análisis de ritmo.
 // Lógica pura (sin React ni red): la usan StoryArchitect y la ruta /api/outline.
+import { validarCitas, type Cita } from "./biblia";
 
 export type ScriptElement = { type: "accion" | "dialogo" | "off" | "visual" | "sonido" | "nota"; speaker?: string; text: string };
 export type ScriptVersion = { at: string; label: string; elements: ScriptElement[] };
 export type OutlineScene = {
   id: string; heading: string; summary: string; objective: string; obstacle: string; consequence: string;
-  tension: number; minutes: number; source?: string; locked?: boolean;
+  tension: number; minutes: number; source?: string; locked?: boolean; envId?: string;
   script?: ScriptElement[]; scriptApproved?: boolean; scriptHistory?: ScriptVersion[];
 };
 export type OutlineSequence = { id: string; title: string; goal: string; locked?: boolean; scenes: OutlineScene[] };
 export type OutlineAct = { id: string; title: string; goal: string; locked?: boolean; sequences: OutlineSequence[] };
 export type OutlineSnapshot = { at: string; label: string; acts: OutlineAct[] };
+// Fuentes y canon: lo que sustenta la historia y de qué tipo es cada afirmación (texto bíblico, interpretación,
+// tradición extrabíblica o invención cinematográfica). Solo fuentes propias (sin buscadores de pago).
+export type Fuente = { id: string; tipo: "biblia" | "historica" | "documental" | "tradicion" | "otra"; ref?: string; titulo: string; url?: string; texto?: string; version?: string; nota?: string };
+export type Categoria = "texto" | "interpretacion" | "tradicion" | "invencion";
+export type Afirmacion = { id: string; texto: string; categoria: Categoria; fuentes: string[]; incertidumbre?: string };
+export type Nivel = "textual" | "fundamentada" | "amplia";
+export type Canon = { nivel: Nivel; fuentes: Fuente[]; afirmaciones: Afirmacion[]; revision?: { at: string; avisos: { sceneId: string; aviso: string }[] } };
+// Escenarios: el decorado fijo de cada lugar; las escenas que lo usan respetan su ficha y sus cambios.
+export type Escenario = {
+  id: string; nombre: string; periodo: string; arquitectura: string; geografia: string; materiales: string; luz: string; clima: string;
+  persistentes: string; atmosfera: string; objetos: string; imagenes: string[]; locked?: boolean;
+  versiones: { at: string; nota: string }[];
+};
 export type Outline = {
   id?: string; seriesId: string; structure: 3 | 5; targetMinutes: number; acts: OutlineAct[];
-  history?: OutlineSnapshot[]; updatedAt?: string;
+  history?: OutlineSnapshot[]; updatedAt?: string; canon?: Canon; escenarios?: Escenario[];
 };
+export const NIVELES: Record<Nivel, string> = {
+  textual: "Estrictamente textual: solo lo que dice el texto; cada escena con su pasaje",
+  fundamentada: "Interpretación fundamentada: se completa lo que el texto sugiere, sin contradecirlo",
+  amplia: "Dramatización cinematográfica amplia: se inventan escenas y diálogos, marcados como invención",
+};
+export const CATEGORIAS: Record<Categoria, string> = { texto: "Texto bíblico", interpretacion: "Interpretación", tradicion: "Tradición extrabíblica", invencion: "Invención cinematográfica" };
 export type NodeKind = "act" | "sequence" | "scene";
 
 const clean = (v: unknown) => String(v ?? "").replace(/\s+/g, " ").trim();
@@ -168,3 +188,56 @@ export function rhythm(o: Outline) {
   if (redundantes.length) avisos.push(`${redundantes.length} pareja(s) de escenas parecen repetir lo mismo: fusiónalas o dale a una un giro distinto.`);
   return { total: Math.round(total * 10) / 10, acts, tension, avisos, redundantes, escenas: sc.length, conGuion: sc.filter(s => s.script?.length).length, aprobadas: sc.filter(s => s.scriptApproved).length };
 }
+
+// ---------- Avisos de canon (sin IA): citas que no existen, fuentes sin registrar, afirmaciones mal clasificadas ----------
+export function canonAvisos(o: Outline) {
+  const canon = o.canon || { nivel: "fundamentada" as Nivel, fuentes: [], afirmaciones: [] };
+  // Pasajes registrados como fuente: una escena está respaldada si su cita cae dentro de alguno.
+  const registradas: Cita[] = canon.fuentes.filter(f => f.tipo === "biblia" && f.ref).flatMap(f => validarCitas(f.ref!).filter(v => v.ok).map(v => v.cita!));
+  const cubre = (r: Cita, c: Cita) => r.libro === c.libro && r.cap === c.cap
+    && (r.desde === undefined || (c.desde !== undefined && c.desde >= r.desde && (c.hasta ?? c.desde) <= (r.hasta ?? r.desde)));
+  const avisos: { sceneId?: string; texto: string }[] = [];
+  for (const f of canon.fuentes) if (f.tipo === "biblia" && f.ref) for (const v of validarCitas(f.ref)) if (!v.ok) avisos.push({ texto: `Fuente «${f.titulo || f.ref}»: ${v.error}` });
+  for (const sc of allScenes(o)) {
+    if (sc.source) {
+      for (const v of validarCitas(sc.source)) {
+        if (!v.ok) avisos.push({ sceneId: sc.id, texto: `${sc.heading}: la cita «${v.original}» no es válida (${v.error})` });
+        else if (!registradas.some(r => cubre(r, v.cita!))) avisos.push({ sceneId: sc.id, texto: `${sc.heading}: cita ${v.cita!.texto} sin registrar en las fuentes del proyecto` });
+      }
+    } else if (canon.nivel === "textual") avisos.push({ sceneId: sc.id, texto: `${sc.heading}: en modo estrictamente textual, cada escena necesita su pasaje` });
+  }
+  const bibl = new Set(canon.fuentes.filter(f => f.tipo === "biblia").map(f => f.id));
+  for (const a of canon.afirmaciones) {
+    if (a.categoria === "texto" && !a.fuentes.some(id => bibl.has(id))) avisos.push({ texto: `«${a.texto.slice(0, 60)}»: marcada como texto bíblico, pero sin un pasaje bíblico que la respalde` });
+    if (a.categoria === "tradicion" && !a.fuentes.some(id => !bibl.has(id))) avisos.push({ texto: `«${a.texto.slice(0, 60)}»: es tradición extrabíblica; regístrale su fuente (p. ej. Libro de Enoc)` });
+  }
+  for (const r of canon.revision?.avisos || []) avisos.push({ sceneId: r.sceneId, texto: `Posible contradicción con la fuente: ${r.aviso}` });
+  return avisos;
+}
+
+// Escenarios a partir de los encabezados del guion («EXT. RIBERA DEL TIGRIS - AMANECER» → «Ribera del Tigris»).
+export function lugarDe(heading: string) {
+  const t = heading.replace(/^(INT\.?\/EXT\.?|EXT\.?\/INT\.?|INT\.?|EXT\.?)\s*/i, "").split(/\s+[-–]\s+/)[0].replace(/\(.*?\)/g, "").trim();
+  return t ? t.charAt(0).toUpperCase() + t.slice(1).toLowerCase() : "";
+}
+export function nuevoEscenario(nombre: string): Escenario {
+  return { id: newId("lugar"), nombre, periodo: "", arquitectura: "", geografia: "", materiales: "", luz: "", clima: "", persistentes: "", atmosfera: "", objetos: "", imagenes: [], versiones: [] };
+}
+export function detectarEscenarios(o: Outline): Outline {
+  const n = copy(o);
+  const lista = [...(n.escenarios || [])];
+  const porNombre = new Map(lista.map(e => [e.nombre.toLowerCase(), e]));
+  for (const a of n.acts) for (const s of a.sequences) for (const sc of s.scenes) {
+    if (sc.envId && lista.some(e => e.id === sc.envId)) continue;
+    const nombre = lugarDe(sc.heading); if (!nombre) continue;
+    let e = porNombre.get(nombre.toLowerCase());
+    if (!e) { e = nuevoEscenario(nombre); lista.push(e); porNombre.set(nombre.toLowerCase(), e); }
+    sc.envId = e.id;
+  }
+  n.escenarios = lista;
+  return n;
+}
+// Texto compacto de un escenario para la IA (y, en la fase 4, para los prompts de imagen y vídeo).
+export const escenarioTexto = (e: Escenario) => [e.nombre, e.periodo && `época: ${e.periodo}`, e.arquitectura && `arquitectura: ${e.arquitectura}`, e.geografia && `geografía: ${e.geografia}`,
+  e.materiales && `materiales: ${e.materiales}`, e.luz && `luz: ${e.luz}`, e.clima && `clima: ${e.clima}`, e.persistentes && `siempre presente: ${e.persistentes}`,
+  e.atmosfera && `atmósfera: ${e.atmosfera}`, e.objetos && `objetos importantes: ${e.objetos}`, e.versiones.length ? `cambios: ${e.versiones.map(v => v.nota).join("; ")}` : ""].filter(Boolean).join(" · ");

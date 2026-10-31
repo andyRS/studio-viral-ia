@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { normBible, type CharacterBible } from "@/lib/personajes";
 import { useData } from "@/lib/DataContext";
 import { useDeleteSeries } from "@/lib/useDelete";
 import { accentOf } from "@/lib/cast";
@@ -97,6 +98,7 @@ export default function CharactersModule({ focusCharacterId }: { focusCharacterI
               <option value="latino neutro">Latino neutro</option><option value="dominicano marcado">Dominicano marcado</option><option value="otro">{accentOf(c) && !/dominican|neutr/.test(accentOf(c)) ? `Otro: ${accentOf(c)}` : "Otro…"}</option>
             </select>
           </div>
+          <BibliaPersonaje c={c} guardar={bible => update("characters", c.id, { bible })} />
         </article>)}
         {items.filter(c => c.seriesId === s.id).length === 0 && <p className="text-xs text-slate-500">Sin personajes en esta serie todavía.</p>}
       </div>
@@ -147,4 +149,38 @@ export default function CharactersModule({ focusCharacterId }: { focusCharacterI
       </form>
     </div>
   </section>;
+}
+
+// Biblia extendida del personaje: rasgos fijos, vestuario, paleta, lo prohibido, voz, relaciones, candado y versiones.
+const CAMPOS_BIBLIA: [keyof CharacterBible, string, string][] = [
+  ["rasgos", "Rasgos invariables", "Rostro, edad, complexión, pelo, cicatrices… lo que nunca cambia"],
+  ["paleta", "Paleta de color", "Ej.: lino crudo, azul índigo, cuero marrón"],
+  ["negativo", "Nunca debe aparecer (prompt negativo)", "Ej.: barba larga, ropa moderna, tatuajes"],
+  ["voz", "Voz, idioma y acento", "Ej.: grave y pausada, español latino neutro"],
+  ["relaciones", "Relaciones", "Ej.: amigo de Ananías; enemigo del sátrapa"],
+];
+function BibliaPersonaje({ c, guardar }: { c: any; guardar: (b: CharacterBible) => Promise<any> }) {
+  const [open, setOpen] = useState(false);
+  const b = normBible(c.bible);
+  const set = (patch: Partial<CharacterBible>) => { void guardar({ ...b, ...patch }); };
+  const completos = CAMPOS_BIBLIA.filter(([k]) => String(b[k] || "").trim()).length + (b.vestuario?.length ? 1 : 0);
+  return <div className="mt-3 rounded-lg border border-white/10">
+    <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} className="flex w-full items-center gap-2 p-2 text-left text-xs">
+      <b className="text-violet-200">Biblia del personaje</b><span className="text-slate-400">{completos}/6 {b.candado ? "· 🔒 identidad bloqueada" : ""}</span><span className="ml-auto text-slate-500">{open ? "▲" : "▼"}</span>
+    </button>
+    {open && <div className="space-y-2 border-t border-white/10 p-2 text-xs">
+      {CAMPOS_BIBLIA.map(([k, label, ph]) => <label key={k} className="block text-slate-300">{label}
+        <textarea defaultValue={String(b[k] || "")} placeholder={ph} rows={2} disabled={b.candado && (k === "rasgos" || k === "paleta")} className="mt-1 text-xs"
+          onBlur={e => { if (e.target.value !== String(b[k] || "")) set({ [k]: e.target.value } as any); }} /></label>)}
+      <div className="text-slate-300">Variantes de vestuario
+        <ul className="mt-1 space-y-1">{(b.vestuario || []).map((v, i) => <li key={i} className="flex items-center gap-2"><span className="flex-1 text-slate-200">• {v}</span>
+          <button type="button" onClick={() => set({ vestuario: b.vestuario!.filter((_, j) => j !== i) })} className="text-slate-500 hover:text-red-300">Quitar</button></li>)}</ul>
+        <button type="button" onClick={() => { const v = window.prompt("Nueva variante de vestuario (p. ej. «manto real de Babilonia, bordado en oro»)"); if (v?.trim()) set({ vestuario: [...(b.vestuario || []), v.trim()] }); }} className="mt-1 text-sky-300">+ Añadir variante</button>
+      </div>
+      <label className="flex items-center gap-2 text-slate-300"><input type="checkbox" checked={!!b.candado} onChange={e => set({ candado: e.target.checked, versiones: [...(b.versiones || []), { at: new Date().toISOString(), nota: e.target.checked ? "identidad bloqueada" : "identidad desbloqueada" }] })} className="h-auto w-auto" />
+        Candado de identidad (la IA no cambia su aspecto; rasgos y paleta quedan fijos)</label>
+      <button type="button" onClick={() => { const nota = window.prompt("¿Qué cambió en el personaje? (queda en su historial)"); if (nota?.trim()) set({ versiones: [...(b.versiones || []), { at: new Date().toISOString(), nota: nota.trim() }] }); }} className="text-sky-300">Registrar un cambio</button>
+      {!!b.versiones?.length && <ul className="space-y-0.5 text-slate-400">{b.versiones.slice().reverse().map(v => <li key={v.at}>{new Date(v.at).toLocaleDateString("es-DO")} · {v.nota}</li>)}</ul>}
+    </div>}
+  </div>;
 }

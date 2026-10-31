@@ -3,9 +3,11 @@
 // regeneración parcial que respeta lo bloqueado, análisis de ritmo, versiones y editor de guion con historial.
 import { useMemo, useRef, useState } from "react";
 import { useData } from "@/lib/DataContext";
+import { CanonPanel, EscenariosPanel } from "@/components/CanonPanels";
+import { bibliaTexto } from "@/lib/personajes";
 import { postApi } from "@/lib/api-client";
 import {
-  allScenes, diffLines, findNode, isProtected, lineOf, mapNode, normOutline, replaceNode, restore, rhythm, saveScript,
+  allScenes, canonAvisos, diffLines, findNode, isProtected, lineOf, mapNode, normOutline, replaceNode, restore, rhythm, saveScript,
   scriptSeconds, snapshot, type NodeKind, type Outline, type OutlineScene, type ScriptElement,
 } from "@/lib/outline";
 
@@ -15,7 +17,7 @@ const TIPOS: { id: ScriptElement["type"]; label: string }[] = [
 ];
 const mmss = (min: number) => `${Math.floor(min)}:${String(Math.round((min % 1) * 60)).padStart(2, "0")}`;
 
-export default function StoryArchitect({ series, style, cast, defaultOpen }: { series: any; style: string; cast: string[]; defaultOpen?: boolean }) {
+export default function StoryArchitect({ series, style, cast, characters = [], defaultOpen }: { series: any; style: string; cast: string[]; characters?: any[]; defaultOpen?: boolean }) {
   const { data, insert, update, isLocalOnly } = useData();
   const saved = (data.storyOutlines || []).find((o: any) => o.seriesId === series?.id) as Outline | undefined;
   const [open, setOpen] = useState(!!defaultOpen);
@@ -26,16 +28,25 @@ export default function StoryArchitect({ series, style, cast, defaultOpen }: { s
   const [notas, setNotas] = useState("");
   const [abierta, setAbierta] = useState<string | null>(null);   // escena con el editor de guion abierto
   const [verHistorial, setVerHistorial] = useState(false);
+  const [pestaña, setPestaña] = useState<"estructura" | "canon" | "escenarios">("estructura");
   const parar = useRef(false);
-  const r = useMemo(() => saved ? rhythm(saved) : null, [saved]);
+  const r = useMemo(() => saved?.acts.length ? rhythm(saved) : null, [saved]);
+  const avisosPorEscena = useMemo(() => {
+    const m = new Map<string, string[]>();
+    if (saved) for (const a of canonAvisos(saved)) if (a.sceneId) m.set(a.sceneId, [...(m.get(a.sceneId) || []), a.texto]);
+    return m;
+  }, [saved]);
   if (!series) return null;
+  // Proyecto base para poder cargar fuentes y escenarios antes de crear la estructura.
+  const base: Outline = saved || { seriesId: series.id, structure: 3, targetMinutes: 20, acts: [] };
 
   async function guardar(o: Outline) {
     const item = { ...o, seriesId: series.id, updatedAt: new Date().toISOString() };
     if (saved?.id) await update("storyOutlines", saved.id, item); else await insert("storyOutlines", item);
   }
   async function ia(body: any) {
-    const res = await postApi("/api/outline", { ...body, style, title: series.title, idea: series.description, cast });
+    const personajes = characters.map(bibliaTexto).filter(Boolean);
+    const res = await postApi("/api/outline", { canon: saved?.canon, escenarios: saved?.escenarios, personajes, ...body, style, title: series.title, idea: series.description, cast });
     if (res.status === 401) throw new Error("Inicia sesión para usar la IA.");
     if (!res.json?.ok) throw new Error(res.json?.error || `HTTP ${res.status}`);
     return res.json.data;
@@ -47,7 +58,7 @@ export default function StoryArchitect({ series, style, cast, defaultOpen }: { s
 
   const crear = () => run("Creando la estructura…", async () => {
     const d = await ia({ action: "estructura", structure: estructura, minutes: minutos, notes: notas });
-    const o = normOutline(d, series.id, d.structure, d.minutes);
+    const o = { ...normOutline(d, series.id, d.structure, d.minutes), id: saved?.id, canon: saved?.canon, escenarios: saved?.escenarios, history: saved?.history };
     o.acts = d.acts;
     await guardar(o);
     setMsg(`Estructura creada: ${o.acts.length} actos y ${allScenes(o).length} escenas. Revisa, bloquea lo que te guste y regenera solo lo que no.`);
@@ -60,6 +71,14 @@ export default function StoryArchitect({ series, style, cast, defaultOpen }: { s
     const node = findNode(saved, id)?.node;
     const d = await ia({ action: "regenerar", kind, node, outline: saved, wish });
     await guardar(replaceNode(snapshot(saved, `Antes de regenerar «${node?.title || node?.heading}»`), id, d.node));
+  });
+  const revisarIA = () => run("Revisando las escenas contra las fuentes…", async () => {
+    if (!saved?.acts.length) throw new Error("Primero crea la estructura.");
+    if (!(saved.canon?.fuentes || []).some(f => f.texto)) throw new Error("Registra al menos una fuente con su texto (en un pasaje bíblico, pulsa «Traer el texto»).");
+    const d = await ia({ action: "revisar", outline: saved });
+    const canon = saved.canon || { nivel: "fundamentada" as const, fuentes: [], afirmaciones: [] };
+    await guardar({ ...saved, canon: { ...canon, revision: d } });
+    setMsg(d.avisos?.length ? `La revisión encontró ${d.avisos.length} posible(s) contradicción(es): aparecen en cada escena.` : "Revisión hecha: ninguna escena contradice las fuentes registradas.");
   });
   const toggleLock = (id: string) => saved && guardar(mapNode(saved, id, n => ({ ...n, locked: !n.locked })));
   const editar = (id: string, campo: string, valor: any) => saved && guardar(mapNode(saved, id, n => ({ ...n, [campo]: valor })));
@@ -99,14 +118,21 @@ export default function StoryArchitect({ series, style, cast, defaultOpen }: { s
       {busy && <p role="status" className="text-sm text-sky-200">{busy} {busy.startsWith("Escribiendo") && <button type="button" onClick={() => { parar.current = true; }} className="ml-2 rounded border border-white/20 px-2 py-0.5 text-xs">Parar</button>}</p>}
       {msg && <p role="status" className="rounded-lg bg-white/5 p-2 text-sm text-slate-200">{msg}</p>}
 
-      {!saved && <div className="grid gap-3 sm:grid-cols-3">
+      <div role="tablist" className="flex flex-wrap gap-1 rounded-xl bg-white/5 p-1 text-xs">
+        {([["estructura", "Estructura"], ["canon", `Fuentes y canon${saved?.canon?.fuentes?.length ? ` (${saved.canon.fuentes.length})` : ""}`], ["escenarios", `Escenarios${saved?.escenarios?.length ? ` (${saved.escenarios.length})` : ""}`]] as const).map(([id, label]) =>
+          <button key={id} type="button" role="tab" aria-selected={pestaña === id} onClick={() => setPestaña(id)} className={`rounded-lg px-3 py-1.5 ${pestaña === id ? "bg-violet-500 font-semibold text-white" : "text-slate-300"}`}>{label}</button>)}
+      </div>
+      {pestaña === "canon" && <CanonPanel outline={base} guardar={guardar} revisarIA={revisarIA} busy={!!busy} />}
+      {pestaña === "escenarios" && <EscenariosPanel outline={base} guardar={guardar} busy={!!busy} />}
+
+      {pestaña === "estructura" && !saved?.acts.length && <div className="grid gap-3 sm:grid-cols-3">
         <label className="text-xs text-slate-300">Estructura<select value={estructura} onChange={e => setEstructura(Number(e.target.value) as 3 | 5)} className="mt-1"><option value={3}>3 actos</option><option value={5}>5 actos</option></select></label>
         <label className="text-xs text-slate-300">Duración del episodio<select value={minutos} onChange={e => setMinutos(Number(e.target.value))} className="mt-1">{[10, 15, 20, 25, 30].map(m => <option key={m} value={m}>{m} min</option>)}</select></label>
         <label className="text-xs text-slate-300 sm:col-span-3">Notas para la IA (opcional)<textarea value={notas} onChange={e => setNotas(e.target.value)} rows={2} className="mt-1" placeholder="Ej.: fuente principal Daniel 10; anticipar el conflicto con el príncipe de Grecia…" /></label>
         <button type="button" disabled={!!busy} onClick={crear} className="rounded-xl bg-violet-500 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50 sm:col-span-3">Crear la estructura con IA</button>
       </div>}
 
-      {saved && r && <>
+      {pestaña === "estructura" && saved && r && <>
         {/* Ritmo: duración por acto frente a lo habitual, curva de tensión y avisos */}
         <div className="rounded-xl border border-white/10 p-3">
           <p className="text-xs font-semibold text-slate-300">Ritmo · {mmss(r.total)} de {saved.targetMinutes} min</p>
@@ -137,6 +163,7 @@ export default function StoryArchitect({ series, style, cast, defaultOpen }: { s
                   <span className="text-slate-500">{mmss(sc.minutes)} · tensión {sc.tension}</span>
                   {sc.source && <span className="rounded bg-amber-300/10 px-1.5 text-amber-200">📖 {sc.source}</span>}
                   {redundante && <span className="text-amber-300">parece repetida</span>}
+                  {!!avisosPorEscena.get(sc.id)?.length && <span title={avisosPorEscena.get(sc.id)!.join("\n")} className="rounded bg-rose-400/15 px-1.5 text-rose-200">⚠ canon ({avisosPorEscena.get(sc.id)!.length})</span>}
                   {sc.scriptApproved && <span className="text-emerald-300">guion aprobado</span>}
                   <span className="ml-auto flex gap-2">
                     <button type="button" onClick={() => toggleLock(sc.id)} disabled={!!busy} className={sc.locked ? "text-emerald-300" : "text-slate-400"} title={sc.locked ? "Desbloquear" : "Bloquear: la IA no la cambiará"}>{sc.locked ? "🔒" : "🔓"}</button>
@@ -145,6 +172,11 @@ export default function StoryArchitect({ series, style, cast, defaultOpen }: { s
                   </span>
                 </div>
                 <Editable valor={sc.summary} disabled={prot} onSave={v => editar(sc.id, "summary", v)} className="mt-1 text-slate-300" />
+                {!!avisosPorEscena.get(sc.id)?.length && <ul className="mt-1 list-disc pl-4 text-rose-200">{avisosPorEscena.get(sc.id)!.map((t, i) => <li key={i}>{t}</li>)}</ul>}
+                {!!saved.escenarios?.length && <label className="mt-1 flex items-center gap-2 text-slate-400">Escenario
+                  <select value={sc.envId || ""} disabled={prot} onChange={e => editar(sc.id, "envId", e.target.value || undefined)} className="w-auto py-0.5 text-xs">
+                    <option value="">— sin escenario fijo —</option>{saved.escenarios.map(e => <option key={e.id} value={e.id}>{e.nombre}{e.locked ? " 🔒" : ""}</option>)}
+                  </select></label>}
                 <div className="mt-1 grid gap-1 text-slate-400 sm:grid-cols-3">
                   <span><b className="text-slate-300">Objetivo:</b> <Editable valor={sc.objective} disabled={prot} onSave={v => editar(sc.id, "objective", v)} /></span>
                   <span><b className="text-slate-300">Obstáculo:</b> <Editable valor={sc.obstacle} disabled={prot} onSave={v => editar(sc.id, "obstacle", v)} /></span>
