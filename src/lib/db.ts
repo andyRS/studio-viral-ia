@@ -80,7 +80,7 @@ function rowOf(collection: CollectionName, item: any, userId: string): Row {
   switch (collection) {
     case "accounts": return { user_id: userId, name: item.name, platform: item.platform, niche: item.niche, audience: item.audience ?? "", ideal_duration: item.idealDuration ?? "" };
     case "series": return { user_id: userId, account_id: uuidOrNull(item.accountId), title: item.title, description: item.description ?? "",
-      meta: { format: item.format ?? "corto", clipAccountIds: Array.isArray(item.clipAccountIds) ? item.clipAccountIds : [] } };
+      meta: { format: item.format ?? "corto", clipAccountIds: Array.isArray(item.clipAccountIds) ? item.clipAccountIds : [], ...(item.style ? { style: item.style } : {}) } };
     case "characters": return { user_id: userId, series_id: uuidOrNull(item.seriesId), name: item.name, image_url: item.imageUrl ?? null, visual_es: item.visualES ?? "", visual_en: item.visualEN ?? "", clothing: item.clothing ?? "", subtitle_color: item.subtitleColor ?? "#ffffff", speech_style: item.speechStyle ?? "", pronunciations: item.pronunciations ?? [], fruit: item.fruit ?? null, fruit_emoji: item.fruitEmoji ?? null, role: item.role ?? null, head_es: item.headES ?? null, voice: item.voice ?? null, flow_prompt: item.flowPrompt ?? null, reference_version: item.referenceVersion ?? 0, reference_approved_at: item.referenceApprovedAt ?? null, reference_history: item.referenceHistory ?? [], ...(item.bible ? { bible: item.bible } : {}) };
     case "formulas": return { user_id: userId, name: item.name, category: item.category ?? "custom", content: item.content ?? "", structure: item.structure ?? [] };
     case "episodes": {
@@ -123,7 +123,7 @@ export function fromRow(collection: CollectionName, r: Row): any {
   switch (collection) {
     case "accounts": return { id: r.id, name: r.name, platform: r.platform, niche: r.niche, audience: r.audience ?? "", idealDuration: r.ideal_duration ?? "" };
     case "series": return { id: r.id, title: r.title, description: r.description ?? "", accountId: r.account_id ?? undefined,
-      format: r.meta?.format ?? "corto", clipAccountIds: Array.isArray(r.meta?.clipAccountIds) ? r.meta.clipAccountIds : [] };
+      format: r.meta?.format ?? "corto", clipAccountIds: Array.isArray(r.meta?.clipAccountIds) ? r.meta.clipAccountIds : [], style: r.meta?.style ?? undefined };
     case "characters": return { id: r.id, seriesId: r.series_id ?? "", name: r.name, imageUrl: r.image_url ?? undefined, visualES: r.visual_es ?? "", visualEN: r.visual_en ?? "", clothing: r.clothing ?? "", subtitleColor: r.subtitle_color ?? "#ffffff", speechStyle: r.speech_style ?? "", pronunciations: r.pronunciations ?? [], fruit: r.fruit ?? undefined, fruitEmoji: r.fruit_emoji ?? undefined, role: r.role ?? undefined, headES: r.head_es ?? undefined, voice: r.voice ?? undefined, flowPrompt: r.flow_prompt ?? undefined, referenceVersion: r.reference_version ?? 0, referenceApprovedAt: r.reference_approved_at ?? undefined, referenceHistory: r.reference_history ?? [], bible: r.bible ?? undefined };
     case "formulas": return { id: r.id, name: r.name, category: r.category ?? "", content: r.content ?? "", structure: r.structure ?? [] };
     case "episodes": {

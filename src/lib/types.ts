@@ -11,7 +11,7 @@ export interface AccountProfile { id:string; accountId:string; handle:string; pl
   reference?:string; followers?:number; ideas?:{ title:string; idea:string }[] }
 // Serie anclada a un canal (cuenta + red): formato largo (16:9, Facebook/YouTube) o corto (9:16), y las
 // cuentas de otras redes a las que van sus clips.
-export interface Series { id:string; title:string; description:string; accountId?:string; format?:"largo"|"corto"; clipAccountIds?:string[] }
+export interface Series { id:string; title:string; description:string; accountId?:string; format?:"largo"|"corto"; clipAccountIds?:string[]; style?:string }
 export interface Character { id:string; seriesId:string; name:string; imageUrl?:string; visualES:string; visualEN:string; clothing:string; subtitleColor:string; speechStyle:string; pronunciations:string[];
   referenceVersion?:number; referenceApprovedAt?:string; referenceHistory?:{version:number; imageUrl:string; approvedAt:string}[];
   bible?:import("./personajes").CharacterBible;   // biblia extendida (rasgos fijos, vestuario, voz, candado…)

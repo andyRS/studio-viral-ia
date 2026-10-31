@@ -9,6 +9,7 @@ export type OutlineScene = {
   id: string; heading: string; summary: string; objective: string; obstacle: string; consequence: string;
   tension: number; minutes: number; source?: string; locked?: boolean; envId?: string;
   script?: ScriptElement[]; scriptApproved?: boolean; scriptHistory?: ScriptVersion[];
+  tomas?: import("./tomas").Toma[];   // fase 4: tomas de la escena (storyboard)
 };
 export type OutlineSequence = { id: string; title: string; goal: string; locked?: boolean; scenes: OutlineScene[] };
 export type OutlineAct = { id: string; title: string; goal: string; locked?: boolean; sequences: OutlineSequence[] };
@@ -29,6 +30,7 @@ export type Escenario = {
 export type Outline = {
   id?: string; seriesId: string; structure: 3 | 5; targetMinutes: number; acts: OutlineAct[];
   history?: OutlineSnapshot[]; updatedAt?: string; canon?: Canon; escenarios?: Escenario[];
+  produccion?: import("./tomas").Produccion;   // fase 4: motor elegido, perfiles y tarifas
 };
 export const NIVELES: Record<Nivel, string> = {
   textual: "Estrictamente textual: solo lo que dice el texto; cada escena con su pasaje",

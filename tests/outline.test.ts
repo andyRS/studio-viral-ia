@@ -1,6 +1,7 @@
 // Prueba de la lógica del proyecto largo (sin red ni navegador): npm test
 import { validarCita, validarCitas } from "../src/lib/biblia";
 import { bibliaTexto } from "../src/lib/personajes";
+import { dividirEscena, duracionClip, partirToma, planProduccion, PERFILES_BASE, promptsDeToma } from "../src/lib/tomas";
 import { canonAvisos, detectarEscenarios, lugarDe, normOutline, replaceNode, snapshot, restore, saveScript, rhythm, isProtected, diffLines, lineOf, mapNode, allScenes } from "../src/lib/outline";
 let fallos = 0;
 const ok = (c: boolean, m: string) => { console.log(`${c ? "ok" : "FALLA"} · ${m}`); if (!c) fallos++; };
@@ -46,4 +47,26 @@ const d = detectarEscenarios(c);
 ok(d.escenarios!.length === 1 && allScenes(d).every(s => s.envId === d.escenarios![0].id), "dos escenas en el mismo lugar comparten escenario");
 const t = bibliaTexto({ name: "Daniel", visualES: "joven hebreo", bible: { negativo: "ropa moderna", candado: true, vestuario: ["túnica de lino"] } });
 ok(/nunca: ropa moderna/.test(t) && /BLOQUEADA/.test(t) && /túnica de lino/.test(t), "la biblia del personaje llega completa a la IA");
+
+// Fase 4: tomas, prompts por motor y plan de producción
+const flow = PERFILES_BASE.find(p => p.id === "flow")!, kling = PERFILES_BASE.find(p => p.id === "kling")!, seed = PERFILES_BASE.find(p => p.id === "seedance")!;
+const escena = { ...allScenes(c)[0], script: [
+  { type: "accion" as const, text: "Daniel se arrodilla junto al río." }, { type: "sonido" as const, text: "agua corriendo" },
+  { type: "dialogo" as const, speaker: "Daniel", text: "Señor, han pasado veintiún días y sigo esperando tu respuesta." },
+  { type: "off" as const, speaker: "Narrador", text: "Y entonces alzó los ojos." }] };
+const ts = dividirEscena(escena, flow);
+ok(ts.length === 3 && ts[1].dialogo?.speaker === "Daniel" && ts.every(t => t.duracion <= 8), "dividir sin IA: una toma por frase y ninguna pasa del clip del motor");
+ok(duracionClip(6, seed) === 8 && duracionClip(12, kling) === 10, "el clip pedido es la duración admitida más cercana por arriba");
+const ctxP = { style: "epica" as any, formato: "16:9", personajes: [{ name: "Daniel", visualES: "anciano hebreo", bible: { negativo: "ropa moderna", voz: "grave" } }] };
+const pf = promptsDeToma(ts[1], flow, ctxP), pk = promptsDeToma(ts[1], kling, ctxP), ps = promptsDeToma(ts[1], seed, ctxP);
+ok(/Daniel dice: «Señor/.test(pf.video) && /SIN AUDIO/.test(pk.video) && !/dice:/.test(pk.video), "el diálogo va en el vídeo solo si el motor tiene audio");
+ok(ps.video.startsWith("Usa Seedance 2.5.") && /nunca: ropa moderna/.test(ps.video) && /horizontal 16:9/.test(ps.video) && !/vertical 9:16/.test(ps.video), "prefijo del motor, ficha del personaje y formato 16:9");
+const pa = promptsDeToma(ts[0], flow, ctxP);
+ok(/anciano hebreo/.test(pa.video) && !/Nadie más/.test(pa.video) && !/\.\./.test(pa.video), "la acción que nombra a un personaje trae su ficha y sin puntos dobles");
+const [t1, t2] = partirToma({ ...ts[0], duracion: 14 });
+ok(t1.duracion + t2.duracion === 14 && /anterior/.test(t2.frameInicial), "partir una toma larga conserva la duración y enlaza los fotogramas");
+let pl = planProduccion(c, flow);
+ok(pl.creditos === null && pl.usd === null && pl.tomas > 0, "sin tarifa del usuario no hay coste inventado");
+pl = planProduccion(c, { ...flow, creditosSegundo: 2, creditosImagen: 0, usdCredito: 0.01, reintentos: 1 });
+ok(pl.creditos === pl.segundosClips * 2 && pl.usd === Math.round(pl.creditos! * 0.01 * 100) / 100, "con tarifa, el coste sale de los segundos generados");
 if (fallos) { console.log(`${fallos} prueba(s) fallaron`); process.exit(1); }

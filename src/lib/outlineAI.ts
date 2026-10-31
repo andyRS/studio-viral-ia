@@ -2,6 +2,7 @@
 // y guion cinematográfico de una escena. Respuestas en JSON validadas con normOutline / normScript.
 import { askJson } from "./story";
 import { CHRISTIAN_SCENE_GUARD, STYLES, type StyleKey } from "./knowledge";
+import { normToma } from "./tomas";
 import { allScenes, CATEGORIAS, escenarioTexto, NIVELES, normAct, normScene, normScript, normSequence, type Canon, type Escenario, type Outline, type NodeKind } from "./outline";
 
 // Lo que la historia debe respetar: nivel de adaptación, fuentes propias (con su texto), afirmaciones clasificadas,
@@ -99,4 +100,24 @@ Responde SOLO JSON: {"avisos":[{"sceneId":"id exacto de la escena","aviso":"qué
   const ids = new Set(escenas.map(e => e.id));
   const avisos = (Array.isArray(raw?.avisos) ? raw.avisos : []).filter((a: any) => ids.has(String(a?.sceneId)) && String(a?.aviso || "").trim()).map((a: any) => ({ sceneId: String(a.sceneId), aviso: String(a.aviso).trim().slice(0, 400) }));
   return { avisos, at: new Date().toISOString() };
+}
+
+// Scene Director: convierte el guion de una escena en tomas que caben en los clips del motor elegido.
+export async function splitShots(input: any) {
+  const style = styleOf(input?.style);
+  const sc = input?.scene || {};
+  const p = input?.perfil || {};
+  const durs: number[] = Array.isArray(p.duraciones) && p.duraciones.length ? p.duraciones.map(Number).filter((n: number) => n > 0) : [8];
+  const max = Math.max(...durs);
+  const system = `${brief(style)}${contextoCanon(input)}
+
+TAREA: eres el DIRECTOR DE FOTOGRAFÍA. Divide esta escena en TOMAS para generarlas con ${p.nombre || "un motor de vídeo con IA"} (clips de ${durs.join(", ")} s; ninguna toma dura más de ${max} s). Formato ${input?.formato || "16:9"}.
+Reglas: una acción principal por toma; si alguien habla, una sola persona por toma y la frase cabe en el clip (unas 2,5 palabras por segundo; si no cabe, parte la frase en dos tomas); alterna planos (general de situación al entrar, medios, primeros planos para la emoción, detalles para los objetos clave); la cámara se mueve con intención; el último fotograma de una toma enlaza con el primero de la siguiente; respeta los escenarios fijos y las fichas de personajes; no añadas personajes que no están en la escena.${p.audio ? "" : " El motor NO genera audio: el diálogo se graba aparte, pero sigue indicándolo en cada toma."}${p.camara ? ` Cámara que entiende el motor: ${p.camara}.` : ""}
+Todo en español. Responde SOLO JSON: {"tomas":[{"personajes":["Nombre"],"accion":"lo que se ve","plano":"plano general | plano medio | primer plano | plano detalle | contrapicado…","lente":"24mm | 35mm | 50mm | 85mm anamórfico…","movimiento":"fija | travelling lento | paneo | grúa | dron | cámara en mano…","composicion":"","luz":"","vfx":"efectos visuales o vacío","expresion":"expresión y movimiento corporal","dialogo":{"speaker":"","text":""},"sonido":"ambiente y efectos","musica":"música sugerida o vacío","duracion":${Math.min(5, max)},"frameInicial":"","frameFinal":"","transicion":"corte | encadenado | corte a negro | match cut"}]}
+Si una toma no tiene diálogo, omite "dialogo".`;
+  const user = JSON.stringify({ escena: { encabezado: sc.heading, resumen: sc.summary, objetivo: sc.objective, obstaculo: sc.obstacle, consecuencia: sc.consequence, minutos: sc.minutes }, guion: (sc.script || []).map((e: any) => `${e.type.toUpperCase()}${e.speaker ? ` ${e.speaker}` : ""}: ${e.text}`), escenario: input?.escenario, deseo: input?.wish });
+  const raw = await askJson(system, user);
+  const tomas = (Array.isArray(raw?.tomas) ? raw.tomas : []).map((t: any) => normToma(t, max)).filter((t: any) => t.accion);
+  if (!tomas.length) throw new Error("La IA no devolvió tomas. Vuelve a intentarlo.");
+  return { tomas };
 }

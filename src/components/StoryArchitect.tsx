@@ -4,6 +4,8 @@
 import { useMemo, useRef, useState } from "react";
 import { useData } from "@/lib/DataContext";
 import { CanonPanel, EscenariosPanel } from "@/components/CanonPanels";
+import { PlanPanel, TomasPanel } from "@/components/ProduccionPanels";
+import { STYLES, type StyleKey } from "@/lib/knowledge";
 import { bibliaTexto } from "@/lib/personajes";
 import { postApi } from "@/lib/api-client";
 import {
@@ -28,7 +30,7 @@ export default function StoryArchitect({ series, style, cast, characters = [], d
   const [notas, setNotas] = useState("");
   const [abierta, setAbierta] = useState<string | null>(null);   // escena con el editor de guion abierto
   const [verHistorial, setVerHistorial] = useState(false);
-  const [pestaña, setPestaña] = useState<"estructura" | "canon" | "escenarios">("estructura");
+  const [pestaña, setPestaña] = useState<"estructura" | "canon" | "escenarios" | "tomas" | "plan">("estructura");
   const parar = useRef(false);
   const r = useMemo(() => saved?.acts.length ? rhythm(saved) : null, [saved]);
   const avisosPorEscena = useMemo(() => {
@@ -58,7 +60,7 @@ export default function StoryArchitect({ series, style, cast, characters = [], d
 
   const crear = () => run("Creando la estructura…", async () => {
     const d = await ia({ action: "estructura", structure: estructura, minutes: minutos, notes: notas });
-    const o = { ...normOutline(d, series.id, d.structure, d.minutes), id: saved?.id, canon: saved?.canon, escenarios: saved?.escenarios, history: saved?.history };
+    const o = { ...normOutline(d, series.id, d.structure, d.minutes), id: saved?.id, canon: saved?.canon, escenarios: saved?.escenarios, produccion: saved?.produccion, history: saved?.history };
     o.acts = d.acts;
     await guardar(o);
     setMsg(`Estructura creada: ${o.acts.length} actos y ${allScenes(o).length} escenas. Revisa, bloquea lo que te guste y regenera solo lo que no.`);
@@ -118,12 +120,16 @@ export default function StoryArchitect({ series, style, cast, characters = [], d
       {busy && <p role="status" className="text-sm text-sky-200">{busy} {busy.startsWith("Escribiendo") && <button type="button" onClick={() => { parar.current = true; }} className="ml-2 rounded border border-white/20 px-2 py-0.5 text-xs">Parar</button>}</p>}
       {msg && <p role="status" className="rounded-lg bg-white/5 p-2 text-sm text-slate-200">{msg}</p>}
 
+      {!series.style && <label className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-400/25 bg-amber-400/[.06] p-2 text-xs text-amber-100">Estilo visual del proyecto (la serie aún no lo tiene guardado):
+        <select value={style} onChange={e => { void update("series", series.id, { style: e.target.value }); }} className="w-auto py-1 text-xs">{Object.entries(STYLES).map(([k, v]) => <option key={k} value={k}>{(v as any).label}</option>)}</select></label>}
       <div role="tablist" className="flex flex-wrap gap-1 rounded-xl bg-white/5 p-1 text-xs">
-        {([["estructura", "Estructura"], ["canon", `Fuentes y canon${saved?.canon?.fuentes?.length ? ` (${saved.canon.fuentes.length})` : ""}`], ["escenarios", `Escenarios${saved?.escenarios?.length ? ` (${saved.escenarios.length})` : ""}`]] as const).map(([id, label]) =>
+        {([["estructura", "Estructura"], ["canon", `Fuentes y canon${saved?.canon?.fuentes?.length ? ` (${saved.canon.fuentes.length})` : ""}`], ["escenarios", `Escenarios${saved?.escenarios?.length ? ` (${saved.escenarios.length})` : ""}`], ["tomas", "Tomas y storyboard"], ["plan", "Plan y costos"]] as const).map(([id, label]) =>
           <button key={id} type="button" role="tab" aria-selected={pestaña === id} onClick={() => setPestaña(id)} className={`rounded-lg px-3 py-1.5 ${pestaña === id ? "bg-violet-500 font-semibold text-white" : "text-slate-300"}`}>{label}</button>)}
       </div>
       {pestaña === "canon" && <CanonPanel outline={base} guardar={guardar} revisarIA={revisarIA} busy={!!busy} />}
       {pestaña === "escenarios" && <EscenariosPanel outline={base} guardar={guardar} busy={!!busy} />}
+      {pestaña === "tomas" && <TomasPanel outline={base} guardar={guardar} ia={ia} run={run} busy={!!busy} style={style as StyleKey} characters={characters} />}
+      {pestaña === "plan" && <PlanPanel outline={base} guardar={guardar} busy={!!busy} />}
 
       {pestaña === "estructura" && !saved?.acts.length && <div className="grid gap-3 sm:grid-cols-3">
         <label className="text-xs text-slate-300">Estructura<select value={estructura} onChange={e => setEstructura(Number(e.target.value) as 3 | 5)} className="mt-1"><option value={3}>3 actos</option><option value={5}>5 actos</option></select></label>

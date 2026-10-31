@@ -147,8 +147,9 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
   const episodesOf = (sid: string) => data.episodes.filter((e: any) => e.seriesId === sid).sort((a: any, b: any) => String(a.createdAt).localeCompare(String(b.createdAt)));
   const seriesList = useMemo(() => data.series.map((s: any) => {
     const eps = episodesOf(s.id); const last = eps[eps.length - 1];
-    return { ...s, eps, last, style: (eps[0]?.output?.seriesBible?.style || "frutinovela") as StyleKey };
-  }).sort((a: any, b: any) => String(b.last?.createdAt || "").localeCompare(String(a.last?.createdAt || ""))), [data.series, data.episodes]);
+    // Estilo: el del primer episodio; si la serie aún no tiene (proyecto largo), el guardado en la serie o el de su cuenta.
+    return { ...s, eps, last, style: (eps[0]?.output?.seriesBible?.style || s.style || (data.accountProfiles || []).find((p: any) => p.accountId === s.accountId)?.style || "frutinovela") as StyleKey };
+  }).sort((a: any, b: any) => String(b.last?.createdAt || "").localeCompare(String(a.last?.createdAt || ""))), [data.series, data.episodes, data.accountProfiles]);
   const current = seriesList.find((s: any) => s.id === seriesId);
   const currentChars = data.characters.filter((c: any) => c.seriesId === seriesId);
   const currentSignals = current ? seriesSignals(current.eps, data.metrics) : [];
@@ -227,7 +228,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
       const body = { idea: idea_, style, duration, account, notes: notes_, learnings, chosenHook, replica: kind_ === "replica" ? replica : "", accountProfile: profileFor(account?.id), usadas };
       const res = await call("/api/series", body, () => templateSeries(body)); if (!res) return;
       const d = res.data;
-      const s = await insert("series", { title: d.series?.title || idea_.slice(0, 60), description: d.series?.logline || idea_, accountId: canal.id, format: formato, clipAccountIds: clipIds });
+      const s = await insert("series", { title: d.series?.title || idea_.slice(0, 60), description: d.series?.logline || idea_, accountId: canal.id, format: formato, clipAccountIds: clipIds, style });
       // Elenco fijo de la cuenta: si la IA reutiliza a un personaje compartido, se copia su ficha aprobada.
       const shared = sharedCastOf(account?.id);
       for (const c of d.characters || []) {
