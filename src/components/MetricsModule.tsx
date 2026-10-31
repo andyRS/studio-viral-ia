@@ -7,6 +7,7 @@ import { templateMetricRecommendations } from "@/lib/llm";
 import { learnFromMetrics } from "@/lib/learning";
 import MetaConnect from "./MetaConnect";
 import EpisodeInsights from "./EpisodeInsights";
+import WorkspaceIntro, { WorkspaceLoading } from "./WorkspaceIntro";
 import type { Metric } from "@/lib/types";
 
 const PLATFORMS = ["Instagram", "Facebook", "TikTok", "YouTube Shorts"];
@@ -69,10 +70,10 @@ function RefBadge({ value, refAvg }: { value: number; refAvg: number }) {
 }
 
 function AccountCard({ s, rank, refAvg, active, onClick }: { s: AccountStat; rank: number; refAvg: number; active: boolean; onClick: () => void }) {
-  return <button type="button" onClick={onClick} aria-pressed={active} aria-label={`${s.name}: ${s.views.toLocaleString()} vistas. ${active ? "Quitar filtro" : "Filtrar publicaciones de esta cuenta"}`} className={`group relative min-h-[236px] min-w-[270px] max-w-[320px] flex-1 snap-start overflow-hidden rounded-[22px] border p-4 text-left text-white shadow-[0_18px_40px_-28px_#000] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_22px_45px_-22px_#000] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#598BFF] ${s.ref ? "border-[#FF9F1C]/60 bg-[linear-gradient(135deg,rgba(255,159,28,.17),#151C2B_52%,#111827)]" : "border-white/10 bg-[#151C2B] hover:border-[#598BFF]/45"} ${active ? "border-[#598BFF] ring-2 ring-[#598BFF]/60" : ""}`}>
-    <span aria-hidden="true" className={`absolute -right-8 -top-12 h-32 w-32 rounded-full blur-3xl transition-opacity group-hover:opacity-100 ${s.ref ? "bg-[#FF9F1C]/20" : "bg-[#598BFF]/10"}`} />
+  return <button type="button" onClick={onClick} aria-pressed={active} aria-label={`${s.name}: ${s.views.toLocaleString()} vistas. ${active ? "Quitar filtro" : "Filtrar publicaciones de esta cuenta"}`} className={`group relative min-h-[236px] min-w-[270px] max-w-[320px] flex-1 snap-start overflow-hidden rounded-[22px] border p-4 text-left text-white shadow-[0_18px_40px_-28px_#000] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_22px_45px_-22px_#000] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#36B8C4] ${s.ref ? "border-[#F5BC69]/60 bg-[linear-gradient(135deg,rgba(255,159,28,.17),#151C2B_52%,#111827)]" : "border-white/10 bg-[#151C2B] hover:border-[#36B8C4]/45"} ${active ? "border-[#36B8C4] ring-2 ring-[#36B8C4]/60" : ""}`}>
+    <span aria-hidden="true" className={`absolute -right-8 -top-12 h-32 w-32 rounded-full blur-3xl transition-opacity group-hover:opacity-100 ${s.ref ? "bg-[#F5BC69]/20" : "bg-[#36B8C4]/10"}`} />
     <span className="relative flex items-center justify-between gap-2">
-      <span className={`inline-flex min-h-7 items-center rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[.12em] ${s.ref ? "border-[#FF9F1C]/40 bg-[#FF9F1C]/15 text-[#FFCB84]" : "border-white/10 bg-white/5 text-slate-300"}`}>{s.ref ? "★ Cuenta de referencia" : `#${rank} por vistas`}</span>
+      <span className={`inline-flex min-h-7 items-center rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[.12em] ${s.ref ? "border-[#F5BC69]/40 bg-[#F5BC69]/15 text-[#F5CC92]" : "border-white/10 bg-white/5 text-slate-300"}`}>{s.ref ? "★ Cuenta de referencia" : `#${rank} por vistas`}</span>
       <span className="flex gap-1" aria-label={`Plataformas: ${s.platforms.join(", ")}`}>{s.platforms.map(p => <span key={p} title={p} className={`rounded-md px-1.5 py-1 text-[10px] font-bold ${pstyle(p).badge}`}>{pstyle(p).short}</span>)}</span>
     </span>
     <span className="relative mt-4 block min-h-10 break-words text-base font-bold leading-tight" title={s.name}>{s.name}</span>
@@ -91,7 +92,7 @@ function Thumb({ src, platform }: { src?: string; platform: string }) {
   useEffect(() => setBroken(false), [src]);
   return <div className="absolute inset-0 overflow-hidden bg-[#090D16]">
     <div className={`absolute inset-0 bg-gradient-to-br ${pstyle(platform).bg}`} />
-    {src && !broken ? <img src={src} alt="" loading="lazy" referrerPolicy="no-referrer" onError={() => setBroken(true)} className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" /> : <div className="absolute inset-0 grid place-items-center overflow-hidden bg-[radial-gradient(ellipse_at_65%_30%,rgba(255,159,28,.22),transparent_52%),radial-gradient(ellipse_at_25%_90%,rgba(89,139,255,.26),transparent_56%)]">
+    {src && !broken ? <img src={src} alt="" loading="lazy" referrerPolicy="no-referrer" onError={() => setBroken(true)} className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" /> : <div className="absolute inset-0 grid place-items-center overflow-hidden bg-[radial-gradient(ellipse_at_65%_30%,rgba(255,159,28,.22),transparent_52%),radial-gradient(ellipse_at_25%_90%,rgba(54,184,196,.26),transparent_56%)]">
       <span className="absolute -left-8 top-10 h-32 w-32 rotate-45 border border-white/10" aria-hidden="true" />
       <span className="absolute right-0 top-0 h-full w-1/3 border-l border-white/10 bg-white/[.03]" aria-hidden="true" />
       <span className="relative flex flex-col items-center gap-2 text-slate-200/80"><svg aria-hidden="true" viewBox="0 0 48 48" fill="none" className="h-11 w-11"><rect x="5" y="12" width="38" height="29" rx="5" stroke="currentColor" strokeWidth="1.5"/><path d="M5 21h38M13 12l8 9m5-9 8 9" stroke="currentColor" strokeWidth="1.5"/><path d="m21 27 8 4-8 4v-8Z" fill="currentColor"/></svg><span className="text-[10px] font-semibold uppercase tracking-[.18em]">Sin miniatura</span></span>
@@ -108,20 +109,20 @@ function ReelCard({ m, rank, refAvg, onDelete, onOpenEpisode }: { m: Metric & { 
   if (typeof m.skipRate === "number") chips.push(["⏭", `${m.skipRate}% salta en 3 s`]);
   if (m.followers) chips.push(["👤", `+${fmt(m.followers)}`]);
   const ref = isReference(m.account);
-  return <article id={`metric-${m.id}`} className={`group relative flex scroll-mt-28 flex-col overflow-hidden rounded-[22px] border bg-[#151C2B] text-white shadow-[0_18px_40px_-28px_#000] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_24px_45px_-22px_#000] focus-within:border-[#598BFF]/70 ${ref ? "border-[#FF9F1C]/45" : "border-white/10 hover:border-[#598BFF]/35"}`}>
+  return <article id={`metric-${m.id}`} className={`group relative flex scroll-mt-28 flex-col overflow-hidden rounded-[22px] border bg-[#151C2B] text-white shadow-[0_18px_40px_-28px_#000] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_24px_45px_-22px_#000] focus-within:border-[#36B8C4]/70 ${ref ? "border-[#F5BC69]/45" : "border-white/10 hover:border-[#36B8C4]/35"}`}>
     <div className="relative h-44 overflow-hidden sm:h-48">
       <Thumb src={m.thumb} platform={m.platform} />
       <div className="absolute inset-x-3 top-3 flex items-start gap-1.5">
-        <span className={`inline-flex h-8 min-w-8 items-center justify-center rounded-lg px-2 text-xs font-black shadow-lg ${rank <= 3 ? "bg-[#FF9F1C] text-[#090D16]" : "border border-white/20 bg-[#090D16]/80 text-white"}`}>#{rank}</span>
+        <span className={`inline-flex h-8 min-w-8 items-center justify-center rounded-lg px-2 text-xs font-black shadow-lg ${rank <= 3 ? "bg-[#F5BC69] text-[#090D16]" : "border border-white/20 bg-[#090D16]/80 text-white"}`}>#{rank}</span>
         <span className={`inline-flex h-8 items-center rounded-lg px-2 text-[10px] font-bold shadow-lg ${pstyle(m.platform).badge}`}>{m.platform}</span>
         <details className="relative ml-auto">
-          <summary className="flex h-10 w-10 cursor-pointer list-none items-center justify-center rounded-xl border border-white/20 bg-[#090D16]/85 text-lg font-bold text-white transition hover:bg-[#090D16] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FF9F1C]" aria-label={`Opciones de ${m.episodeTitle || "este video"}`}>···</summary>
+          <summary className="flex h-10 w-10 cursor-pointer list-none items-center justify-center rounded-xl border border-white/20 bg-[#090D16]/85 text-lg font-bold text-white transition hover:bg-[#090D16] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F5BC69]" aria-label={`Opciones de ${m.episodeTitle || "este video"}`}>···</summary>
           <div className="absolute right-0 top-11 z-10 min-w-40 rounded-xl border border-white/15 bg-[#151C2B] p-1 shadow-xl">
-            <button type="button" onClick={() => { if (window.confirm("¿Eliminar esta métrica? Esta acción no se puede deshacer.")) onDelete(); }} className="min-h-10 w-full rounded-lg px-3 py-2 text-left text-xs text-rose-200 hover:bg-rose-500/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#FF9F1C]">Eliminar métrica</button>
+            <button type="button" onClick={() => { if (window.confirm("¿Eliminar esta métrica? Esta acción no se puede deshacer.")) onDelete(); }} className="min-h-10 w-full rounded-lg px-3 py-2 text-left text-xs text-rose-200 hover:bg-rose-500/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#F5BC69]">Eliminar métrica</button>
           </div>
         </details>
       </div>
-      {ref && <span className="absolute bottom-3 left-3 rounded-full border border-[#FF9F1C]/50 bg-[#090D16]/85 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-[#FFCB84]">★ Referencia</span>}
+      {ref && <span className="absolute bottom-3 left-3 rounded-full border border-[#F5BC69]/50 bg-[#090D16]/85 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-[#F5CC92]">★ Referencia</span>}
     </div>
     <div className="flex flex-1 flex-col p-4">
       <div className="flex items-start justify-between gap-2">
@@ -134,8 +135,8 @@ function ReelCard({ m, rank, refAvg, onDelete, onOpenEpisode }: { m: Metric & { 
       <p className="mt-0.5 text-[11px] text-slate-400">Publicado {m.date ? <time dateTime={m.date}>{m.date}</time> : "sin fecha"}</p>
       <div className="mt-4 flex flex-wrap gap-1.5 border-t border-white/10 pt-3">{chips.map(([i, t]) => <span key={t} className="rounded-full border border-white/10 bg-[#090D16]/45 px-2.5 py-1 text-[11px] text-slate-200">{i} {t}</span>)}</div>
       <div className="mt-auto flex flex-wrap items-center gap-2 pt-4">
-        <button type="button" onClick={onOpenEpisode} className="inline-flex min-h-10 flex-1 items-center justify-center rounded-xl border border-[#598BFF]/40 bg-[#598BFF]/10 px-3 text-xs font-bold text-[#B3C9FF] transition hover:border-[#598BFF] hover:bg-[#598BFF]/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#598BFF]">Analizar episodio <span aria-hidden="true" className="ml-1">↗</span></button>
-        {m.permalink && <a href={m.permalink} target="_blank" rel="noreferrer" aria-label={`Ver ${m.episodeTitle || "publicación"} en ${m.platform}`} className="inline-flex min-h-10 items-center justify-center rounded-xl border border-white/15 px-3 text-xs font-semibold text-slate-200 transition hover:border-white/40 hover:bg-white/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#598BFF]">Ver video ↗</a>}
+        <button type="button" onClick={onOpenEpisode} className="inline-flex min-h-10 flex-1 items-center justify-center rounded-xl border border-[#36B8C4]/40 bg-[#36B8C4]/10 px-3 text-xs font-bold text-[#C1EBEF] transition hover:border-[#36B8C4] hover:bg-[#36B8C4]/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#36B8C4]">Analizar episodio <span aria-hidden="true" className="ml-1">↗</span></button>
+        {m.permalink && <a href={m.permalink} target="_blank" rel="noreferrer" aria-label={`Ver ${m.episodeTitle || "publicación"} en ${m.platform}`} className="inline-flex min-h-10 items-center justify-center rounded-xl border border-white/15 px-3 text-xs font-semibold text-slate-200 transition hover:border-white/40 hover:bg-white/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#36B8C4]">Ver video ↗</a>}
       </div>
     </div>
   </article>;
@@ -159,6 +160,7 @@ export default function MetricsModule({ focusMetricId }: { focusMetricId?: strin
   const [sort, setSort] = useState<"views" | "avgWatch" | "interactions" | "date">("views");
   const [shown, setShown] = useState(12);
   const [ep, setEp] = useState("");
+  const [chartDate, setChartDate] = useState("");
   const [f, setF] = useState<any>({ episodeTitle: "", platform: "TikTok", date: todayInStudioTimeZone(), views: "", avgWatch: "", interactions: "", followers: "", formula: "", hook: "", duration: "", shares: "", saves: "", oneMinViews: "", estRevenue: "", completion: "", searches: "", viewedVsSwiped: "", retention: "" });
 
   useEffect(() => {
@@ -236,20 +238,18 @@ export default function MetricsModule({ focusMetricId }: { focusMetricId?: strin
     } catch (error: any) { setLinkMsg(`No se pudo vincular: ${error?.message || String(error)}`); }
   }
 
-  return <section className="space-y-6">
-    <div className="flex flex-wrap items-end justify-between gap-4">
-      <div>
-        <p className="text-[11px] font-bold uppercase tracking-[.2em] text-[#FF9F1C]">Estudio Viral / Intelligence Hub</p>
-        <h2 className="mt-2 text-2xl font-bold tracking-tight text-white sm:text-3xl">Centro de rendimiento</h2>
-        <p className="mt-2 max-w-2xl text-sm text-slate-300">Analiza las publicaciones medidas y encuentra el siguiente paso para tus historias.</p>
-      </div>
-      <div className="rounded-xl border border-white/10 bg-white/[.035] px-3 py-2 text-xs text-slate-300">
+  if (mode === "cargando") return <WorkspaceLoading label="Intelligence Hub / Rendimiento" />;
+  return <section className="growth-workspace intelligence-workspace space-y-6">
+    <WorkspaceIntro eyebrow="Intelligence Hub / Rendimiento" title="Cada historia deja una señal." description="Conecta los resultados con tus decisiones creativas. Explora lo que se ha medido y encuentra las historias que merecen una segunda mirada." index="02 / INTELIGENCIA">
+      <div className="growth-capture">
         <span className="block font-semibold text-slate-100">{mode === "supabase" ? "Datos de tu cuenta" : "Datos de este navegador"}</span>
         <span>Último registro: {lastCapture ? new Intl.DateTimeFormat("es-DO", { dateStyle: "medium", timeStyle: "short", timeZone: "America/Santo_Domingo" }).format(new Date(lastCapture)) : "no registrado"}</span>
       </div>
-    </div>
+    </WorkspaceIntro>
+    <nav className="growth-jump-nav" aria-label="Secciones de rendimiento"><a href="#intelligence-overview">01 · Panorama</a><a href="#intelligence-signals">02 · Señales</a><a href="#intelligence-library">03 · Publicaciones</a><a href="#intelligence-tools">04 · Profundizar</a></nav>
 
-    <div className="rounded-2xl border border-white/10 bg-[#151C2B] p-4 sm:p-5">
+    <div id="intelligence-overview" className="growth-filter-panel">
+      <div className="growth-panel-heading"><p className="studio-eyebrow">Elige tu perspectiva</p><button type="button" className="studio-text-action" disabled={!seriesId && platform === "Todas" && !period && !account && !query} onClick={() => { setSeriesId(""); setPlatform("Todas"); setPeriod(0); setAccount(""); setQuery(""); setShown(12); }}>Restablecer filtros ↺</button></div>
       <div className="flex flex-wrap items-end gap-3">
         <label className="min-w-40 flex-1 text-xs font-semibold text-slate-300">Serie
           <select className="mt-1" value={seriesId} onChange={e => { setSeriesId(e.target.value); setAccount(""); setShown(12); }}>
@@ -269,13 +269,13 @@ export default function MetricsModule({ focusMetricId }: { focusMetricId?: strin
         </label>
       </div>
       {seriesId && <p className="mt-2 text-xs text-slate-400">El filtro de serie incluye solo publicaciones vinculadas a un episodio de esa serie.</p>}
-      {account && <button type="button" onClick={() => setAccount("")} className="mt-3 text-xs font-semibold text-[#86A9FF] hover:text-white">Cuenta: {account} · quitar filtro</button>}
+      {account && <button type="button" onClick={() => setAccount("")} className="mt-3 text-xs font-semibold text-[#8BD5DF] hover:text-white">Cuenta: {account} · quitar filtro</button>}
     </div>
 
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+    <div className="intelligence-kpis grid grid-cols-2 gap-3 lg:grid-cols-4" aria-label="Indicadores de las publicaciones filtradas">
       {[
-        { label: "Visualizaciones", value: totals.reels ? fmt(totals.views) : "—", note: `${totals.reels} publicaciones medidas`, color: "text-[#FF9F1C]" },
-        { label: retention === null && avgWatch !== null ? "Tiempo visto medio" : "Retención media", value: retention !== null ? `${retention}%` : avgWatch !== null ? `${avgWatch}s` : "—", note: retentionValues.length ? `${retentionValues.length} registros con retención` : watchValues.length ? `${watchValues.length} publicaciones con tiempo visto` : "Sin dato comparable", color: "text-[#86A9FF]" },
+        { label: "Visualizaciones", value: totals.reels ? fmt(totals.views) : "—", note: `${totals.reels} publicaciones medidas`, color: "text-[#F5BC69]" },
+        { label: retention === null && avgWatch !== null ? "Tiempo visto medio" : "Retención media", value: retention !== null ? `${retention}%` : avgWatch !== null ? `${avgWatch}s` : "—", note: retentionValues.length ? `${retentionValues.length} ${retentionValues.length === 1 ? "registro" : "registros"} con retención` : watchValues.length ? `${watchValues.length} publicaciones con tiempo visto` : "Sin dato comparable", color: "text-[#8BD5DF]" },
         { label: "Interacciones", value: totals.reels ? fmt(totals.interactions) : "—", note: "Suma de publicaciones", color: "text-white" },
         { label: "Seguidores ganados", value: totals.reels ? `+${fmt(totals.followers)}` : "—", note: "Suma registrada", color: "text-[#34D399]" },
       ].map(card => <article key={card.label} className="min-h-32 rounded-2xl border border-white/10 bg-[#151C2B] p-4 shadow-[0_12px_35px_-25px_#000] sm:p-5">
@@ -287,39 +287,40 @@ export default function MetricsModule({ focusMetricId }: { focusMetricId?: strin
 
     {accounts.length > 0 && <section aria-labelledby="accounts-heading" className="rounded-[24px] border border-white/10 bg-[#101724] p-4 sm:p-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <div><p className="text-[10px] font-bold uppercase tracking-[.2em] text-[#FF9F1C]">Rendimiento por cuenta</p><h3 id="accounts-heading" className="mt-1 text-lg font-bold text-white">Cuentas por visualizaciones</h3><p className="mt-1 text-xs text-slate-300">Selecciona una cuenta para explorar sus publicaciones. Las vistas son acumuladas.</p></div>
+        <div><p className="text-[10px] font-bold uppercase tracking-[.2em] text-[#F5BC69]">Rendimiento por cuenta</p><h3 id="accounts-heading" className="mt-1 text-lg font-bold text-white">Cuentas por visualizaciones</h3><p className="mt-1 text-xs text-slate-300">Selecciona una cuenta para explorar sus publicaciones. Las vistas son acumuladas.</p></div>
         <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-300">{accounts.length} {accounts.length === 1 ? "cuenta" : "cuentas"}</span>
       </div>
       <div className="-mx-1 mt-4 flex snap-x gap-3 overflow-x-auto px-1 pb-3">{accounts.map(s => <AccountCard key={s.name} s={s} rank={accounts.filter(a => !a.ref).indexOf(s) + 1} refAvg={refAvg} active={account === s.name} onClick={() => { setAccount(account === s.name ? "" : s.name); setShown(12); }} />)}</div>
       <p className="text-[11px] text-slate-400">El promedio de vistas y tiempo visto se calcula por publicación medida.</p>
     </section>}
 
-    <div className="grid gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(290px,1fr)]">
-      <article className="rounded-2xl border border-white/10 bg-[#151C2B] p-5">
+    <div id="intelligence-signals" className="intelligence-signals grid gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(290px,1fr)]">
+      <article className="intelligence-chart rounded-2xl border border-white/10 bg-[#151C2B] p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div><h3 className="text-base font-bold text-white">Rendimiento por fecha de publicación</h3><p className="mt-1 text-xs text-slate-400">Vistas actuales agrupadas por la fecha de cada video.</p></div>
-          <span className="rounded-full border border-white/10 px-2.5 py-1 text-[11px] text-slate-300">{publishDates.length} fechas</span>
+          <div><h3 className="text-base font-bold text-white">Rendimiento por fecha de publicación</h3><p className="mt-1 text-xs text-slate-400">Vistas acumuladas · hasta las 8 fechas de publicación más recientes.</p></div>
+          <span className="rounded-full border border-white/10 px-2.5 py-1 text-[11px] text-slate-300">{publishDates.length} {publishDates.length === 1 ? "fecha" : "fechas"}</span>
         </div>
         {publishDates.length ? <>
           <div className="mt-6 overflow-x-auto" role="region" aria-label="Gráfica de vistas por fecha de publicación" tabIndex={0}>
-            <div className="flex h-48 w-full min-w-[480px] items-end gap-3 border-b border-white/15 pb-2" aria-hidden="true">
-              {publishDates.map(([date, bucket]) => <div key={date} className="flex min-w-0 flex-1 flex-col items-center justify-end gap-2">
-                <span className="text-[10px] font-semibold text-slate-200">{fmt(bucket.views)}</span>
-                <div className="w-full max-w-14 rounded-t-lg bg-gradient-to-t from-[#9C5216] to-[#FF9F1C]" style={{ height: `${Math.max(8, Math.round(bucket.views / Math.max(1, ...publishDates.map(([, d]) => d.views)) * 136))}px` }} />
-                <span className="truncate text-[10px] text-slate-400">{new Date(date + "T12:00:00").toLocaleDateString("es-DO", { day: "2-digit", month: "short" })}</span>
-              </div>)}
+            <div className="intelligence-bars" style={{ minWidth: `${Math.max(360, publishDates.length * 54)}px` }}>
+              {publishDates.map(([date, bucket]) => <button type="button" key={date} aria-pressed={chartDate === date} onClick={() => setChartDate(date)} aria-label={`${date}: ${bucket.views.toLocaleString()} vistas acumuladas de ${bucket.count} ${bucket.count === 1 ? "publicación" : "publicaciones"}`}>
+                <span>{fmt(bucket.views)}</span>
+                <i style={{ height: `${Math.max(3, Math.round(bucket.views / Math.max(1, ...publishDates.map(([, d]) => d.views)) * 136))}px` }} />
+                <small>{new Date(date + "T12:00:00").toLocaleDateString("es-DO", { day: "2-digit", month: "short" })}</small>
+              </button>)}
             </div>
           </div>
+          <p className="intelligence-chart-caption" aria-live="polite">{(() => { const selected = publishDates.find(([date]) => date === chartDate); return selected ? `${selected[0]} · ${selected[1].views.toLocaleString()} vistas acumuladas · ${selected[1].count} ${selected[1].count === 1 ? "publicación" : "publicaciones"}` : "Selecciona una barra para inspeccionar sus resultados."; })()}</p>
           <p className="mt-2 text-xs text-slate-400 sm:hidden">Desliza la gráfica para ver todas las fechas.</p>
           <ul className="sr-only" aria-label="Datos de la gráfica">{publishDates.map(([date, bucket]) => <li key={date}>{date}: {bucket.views.toLocaleString()} vistas acumuladas de {bucket.count} publicaciones.</li>)}</ul>
         </> : <div className="mt-6 grid h-48 place-items-center rounded-xl border border-dashed border-white/15 bg-black/10 px-5 text-center text-sm text-slate-400">Las publicaciones medidas aparecerán aquí al importar o registrar métricas.</div>}
         <p className="mt-3 text-[11px] leading-relaxed text-slate-400">Esta vista no mide evolución diaria ni compara períodos: aún no se guardan capturas históricas. Los videos más antiguos han tenido más tiempo para acumular vistas.</p>
       </article>
-      {(() => { const L = learnFromMetrics(filtered); return <article className="rounded-2xl border border-[#598BFF]/25 bg-[linear-gradient(145deg,rgba(89,139,255,.14),rgba(21,28,43,1)_58%)] p-5">
-        <p className="text-[11px] font-bold uppercase tracking-[.16em] text-[#9DB8FF]">Insights</p>
+      {(() => { const L = learnFromMetrics(filtered); return <article className="intelligence-insights rounded-2xl border border-[#36B8C4]/25 p-5">
+        <p className="text-[11px] font-bold uppercase tracking-[.16em] text-[#8BD5DF]">Insights</p>
         <h3 className="mt-2 text-lg font-bold text-white">Tu próximo movimiento creativo</h3>
         {L ? <ul className="mt-3 list-inside list-disc space-y-1.5 text-sm text-slate-200">{L.hooks.length > 0 && <li>Ganchos observados: {L.hooks.join(" · ")}</li>}{L.formulas.length > 0 && <li>Fórmulas observadas: {L.formulas.join(" · ")}</li>}{L.durations.length > 0 && <li>Duraciones observadas: {L.durations.join(", ")}</li>}</ul> : <p className="mt-3 text-sm leading-relaxed text-slate-300">Registra al menos dos videos con vistas para detectar patrones. Cualquier recomendación indicará qué datos utilizó.</p>}
-        <button onClick={analyze} disabled={!filtered.length} className="mt-5 rounded-xl bg-[#FF9F1C] px-4 py-2.5 text-sm font-bold text-[#090D16] hover:brightness-110">Analizar datos disponibles</button>
+        <button onClick={analyze} disabled={!filtered.length} className="mt-5 rounded-xl bg-[#F5BC69] px-4 py-2.5 text-sm font-bold text-[#090D16] hover:brightness-110">Analizar datos disponibles</button>
         {authError && <div className="mt-3"><AiAuthNotice onLocalTemplate={analyzeLocal} /></div>}
         {recs.length > 0 && <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-3"><ol className="ml-4 list-decimal space-y-2 text-sm text-slate-200">{recs.map((r, i) => <li key={i}>{r}</li>)}</ol><p className="mt-3 text-xs text-slate-400">Fuente: {recMode || "no indicada"} · {filtered.length} publicaciones seleccionadas</p></div>}
       </article>; })()}
@@ -333,8 +334,8 @@ export default function MetricsModule({ focusMetricId }: { focusMetricId?: strin
     </div>
 
 
-    <div>
-      <div className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[.2em] text-[#598BFF]">Explorar contenido</p><h3 className="mt-1 text-lg font-bold text-white">Biblioteca de publicaciones</h3><p className="mt-1 text-xs text-slate-300">Miniaturas y resultados de cada video medido. Las vistas son acumuladas.</p></div><span className="rounded-full border border-white/10 bg-[#151C2B] px-3 py-1 text-xs text-slate-300">{reels.length} {reels.length === 1 ? "resultado" : "resultados"}</span>
+    <div id="intelligence-library" className="intelligence-library">
+      <div className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[.2em] text-[#36B8C4]">Explorar contenido</p><h3 className="mt-1 text-lg font-bold text-white">Biblioteca de publicaciones</h3><p className="mt-1 text-xs text-slate-300">Miniaturas y resultados de cada video medido. Las vistas son acumuladas.</p></div><span className="rounded-full border border-white/10 bg-[#151C2B] px-3 py-1 text-xs text-slate-300">{reels.length} {reels.length === 1 ? "resultado" : "resultados"}</span>
         {reels.length > 0 && <button type="button" disabled={deleting} onClick={async () => {
           const filtered = reels.length < items.length;
           if (!window.confirm(`¿Eliminar ${reels.length} ${reels.length === 1 ? "métrica" : "métricas"}${filtered ? " (las que muestran los filtros actuales)" : " (todas)"}? Esta acción no se puede deshacer.${filtered ? "" : "\n\nLas métricas importadas de Facebook e Instagram volverán si importas otra vez."}`)) return;
@@ -351,20 +352,20 @@ export default function MetricsModule({ focusMetricId }: { focusMetricId?: strin
 
     <EpisodeInsights title={activeEp} titles={episodeTitles} episode={selectedEpisode} metrics={selectedEpisodeMetrics} onSelect={setEp} />
 
-    {unlinked.length > 0 && <section aria-labelledby="unlinked-title" className="rounded-2xl border border-[#FF9F1C]/25 bg-[#151C2B] p-5">
-      <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 id="unlinked-title" className="font-bold text-white">Pendientes de vincular</h3><p className="mt-1 text-xs text-slate-300">Revisa cada coincidencia antes de asociar la publicación a un episodio.</p></div><span className="rounded-full bg-[#FF9F1C]/15 px-2.5 py-1 text-xs font-bold text-[#FFCB84]">{unlinked.length}</span></div>
+    {unlinked.length > 0 && <section aria-labelledby="unlinked-title" className="rounded-2xl border border-[#F5BC69]/25 bg-[#151C2B] p-5">
+      <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 id="unlinked-title" className="font-bold text-white">Pendientes de vincular</h3><p className="mt-1 text-xs text-slate-300">Revisa cada coincidencia antes de asociar la publicación a un episodio.</p></div><span className="rounded-full bg-[#F5BC69]/15 px-2.5 py-1 text-xs font-bold text-[#F5CC92]">{unlinked.length}</span></div>
       {linkMsg && <p role="status" className="mt-3 rounded-lg border border-white/10 bg-white/5 p-2 text-xs text-slate-200">{linkMsg}</p>}
       <div className="mt-3 space-y-2">{unlinked.slice(0, shownUnlinked).map(m => { const suggestion = data.episodes.find(e => norm(e.title) === norm(m.episodeTitle)); const target = linkTarget[m.id] ?? suggestion?.id ?? ""; return <div key={m.id} className="flex flex-wrap items-end gap-3 rounded-xl border border-white/10 bg-black/15 p-3">
         <div className="min-w-44 flex-1"><p className="text-sm font-semibold text-white">{m.episodeTitle || "Sin título"}</p><p className="mt-1 text-xs text-slate-400">{m.platform} · {m.date || "sin fecha"}{suggestion ? ` · sugerencia: ${suggestion.title}` : ""}</p></div>
         <label className="min-w-44 flex-1 text-xs font-semibold text-slate-300">Episodio<select className="mt-1" value={target} onChange={e => setLinkTarget(prev => ({ ...prev, [m.id]: e.target.value }))}><option value="">Elegir episodio</option>{data.episodes.map(e => <option key={e.id} value={e.id}>{e.title}</option>)}</select></label>
-        <button type="button" disabled={!target} onClick={() => linkEpisode(m)} className="rounded-xl border border-[#FF9F1C]/50 px-3 py-2.5 text-xs font-bold text-[#FFCB84] hover:bg-[#FF9F1C]/10">Vincular</button>
+        <button type="button" disabled={!target} onClick={() => linkEpisode(m)} className="rounded-xl border border-[#F5BC69]/50 px-3 py-2.5 text-xs font-bold text-[#F5CC92] hover:bg-[#F5BC69]/10">Vincular</button>
       </div>; })}</div>
       {unlinked.length > shownUnlinked && <button type="button" onClick={() => setShownUnlinked(shownUnlinked + 10)} className="mt-3 rounded-lg border border-white/15 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-white/5">Ver {Math.min(10, unlinked.length - shownUnlinked)} pendientes más</button>}
       {!data.episodes.length && <p className="mt-3 text-xs text-slate-400">Crea un episodio en Creative Studio para poder vincular estas publicaciones.</p>}
     </section>}
 
     {/* Análisis complementario con los registros disponibles */}
-    <details className="rounded-2xl border border-white/10 bg-[#151C2B] p-4 sm:p-5">
+    <details id="intelligence-tools" className="growth-disclosure rounded-2xl border border-white/10 bg-[#151C2B] p-4 sm:p-5">
       <summary className="cursor-pointer font-bold text-white">Comparador 4B · mismo episodio</summary>
       {episodeTitles.length > 0 ? <>
         <p className="mt-2 text-xs text-slate-400">Cada tarjeta conserva las métricas propias de su plataforma. Si hay varias publicaciones, se muestra la más reciente.</p>

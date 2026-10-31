@@ -55,7 +55,7 @@ const MODULES: Record<string, Mod> = {
   metricas: { id: "metricas", label: "Métricas", desc: "Rendimiento real de tus publicaciones" },
   virales: { id: "virales", label: "Analizador", desc: "Analiza la estructura de un video" },
   calendario: { id: "calendario", label: "Calendario", desc: "Publicaciones planificadas por cuenta" },
-  cuentas: { id: "cuentas", label: "Cuentas", desc: "Perfiles conectados a tu flujo de publicación" },
+  cuentas: { id: "cuentas", label: "Cuentas", desc: "Identidad y perfiles de tus canales" },
   dropshipping: { id: "dropshipping", label: "Dropshipping", desc: "Productos y pruebas comerciales" },
 };
 type Workspace = { id: string; title: string; short: string; desc: string; defaultModule: string; modules: string[] };
@@ -129,7 +129,7 @@ function nextAction(id: string): { label: string; module: string } | null {
   if (id === "metricas") return { label: "Analizar viral", module: "virales" };
   if (id === "virales") return { label: "Ver métricas", module: "metricas" };
   if (id === "calendario") return { label: "Gestionar cuentas", module: "cuentas" };
-  if (id === "cuentas") return { label: "Programar publicación", module: "calendario" };
+  if (id === "cuentas") return { label: "Planificar publicación", module: "calendario" };
   return null;
 }
 
