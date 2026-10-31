@@ -1,11 +1,12 @@
 "use client";
 // Proyecto largo (Facebook / YouTube, 15-25 min): estructura por actos → secuencias → escenas, candados,
 // regeneración parcial que respeta lo bloqueado, análisis de ritmo, versiones y editor de guion con historial.
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import GenerationStatus from "./GenerationStatus";
 import { useData } from "@/lib/DataContext";
 import { CanonPanel, EscenariosPanel } from "@/components/CanonPanels";
 import { PlanPanel, TomasPanel } from "@/components/ProduccionPanels";
+import LongDirector, { type IrALargo } from "@/components/LongDirector";
 import { EvaluacionPanel, MontajeLargo, PublicacionPanel } from "@/components/DistribucionPanels";
 import { STYLES, type StyleKey } from "@/lib/knowledge";
 import { bibliaTexto } from "@/lib/personajes";
@@ -33,7 +34,11 @@ export default function StoryArchitect({ series, style, cast, characters = [], d
   const [notas, setNotas] = useState("");
   const [abierta, setAbierta] = useState<string | null>(null);   // escena con el editor de guion abierto
   const [verHistorial, setVerHistorial] = useState(false);
-  const [pestaña, setPestaña] = useState<"estructura" | "canon" | "escenarios" | "tomas" | "plan" | "montaje" | "publicar" | "evaluar">("estructura");
+  const [pestaña, setPestaña] = useState<"director" | "estructura" | "canon" | "escenarios" | "tomas" | "plan" | "montaje" | "publicar" | "evaluar">(saved?.acts.length ? "director" : "estructura");
+  const [escenaTomas, setEscenaTomas] = useState<string | undefined>(undefined);
+  // Al aparecer la estructura (creada o cargada), se entra por el Director salvo que ya se eligiera otra pestaña.
+  const pestañaElegida = useRef(false);
+  useEffect(() => { if (saved?.acts.length && !pestañaElegida.current) setPestaña("director"); }, [saved?.acts.length]);
   const parar = useRef(false);
   const r = useMemo(() => saved?.acts.length ? rhythm(saved) : null, [saved]);
   const avisosPorEscena = useMemo(() => {
@@ -140,12 +145,20 @@ export default function StoryArchitect({ series, style, cast, characters = [], d
         <button type="button" onClick={() => setPestaña("montaje")}><b>04 · Montaje</b><small>Abrir mesa de producción</small></button>
       </nav>}
       <div role="tablist" className="flex flex-wrap gap-1 rounded-xl bg-white/5 p-1 text-xs">
-        {([["estructura", "Estructura"], ["canon", `Fuentes y canon${saved?.canon?.fuentes?.length ? ` (${saved.canon.fuentes.length})` : ""}`], ["escenarios", `Escenarios${saved?.escenarios?.length ? ` (${saved.escenarios.length})` : ""}`], ["tomas", "Tomas y storyboard"], ["plan", "Plan y costos"], ["montaje", "Montaje"], ["publicar", "Publicación"], ["evaluar", "Evaluación"]] as const).map(([id, label]) =>
-          <button key={id} type="button" role="tab" aria-selected={pestaña === id} onClick={() => setPestaña(id)} className={`rounded-lg px-3 py-1.5 ${pestaña === id ? "bg-teal-700 font-semibold text-white" : "text-slate-300"}`}>{label}</button>)}
+        {([...(saved?.acts.length ? [["director", "Director"]] as const : []), ["estructura", "Estructura"], ["canon", `Fuentes y canon${saved?.canon?.fuentes?.length ? ` (${saved.canon.fuentes.length})` : ""}`], ["escenarios", `Escenarios${saved?.escenarios?.length ? ` (${saved.escenarios.length})` : ""}`], ["tomas", "Tomas y storyboard"], ["plan", "Plan y costos"], ["montaje", "Montaje"], ["publicar", "Publicación"], ["evaluar", "Evaluación"]] as const).map(([id, label]) =>
+          <button key={id} type="button" role="tab" aria-selected={pestaña === id} onClick={() => { pestañaElegida.current = true; setPestaña(id); }} className={`rounded-lg px-3 py-1.5 ${pestaña === id ? "bg-teal-700 font-semibold text-white" : "text-slate-300"}`}>{label}</button>)}
       </div>
       {pestaña === "canon" && <CanonPanel outline={base} guardar={guardar} revisarIA={revisarIA} busy={!!busy} />}
       {pestaña === "escenarios" && <EscenariosPanel outline={base} guardar={guardar} busy={!!busy} />}
-      {pestaña === "tomas" && <TomasPanel outline={base} guardar={guardar} ia={ia} run={run} busy={!!busy} style={style as StyleKey} characters={characters} />}
+      {pestaña === "director" && saved?.acts.length ? <LongDirector outline={saved} guardar={guardar} busy={!!busy} avisos={avisosPorEscena}
+        onRegenerar={(id, kind) => regenerar(id, kind)}
+        onEscribirGuion={sc => run("Escribiendo el guion…", async () => { const els = await escribirGuion(sc); if (els) await guardar(saveScript(saved, sc.id, els, "guion escrito por la IA")); })}
+        renderGuion={sc => <GuionEditor key={sc.id} escena={sc} protegido={isProtected(saved, sc.id)} busy={!!busy}
+          onGuardar={(els, label) => guardar(saveScript(saved, sc.id, els, label))}
+          onAprobar={v => guardar(mapNode(saved, sc.id, n => ({ ...n, scriptApproved: v, locked: v ? true : n.locked })))}
+          onIA={wish => run("Escribiendo el guion…", async () => { const els = await escribirGuion(sc, wish); if (els) await guardar(saveScript(saved, sc.id, els, wish ? `IA: ${wish}` : "guion escrito por la IA")); })} />}
+        onIrA={(dest: IrALargo, sceneId?: string) => { if (dest === "tomas") setEscenaTomas(sceneId); setPestaña(dest); }} /> : null}
+      {pestaña === "tomas" && <TomasPanel key={escenaTomas || "tomas"} escenaInicial={escenaTomas} outline={base} guardar={guardar} ia={ia} run={run} busy={!!busy} style={style as StyleKey} characters={characters} />}
       {pestaña === "plan" && <PlanPanel outline={base} guardar={guardar} busy={!!busy} />}
       {pestaña === "montaje" && <MontajeLargo outline={base} guardar={guardar} busy={!!busy} series={series} style={style} characters={characters} />}
       {pestaña === "publicar" && <PublicacionPanel outline={base} guardar={guardar} busy={!!busy} series={series} ia={ia} run={run} />}

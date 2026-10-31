@@ -18,11 +18,11 @@ const COLOR_ESTADO: Record<Estado, string> = { pendiente: "bg-slate-500", imagen
 const CAMPOS_TOMA: [keyof Toma, string][] = [["accion", "Acción visible"], ["plano", "Plano"], ["lente", "Lente"], ["movimiento", "Movimiento de cámara"], ["composicion", "Composición"], ["luz", "Iluminación"],
   ["vfx", "Efectos visuales"], ["expresion", "Expresión y cuerpo"], ["sonido", "Ambiente sonoro"], ["musica", "Música sugerida"], ["frameInicial", "Fotograma inicial"], ["frameFinal", "Fotograma final"], ["transicion", "Transición"]];
 
-type Props = { outline: Outline; guardar: (o: Outline) => Promise<void>; ia: (body: any) => Promise<any>; run: (label: string, fn: () => Promise<void>) => Promise<void>; busy: boolean; style: StyleKey; characters: any[] };
+type Props = { outline: Outline; guardar: (o: Outline) => Promise<void>; ia: (body: any) => Promise<any>; run: (label: string, fn: () => Promise<void>) => Promise<void>; busy: boolean; style: StyleKey; characters: any[]; escenaInicial?: string };
 
-export function TomasPanel({ outline, guardar, ia, run, busy, style, characters }: Props) {
+export function TomasPanel({ outline, guardar, ia, run, busy, style, characters, escenaInicial }: Props) {
   const escenas = allScenes(outline);
-  const [sel, setSel] = useState<string>(escenas.find(s => !s.tomas?.length)?.id || escenas[0]?.id || "");
+  const [sel, setSel] = useState<string>((escenaInicial && escenas.some(s => s.id === escenaInicial) ? escenaInicial : "") || escenas.find(s => !s.tomas?.length)?.id || escenas[0]?.id || "");
   const [selectedShot, setSelectedShot] = useState<string | null>(null);
   const [inspectorTab, setInspectorTab] = useState<"details" | "prompts">("details");
   const [orderMessage, setOrderMessage] = useState("");

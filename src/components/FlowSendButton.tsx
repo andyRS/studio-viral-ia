@@ -53,9 +53,9 @@ export default function FlowSendButton({ title, scenes, cast, master }: {
     setTimeout(() => setStatus(prev => prev === "Enviando a la extensión…" ? "La extensión no respondió. Comprueba que está instalada y recarga esta página." : prev), 4000);
   }
 
-  return <div className="mt-3 rounded-xl border border-orange-400/30 bg-orange-400/[.07] p-3">
+  return <div className="mt-3 rounded-xl border border-amber-300/30 bg-amber-300/[.07] p-3">
     <div className="flex flex-wrap items-center gap-2">
-      <button type="button" disabled={!installed || !scenes.length || !!missing.length} onClick={() => { try { send(); } catch (error) { setStatus(error instanceof Error ? error.message : String(error)); } }} className="rounded-lg bg-orange-500 px-3 py-2 text-sm font-bold text-black disabled:opacity-50">🚀 Enviar a Flow ({scenes.length} escenas)</button>
+      <button type="button" disabled={!installed || !scenes.length || !!missing.length} onClick={() => { try { send(); } catch (error) { setStatus(error instanceof Error ? error.message : String(error)); } }} className="rounded-lg bg-amber-400 px-3 py-2 text-sm font-bold text-black disabled:opacity-50">🚀 Enviar a Flow ({scenes.length} escenas)</button>
       <span className="text-xs text-slate-300">{missing.length ? `Faltan fichas aprobadas: ${missing.join(", ")}` : installed ? `Extensión lista · ${sheets.length} fichas aprobadas se adjuntarán como referencia` : "Necesita la extensión «Estudio Viral → Google Flow»."}</span>
       {!installed && <a href="/estudio-viral-flow-extension.zip" download className="text-xs font-semibold text-sky-300 hover:text-sky-200">Descargar extensión</a>}
     </div>

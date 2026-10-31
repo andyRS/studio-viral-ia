@@ -145,6 +145,33 @@ const ir = async (page, espacio, modulo) => {
       await page.locator(".sd-script article").nth(2).click(); await page.getByRole("button", { name: /Ver en el director/ }).click(); await page.waitForTimeout(300);
       ok((await page.locator(".sd-canvas blockquote").innerText()).includes("Frase 3"), "del guion al director se conserva la escena elegida");
       await ctx.close(); }
+
+    // 8. Director del proyecto largo: actos → escenas, editar, mover respetando candados e ir a las tomas.
+    { const { ctx, page } = await abrir(b, () => {
+        const S = (k, v) => localStorage.setItem("estudio-viral:" + k, JSON.stringify(v));
+        const esc = (id, h, extra = {}) => ({ id, heading: h, summary: "x", objective: "o", obstacle: "b", consequence: "c", tension: 5, minutes: 2, ...extra });
+        S("series", [{ id: "s1", title: "Serie Larga", description: "x", format: "largo", style: "epica" }]);
+        S("storyOutlines", [{ id: "o1", seriesId: "s1", structure: 3, targetMinutes: 20, acts: [
+          { id: "a1", title: "Acto I", goal: "", sequences: [{ id: "q1", title: "Sec 1", goal: "", scenes: [esc("e1", "EXT. RÍO", { locked: true }), esc("e2", "INT. CASA"), esc("e3", "EXT. CIELO", { tomas: [{ id: "t1", personajes: [], accion: "a", plano: "", lente: "", movimiento: "", composicion: "", luz: "", vfx: "", expresion: "", sonido: "", musica: "", duracion: 5, frameInicial: "", frameFinal: "", transicion: "corte", estado: "aprobado" }] })] }] }] }]);
+      });
+      await ir(page, "Creative Studio", "Generador");
+      const serie = page.getByRole("button", { name: /Serie Larga/ }).first(); if (await serie.count()) { await serie.click(); await page.waitForTimeout(700); }
+      const mesa = page.getByRole("button", { name: /Mesa de dirección/ }).first(); if (await mesa.count() && (await mesa.getAttribute("aria-expanded")) === "false") { await mesa.click(); await page.waitForTimeout(600); }
+      ok(await page.locator('section[aria-label="Director del proyecto largo"]').count() === 1, "el proyecto largo se abre en el Director");
+      await page.locator("#ld-e2").click(); await page.locator("#ld-summary-e2").fill("Resumen nuevo"); await page.locator("#ld-objective-e2").click(); await page.waitForTimeout(800);
+      let o = await page.evaluate(() => JSON.parse(localStorage.getItem("estudio-viral:storyOutlines"))[0]);
+      ok(o.acts[0].sequences[0].scenes[1].summary === "Resumen nuevo", "editar una escena larga la guarda");
+      await page.locator("#ld-e3").focus(); await page.keyboard.press("Alt+ArrowUp"); await page.waitForTimeout(800);
+      o = await page.evaluate(() => JSON.parse(localStorage.getItem("estudio-viral:storyOutlines"))[0]);
+      ok(o.acts[0].sequences[0].scenes.map(s => s.id).join() === "e1,e3,e2" && (o.history || []).length === 1, "Alt+↑ mueve la escena en su secuencia y guarda una versión");
+      await page.locator("#ld-e3").focus(); await page.keyboard.press("Alt+ArrowUp"); await page.waitForTimeout(600);
+      o = await page.evaluate(() => JSON.parse(localStorage.getItem("estudio-viral:storyOutlines"))[0]);
+      ok(o.acts[0].sequences[0].scenes[0].id === "e1" && /bloquead|Desbloquea/i.test(await page.locator(".sd-save").innerText()), "no atraviesa una escena bloqueada y lo explica");
+      await page.locator("#ld-e1").click(); await page.waitForTimeout(200);
+      ok(await page.locator("#ld-heading-e1").count() === 0, "una escena bloqueada es de solo lectura en el inspector");
+      await page.locator("#ld-e3").click(); await page.getByRole("button", { name: /Abrir tomas/ }).click(); await page.waitForTimeout(600);
+      ok(await page.getByRole("tab", { name: "Tomas y storyboard", selected: true }).count() === 1, "«Abrir tomas» lleva a Tomas y storyboard con esa escena");
+      await ctx.close(); }
   } finally {
     await b.close();
     if (srv) try { process.kill(-srv.pid); } catch {}

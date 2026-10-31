@@ -9,7 +9,7 @@ import {
 } from "@/lib/outline";
 
 const TIPOS_FUENTE: Record<Fuente["tipo"], string> = { biblia: "Pasaje bíblico", historica: "Fuente histórica", documental: "Documental", tradicion: "Tradición extrabíblica", otra: "Otra" };
-const COLOR_CAT: Record<Categoria, string> = { texto: "border-emerald-400/40 text-emerald-200", interpretacion: "border-sky-400/40 text-sky-200", tradicion: "border-amber-400/40 text-amber-200", invencion: "border-fuchsia-400/40 text-fuchsia-200" };
+const COLOR_CAT: Record<Categoria, string> = { texto: "border-emerald-400/40 text-emerald-200", interpretacion: "border-sky-400/40 text-sky-200", tradicion: "border-amber-400/40 text-amber-200", invencion: "border-cyan-100/40 text-cyan-50" };
 const canonDe = (o: Outline): Canon => o.canon || { nivel: "fundamentada", fuentes: [], afirmaciones: [] };
 
 async function traerTexto(ref: string) {

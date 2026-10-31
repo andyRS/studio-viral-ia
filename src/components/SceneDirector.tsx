@@ -8,6 +8,7 @@ import { cargarArchivos } from "@/lib/archivosTrabajo";
 import { duplicarEscena, editarEscena, moverEscenaCorta, type Mapa } from "@/lib/ordenEscenas";
 import { sceneRole } from "@/lib/production";
 import CopyButton from "./CopyButton";
+import { Divisor, useAnchos } from "./studio/Divisores";
 
 type Vista = "director" | "storyboard" | "secuencia" | "guion";
 type Pestaña = "guion" | "personajes" | "ambiente" | "camara" | "prompt" | "audio" | "produccion";
@@ -37,6 +38,7 @@ export default function SceneDirector(p: Props) {
   const [, forzar] = useState(0);
   const escena = scenes.find(s => s.n === p.active) || scenes[0];
   const editable = !p.finished && !!p.episodeId;
+  const paneles = useAnchos("director-corto");
 
   // Fotogramas y clips reales que el usuario subió a la mesa (guardados en este navegador).
   const [medios, setMedios] = useState<{ image: Record<number, string>; clip: Record<number, string> }>({ image: {}, clip: {} });
@@ -172,9 +174,10 @@ export default function SceneDirector(p: Props) {
       </span>
     </div>
 
-    {vista === "director" && <div className="sd-workspace">
+    {vista === "director" && <div className="sd-workspace" style={paneles.estilo}>
       <nav className="sd-panel" aria-label="Navegador de escenas"><div className="sd-panel-head">Escenas<span className="ml-auto normal-case tracking-normal">{aprobadas}/{scenes.length} aprobadas</span></div>
         <div className="sd-nav-list" role="list">{scenes.map(s => tarjeta(s))}</div></nav>
+      <Divisor lado="izq" valor={paneles.anchos.izq} onCambio={v => paneles.cambiar("izq", v)} etiqueta="Ancho del navegador de escenas" />
 
       <div className="sd-panel sd-canvas" aria-label={`Escena ${escena.n}`}>
         <div className="sd-frame">
@@ -203,6 +206,7 @@ export default function SceneDirector(p: Props) {
         </div>
       </div>
 
+      <Divisor lado="der" valor={paneles.anchos.der} onCambio={v => paneles.cambiar("der", v)} etiqueta="Ancho del inspector" />
       <aside className="sd-panel sd-inspector" aria-label="Inspector de la escena">
         <div className="sd-tabs" role="tablist" aria-label="Detalles de la escena">{([["guion", "Guion"], ["personajes", "Personajes"], ["ambiente", "Ambiente"], ["camara", "Cámara"], ["prompt", "Prompt"], ["audio", "Audio"], ["produccion", "Producción"]] as const).map(([k, l]) =>
           <button key={k} type="button" role="tab" aria-selected={pestaña === k} onClick={() => setPestaña(k)}>{l}</button>)}</div>

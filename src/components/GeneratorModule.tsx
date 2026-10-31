@@ -449,7 +449,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
 
               <section className="rounded-2xl border border-amber-400/25 bg-amber-400/[.05] p-5">
                 <div className="flex items-center gap-3">
-                  <span className="choice-icon !mb-0 bg-gradient-to-br from-amber-400 to-orange-600 text-black">＋</span>
+                  <span className="choice-icon !mb-0 bg-gradient-to-br from-amber-200 to-amber-500 text-black">＋</span>
                   <div><h3 className="font-bold">Siguiente: episodio {current.eps.length + 1}</h3><p className="text-xs text-slate-400">Con los mismos personajes y siguiendo lo que pasó antes.</p></div>
                 </div>
                 {current.last && cliffhangerOf(current.last.output) && <p className="mt-3 rounded-lg border border-white/10 bg-black/20 p-3 text-sm text-slate-300"><span className="text-xs font-semibold uppercase tracking-wider text-amber-300">La parte {current.eps.length} terminó con</span><br /><i>«{cliffhangerOf(current.last.output)}»</i><br /><span className="text-xs text-slate-400">El episodio {current.eps.length + 1} lo retoma en la primera escena y cierra con un gancho nuevo para que pidan la siguiente parte.</span></p>}

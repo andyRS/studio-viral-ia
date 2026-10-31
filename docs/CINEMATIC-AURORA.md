@@ -1,5 +1,7 @@
 # Cinematic Aurora 2.0
 
+> **Entrega 2 (al final del documento):** paleta corregida a la identidad del estudio, director del proyecto largo, paneles redimensionables y transiciones comunes.
+
 Esta es la primera entrega vertical: el editor de escenas del episodio, el compositor de prompts y el sistema de efectos. Las capturas usan datos de prueba (un episodio ficticio de «Daniel» con retratos sintéticos), no resultados reales.
 
 ## Auditoría (fase 0)
@@ -76,3 +78,90 @@ Esta es la primera entrega vertical: el editor de escenas del episodio, el compo
 - **Siguiente:**
   - llevar el mismo director al proyecto largo (actos → escenas → tomas), reutilizando `TomasPanel`;
   - aplicar el lenguaje Aurora al resto de Creative Studio y a las transiciones del dashboard (prioridad posterior, según el orden pedido).
+
+
+## Entrega 2
+
+### 1. Paleta unificada con la identidad del estudio
+
+Aurora ya no introduce violeta ni naranja. Equivalencias:
+
+| Antes | Ahora |
+|---|---|
+| Naranja `#ff8849` | Dorado `#f5bc69` (`--cinema`) |
+| Violeta `#7255e9` | Hielo `#bfeef4` |
+| Azul eléctrico `#1789d5` | Petróleo `#36b8c4` (`--creative`) |
+| Cyan `#39c9ff` | Cyan `#22d3ee` (`--ai`) |
+
+- **Fondos y paneles:** usan los de `cinematic.css` (`#080f14`, `#101e27`, `#172b35`).
+- **Borde aurora:** dorado a la izquierda y cyan-hielo a la derecha.
+- **Foco global de los textos:** borde cyan con un halo lateral dorado y hielo muy suave.
+- **Botón principal:** degradado de petróleo a cyan.
+- **Secuencia:** el gancho va en dorado, el clímax en petróleo intenso y la resolución en petróleo apagado.
+- **Fuera de Aurora:**
+  - la categoría «Invención» del canon (era fucsia) pasa a hielo;
+  - el envío a Flow (era naranja) pasa a dorado;
+  - el icono de nueva serie pasa a dorado.
+- **Lo único que mantiene morado o naranja:** la marca de Instagram en Métricas, porque es el color de esa red.
+
+### 2. Director del proyecto largo (`LongDirector.tsx`)
+
+- **Dónde está:** es la pestaña «Director» de la mesa de dirección, y la de entrada cuando hay estructura.
+- **Navegador:** actos → secuencias → escenas. Cada tarjeta muestra la imagen del storyboard de su primera toma o, si no hay, la del escenario rotulada como tal, y el estado real: sin guion, con guion, guion aprobado, aviso de canon o N/M tomas aprobadas.
+- **Teclado y orden:** las flechas cambian de escena; Alt+↑/↓ la mueven dentro de su secuencia. No mueve ni atraviesa piezas bloqueadas, explica por qué, y guarda una versión en el historial del proyecto.
+- **Lienzo:** encabezado, acto y secuencia, escenario y tensión.
+  - **Tira de tomas:** las imágenes reales y el estado de cada toma; al pulsarlas se abre Tomas y storyboard en esa escena.
+  - **Continuidad:** escenario, subida o bajada de tensión, pasaje y avisos de canon.
+  - **Acciones:** escribir el guion con IA, editar el guion, dividir o abrir las tomas, regenerar, bloquear o desbloquear, y subir o bajar la escena.
+- **Inspector, cinco pestañas:**
+  - Escena: campos editables, tensión y minutos.
+  - Guion: el editor de guion existente, con historial, comparación y aprobación.
+  - Escenario: elegir el escenario fijo y ver su ficha.
+  - Canon: el pasaje y sus avisos.
+  - Tomas: la lista con su estado.
+
+  Las escenas bloqueadas (por ellas mismas, su secuencia o su acto) son de solo lectura.
+- **Vistas:** Director, Secuencia (duración por escena, actos y tensión) y Guion (todo el proyecto en formato guion, por actos).
+- **Pipeline:** Estructura → Guiones → Aprobados → Tomas → Storyboard → Vídeo → Aprobado → Montaje, todo con datos reales.
+- **Guardado:** usa el `guardar` existente del proyecto, sin cambios de persistencia ni migraciones. Deshacer y rehacer funcionan por sesión.
+
+### 3. Paneles redimensionables (`studio/Divisores.tsx`)
+
+- **Dónde:** en los dos directores, entre el navegador y el lienzo y entre el lienzo y el inspector.
+- **Cómo se usan:**
+  - con el puntero, arrastrando (no selecciona texto mientras arrastras);
+  - con el teclado, ←/→ en pasos de 16 px (48 px con Mayús) e Inicio/Fin;
+  - doble clic para volver al ancho por defecto.
+- **Accesibilidad:** cada divisor es un `role="separator"` con su valor actual.
+- **Memoria:** el ancho se recuerda en el navegador para cada director.
+- **Layout según el ancho del propio director:** usa *container queries*, porque el director puede vivir en una columna estrecha.
+  - Por debajo de 1080 px: dos columnas, el inspector debajo y sin divisores.
+  - Por debajo de 640 px: una columna, con el navegador en tira horizontal.
+
+### 4. Transiciones del estudio
+
+- **Al cambiar de pestaña:** el contenido nuevo entra una vez (opacity + 4 px), en todos los paneles con `role="tablist"`, en el contenido de las pestañas del episodio y en las vistas de los directores.
+- **Otros elementos:**
+  - los desplegables `details` se abren con la misma animación;
+  - los avisos (`status`/`alert`) aparecen con fundido;
+  - las tarjetas del inicio, las de las series y las de elección se elevan 2 px al pasar el cursor.
+- **Movimiento reducido:** nada se anima con `prefers-reduced-motion` ni con la intensidad «Reducidos».
+
+### Pruebas de la entrega 2
+
+- `npm run typecheck` y `npm run lint` pasan, con los mismos 6 avisos de antes.
+- `npm test`: 63 comprobaciones.
+- `npm run test:e2e`: 26 flujos (6 nuevos del director largo):
+  - se abre en el Director;
+  - editar guarda la escena;
+  - Alt+↑ mueve la escena y crea una versión;
+  - no atraviesa una escena bloqueada y lo explica;
+  - una escena bloqueada es de solo lectura;
+  - «Abrir tomas» lleva a la escena correcta.
+- El arrastre de los divisores se probó aparte en el navegador (de 260 a 315 px); los divisores no están en la batería de pruebas.
+- Capturas (datos de prueba): [director corto](previews/aurora-director.jpg), [director largo](previews/aurora-director-largo.jpg), [secuencia larga](previews/aurora-secuencia-larga.jpg), [guion largo](previews/aurora-guion-largo.jpg).
+
+### Pendiente
+
+- Arrastrar escenas largas entre secuencias distintas (hoy solo se mueven dentro de su secuencia).
+- Animaciones al reordenar (las tarjetas se recolocan sin interpolar la posición).
