@@ -1,9 +1,10 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
+import SceneDirector from "./SceneDirector";
 import { moverEscenaCorta, remapRevisiones } from "@/lib/ordenEscenas";
 import { renumerarArchivos } from "@/lib/archivosTrabajo";
 import { anotarPunto, leerUltimoPunto, useBorrador } from "@/lib/borradores";
-import NarrativeDesk, { SceneRail } from "./NarrativeDesk";
+import { SceneRail } from "./NarrativeDesk";
 import PromptWorkbench from "./PromptWorkbench";
 import CreativeDesk from "./CreativeDesk";
 import ReferencePreview from "./ReferencePreview";
@@ -360,15 +361,19 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
             </div>
           </fieldset>
           <div>
-            <fieldset className="mb-3">
-              <legend className="field-label">Tipo</legend>
-              <div className="flex flex-wrap gap-2">{([["nueva", "Historia nueva (Parte 1)"], ["replica", "Réplica de un viral"]] as const).map(([k, l]) =>
-                <button key={k} type="button" aria-pressed={kind === k} onClick={() => setKind(k)} className={`rounded-full border px-3 py-1.5 text-xs ${kind === k ? "border-amber-400/60 bg-amber-400/10 text-amber-100" : "border-white/10 bg-white/[.03] text-slate-300"}`}>{l}</button>)}</div>
-            </fieldset>
             {kind === "replica" && <div className="mb-3"><label htmlFor="generator-replica" className="field-label block">Describe el viral</label>
-              <textarea id="generator-replica" value={replica} onChange={e => setReplica(e.target.value)} placeholder="Qué pasa en el vídeo, su gancho, quién humilla a quién, qué objeto revela el giro… Se copia la estructura y la emoción, nunca los personajes ni el diálogo." /></div>}
-            <label htmlFor="generator-idea" className="field-label block">{kind === "replica" ? "Idea para adaptarlo a RD" : "Idea de la historia"}</label>
-            <textarea id="generator-idea" value={idea} onChange={e => setIdea(e.target.value)} placeholder="Ej.: Una madre humilde descubre que su hijo rico la niega delante de sus amigos…" />
+              <textarea id="generator-replica" className="aurora-field" value={replica} onChange={e => setReplica(e.target.value)} placeholder="Qué pasa en el vídeo, su gancho, quién humilla a quién, qué objeto revela el giro… Se copia la estructura y la emoción, nunca los personajes ni el texto." /></div>}
+            {/* Compositor Aurora: la idea, el tipo de pedido (real) y el estado de la generación (real). */}
+            <div className={`aurora-border p-3 ${loading ? "creation-energy" : ""}`} data-estado={loading ? "generando" : /^(No se pudo|La historia «)/.test(notice) || authError ? "error" : undefined} data-spotlight="creacion">
+              <label htmlFor="generator-idea" className="field-label block">{kind === "replica" ? "Idea para adaptarlo a RD" : "Idea de la historia"}</label>
+              <textarea id="generator-idea" className="aurora-field !border-transparent !bg-transparent !shadow-none" rows={3} value={idea} onChange={e => setIdea(e.target.value)} placeholder="Ej.: Una madre humilde descubre que su hijo rico la niega delante de sus amigos…" />
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <TipoMenu kind={kind} onKind={setKind} />
+                <span className="aurora-chip" title={mode === "supabase" ? "La creación usa el servicio de IA configurado" : "Sin sesión: se crea un borrador con plantilla, sin IA"}>{mode === "supabase" ? "✦ IA conectada" : "Plantilla local"}</span>
+                {styleChosen && <span className="aurora-chip">{STYLES[style].label}</span>}
+                <span className="ml-auto text-xs text-slate-400">{idea.trim() ? `${idea.trim().split(/\s+/).length} palabras` : ""}</span>
+              </div>
+            </div>
             <div className="mt-3"><IdeasPanel style={style} accountProfile={profileFor(account?.id)} online={mode === "supabase"} existing={data.series.map((x: any) => `${x.title}. ${x.description || ""}`)} onUse={useIdea} busy={loading} /></div>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -379,7 +384,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
           <div><label htmlFor="generator-notes" className="field-label block">Notas opcionales</label>
             <input id="generator-notes" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Ej.: que la abuela se llame Doña Guanábana, que pase en Navidad…" /></div>
           <HookPicker online={mode === "supabase"} chosen={chosenHook} onChoose={setChosenHook} body={() => ({ idea, style, learnings, bank: bankTop, accountProfile: profileFor(account?.id) })} />
-          <button disabled={loading} onClick={() => { void createStory(); }} className="w-full rounded bg-amber-500 px-5 py-3 text-base font-bold sm:w-auto">{loading ? "Creando la serie…" : "Crear serie y episodio 1"}</button>
+          <button disabled={loading} onClick={() => { void createStory(); }} className={`aurora-send !h-auto !w-full rounded-full px-6 py-3 text-base font-bold sm:!w-auto ${loading ? "creation-energy" : ""}`} aria-busy={loading}>{loading ? "Creando la serie…" : "✦ Crear serie y episodio 1"}</button>
         </div>
         <aside className="production-brief" aria-label="Resumen de producción">
           <div className="brief-cover"><span className="studio-eyebrow cinematic-gold">CUADERNO / NUEVA PRODUCCIÓN</span><span className="brief-cover-symbol" aria-hidden="true">✦</span><h3>{styleChosen ? STYLES[style].label : "Una historia por descubrir."}</h3><p>{idea.trim() || "Tu premisa aparecerá aquí mientras le das forma."}</p></div>
@@ -499,11 +504,23 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
         onUnlock={async () => { if (result.episodeId && window.confirm("¿Desbloquear este episodio para volver a editarlo?")) await update("episodes", result.episodeId, { status: "Guion" }); }}
         backLabel={data.series.find((s: any) => s.id === result.seriesId)?.title}
         onBack={() => { if (result.seriesId && data.series.some((s: any) => s.id === result.seriesId)) openSeries(result.seriesId); else setView("inicio"); }} onNext={() => { setSeriesId(result.seriesId); setView("continuar"); }}
+        onCambiar={async (siguiente: any, c: { mapa?: Record<number, number>; etiqueta: string }) => {
+          // Cambio del director de escenas (editar, mover, duplicar, deshacer): prompts rehechos sin IA, la
+          // versión anterior al historial del episodio y, si cambian números de escena, revisiones y archivos.
+          if (!result.episodeId) throw new Error("El episodio aún no está guardado");
+          const firstBible = data.episodes.find((e: any) => e.seriesId === result.seriesId && e.output?.seriesBible?.style)?.output?.seriesBible;
+          const st = (result.episode?.seriesBible?.style || firstBible?.style || (result.episode?.cast?.some((x: any) => x.fruit) ? "frutinovela" : "cine90")) as StyleKey;
+          const output = refreshPrompts(siguiente, st);
+          const ep = data.episodes.find((e: any) => e.id === result.episodeId) as any;
+          await update("episodes", result.episodeId, { output, versions: [...(Array.isArray(ep?.versions) ? ep.versions : []), result.episode].slice(-10) });
+          if (c.mapa) {
+            for (const r of remapRevisiones(data.clipChecks.filter((x: any) => x.episodeId === result.episodeId), c.mapa)) await update("clipChecks", r.id, { clipIndex: r.a });
+            await renumerarArchivos(userId || "local", result.episodeId, c.mapa).catch(() => {});
+          }
+          setResult({ ...result, episode: output });
+        }}
         onMoveScene={async (desde: number, hasta: number) => {
-          // Reordenar una escena: se renumeran escenas, diálogo del montaje, revisiones y archivos guardados;
-          // la versión anterior queda en el historial del episodio.
-          if (!result.episodeId) return;
-          const r = moverEscenaCorta(result.episode, desde, hasta); if (!r) return;
+          const r = moverEscenaCorta(result.episode, desde, hasta); if (!r || !result.episodeId) return;
           const firstBible = data.episodes.find((e: any) => e.seriesId === result.seriesId && e.output?.seriesBible?.style)?.output?.seriesBible;
           const st = (result.episode?.seriesBible?.style || firstBible?.style || (result.episode?.cast?.some((c: any) => c.fruit) ? "frutinovela" : "cine90")) as StyleKey;
           const output = refreshPrompts(r.out, st);
@@ -513,7 +530,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
             for (const c of remapRevisiones(data.clipChecks.filter((x: any) => x.episodeId === result.episodeId), r.mapa)) await update("clipChecks", c.id, { clipIndex: c.a });
             await renumerarArchivos(userId || "local", result.episodeId, r.mapa).catch(() => {});
             setResult({ ...result, episode: output });
-            setNotice(`Escena ${desde} movida a la posición ${hasta}: se renumeraron las escenas, su diálogo en el montaje, sus revisiones y sus archivos. Si ya enviaste el lote a Flow, los clips nuevos llevan los números nuevos.`);
+            setNotice(`Escena ${desde} movida a la posición ${hasta}: se renumeraron las escenas, su diálogo en el montaje, sus revisiones y sus archivos.`);
           } catch (e: any) { setNotice(`No se pudo mover la escena: ${e?.message || e}. No se cambió nada más.`); }
         }}
         onRefreshPrompts={async () => {
@@ -595,7 +612,7 @@ function DownloadText({ text, filename, label }: { text: string; filename: strin
 const Field = ({ label, value }: { label: string; value?: string }) => value ? <div><dt className="inline font-semibold text-slate-200">{label}: </dt><dd className="inline text-slate-300">{value}</dd></div> : null;
 const RefChips = ({ refs }: { refs?: string[] }) => <p className="mt-2 text-[11px] text-sky-200">Referencias a seleccionar (fuera del prompt): {(refs || []).length ? (refs || []).map(r => <span key={r} className="ml-1 rounded-full bg-sky-400/15 px-2 py-0.5">{r}</span>) : <span className="text-slate-400">ninguna</span>}</p>;
 
-function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialTab, status, onFinish, onUnlock, onAcceptDraft, backLabel, onBack, onNext, onRecreate, onDelete, onRefreshPrompts, onMoveScene }: any) {
+function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialTab, status, onFinish, onUnlock, onAcceptDraft, backLabel, onBack, onNext, onRecreate, onDelete, onRefreshPrompts, onMoveScene, onCambiar }: any) {
   type Tab = "guion" | "elenco" | "imagenes" | "animacion" | "mesa" | "redes" | "plataformas" | "archivos";
   const { data, update, userId } = useData();
   const cast: any[] = Array.isArray(out.cast) ? out.cast : [];
@@ -706,7 +723,9 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
       {tab === "guion" && <div className="space-y-3">
         {ficha && <details className="episode-sheet-drawer"><summary>Ficha narrativa, estructura y evaluación <span aria-hidden="true">＋</span></summary><EpisodeSheet ficha={ficha} bible={out.bible} score={out.selfScore} cast={cast} scenes={scenes.length} seconds={fullDuration} /></details>}
         {!ficha && !!(out.hook || []).length && <div className="rounded-xl border border-amber-400/20 bg-amber-400/10 p-4"><p className="text-[11px] font-semibold uppercase tracking-wider text-amber-300">Gancho de los primeros 3 s</p><p className="mt-1 text-lg font-bold">{(out.hook || []).join(" / ")}</p></div>}
-        {scenes.length ? <NarrativeDesk scenes={scenes} cast={cast} masters={master} active={activeScene.n} onMove={!finished && episodeId && onMoveScene ? (n: number, a: number) => { void onMoveScene(n, a).then(() => setActiveSceneN(a)); } : undefined} onSelect={setActiveSceneN} onCharacters={() => setTab("elenco")} onPrompts={() => setTab("imagenes")} productionReady={productionReady} renderPhone={(phone, speaker) => <PhoneBadge phone={phone} speaker={speaker} />} /> : (out.scriptBlocks || []).map((b: any, i: number) => (
+        {scenes.length ? <SceneDirector out={out} episodeId={episodeId} usuario={userId || "local"} cast={cast} master={master} checks={data.clipChecks.filter((c: any) => c.episodeId === episodeId)} referenceSignature={referenceSignature}
+          finished={finished} productionReady={productionReady} promptsOutdated={promptsOutdated} refreshing={refreshing} active={activeScene.n} onSelect={setActiveSceneN}
+          onCambiar={onCambiar} onRefreshPrompts={refresh} onIrA={(t: any) => setTab(t)} /> : (out.scriptBlocks || []).map((b: any, i: number) => (
           <div key={i} className="rounded-xl bg-[#121826] p-4">
             <p className="text-xs font-semibold text-amber-300">Bloque {b.block ?? i + 1} · {b.time}</p>
             {b.scene && <p className="mt-1 text-sm text-slate-400">{b.scene}</p>}
@@ -1001,5 +1020,24 @@ function EpisodeArchive({ episodes, series, onOpen, onDelete }: any) {
         </div>;
       })}
     </div>}
+  </div>;
+}
+
+// Menú del tipo de pedido del compositor: solo opciones que existen (historia nueva o réplica de un viral).
+function TipoMenu({ kind, onKind }: { kind: "nueva" | "replica"; onKind: (k: "nueva" | "replica") => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const fuera = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", fuera); document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", fuera); document.removeEventListener("keydown", esc); };
+  }, [open]);
+  const opciones = [["nueva", "Historia nueva (Parte 1)", "Una serie original desde tu idea"], ["replica", "Réplica de un viral", "Copia estructura y emoción, nunca personajes ni texto"]] as const;
+  return <div ref={ref} className="relative">
+    <button type="button" className="aurora-chip" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>{kind === "replica" ? "Réplica de un viral" : "Historia nueva"} <span aria-hidden="true">{open ? "▴" : "▾"}</span></button>
+    {open && <div className="aurora-menu left-0 top-full mt-2" role="menu" aria-label="Tipo de pedido">{opciones.map(([k, l, d]) =>
+      <button key={k} type="button" role="menuitemradio" aria-checked={kind === k} onClick={() => { onKind(k); setOpen(false); }}><span><b className="block font-semibold">{l}</b><span className="text-xs opacity-75">{d}</span></span></button>)}</div>}
   </div>;
 }

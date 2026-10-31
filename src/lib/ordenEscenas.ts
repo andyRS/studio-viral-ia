@@ -32,3 +32,38 @@ export function moverEscenaCorta(out: any, desde: number, hasta: number): { out:
 export function remapRevisiones(checks: { id: string; clipIndex: number }[], mapa: Mapa) {
   return checks.map(c => ({ id: c.id, de: c.clipIndex, a: (mapa[c.clipIndex + 1] ?? c.clipIndex + 1) - 1 })).filter(c => c.de !== c.a);
 }
+
+// Duplicar una escena justo después de ella: las siguientes suben un número (y con ellas sus revisiones y
+// archivos, vía el mapa). La copia nace sin revisión ni archivos: hay que generarla y revisarla.
+export function duplicarEscena(out: any, n: number): { out: any; mapa: Mapa; nueva: number } | null {
+  const scenes: any[] = Array.isArray(out?.scenes) ? out.scenes : [];
+  const i = scenes.findIndex(s => s.n === n);
+  if (i < 0) return null;
+  const mapa: Mapa = {};
+  scenes.forEach((s, k) => { mapa[s.n] = k <= i ? k + 1 : k + 2; });
+  const copia = { ...scenes[i], title: `${scenes[i].title || `Escena ${n}`} (copia)` };
+  const nuevas = [...scenes.slice(0, i + 1), copia, ...scenes.slice(i + 1)].map((s, k) => ({ ...s, n: k + 1 }));
+  const dup = (arr: any[] | undefined) => (Array.isArray(arr) && arr.length === scenes.length ? [...arr.slice(0, i + 1), arr[i], ...arr.slice(i + 1)] : arr);
+  const bloques = Array.isArray(out?.scriptBlocks) && out.scriptBlocks.length === scenes.length ? dup(out.scriptBlocks)!.map((b: any, k: number) => ({ ...b, block: k + 1 })) : out?.scriptBlocks;
+  return {
+    mapa, nueva: i + 2,
+    out: {
+      ...out, scenes: nuevas,
+      ...(out?.guionJson ? { guionJson: { ...out.guionJson, clips: dup(out.guionJson.clips) } } : {}),
+      ...(bloques ? { scriptBlocks: bloques } : {}),
+      ...(Array.isArray(out?.dolaSceneNumbers) ? { dolaSceneNumbers: out.dolaSceneNumbers.map((x: number) => mapa[x] ?? x) } : {}),
+    },
+  };
+}
+
+// Cambiar campos de una escena (edición en el inspector). Si cambia la frase, también el diálogo del montaje.
+export function editarEscena(out: any, n: number, cambios: Record<string, any>) {
+  const scenes: any[] = Array.isArray(out?.scenes) ? out.scenes : [];
+  const i = scenes.findIndex(s => s.n === n);
+  if (i < 0) return out;
+  const nueva = { ...scenes[i], ...cambios };
+  const clips = out?.guionJson?.clips;
+  const clipsNuevos = ("line" in cambios || "speaker" in cambios) && Array.isArray(clips) && clips.length === scenes.length
+    ? clips.map((c: any, k: number) => (k === i ? [[nueva.speaker, nueva.line]] : c)) : clips;
+  return { ...out, scenes: scenes.map((s, k) => (k === i ? nueva : s)), ...(out?.guionJson ? { guionJson: { ...out.guionJson, clips: clipsNuevos } } : {}) };
+}

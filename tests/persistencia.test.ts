@@ -1,7 +1,7 @@
 // Pruebas de persistencia (sin red ni navegador real): npm test
 import { clasificarError, columnasCambiadas, esMigracionPendiente, resolverChoque, claveLocal } from "../src/lib/persistencia";
 import { completarCreacion, type CreacionPendiente } from "../src/lib/creacion";
-import { moverEscenaCorta, remapRevisiones } from "../src/lib/ordenEscenas";
+import { duplicarEscena, editarEscena, moverEscenaCorta, remapRevisiones } from "../src/lib/ordenEscenas";
 
 let fallos = 0;
 const ok = (c: boolean, m: string) => { console.log(`${c ? "ok" : "FALLA"} · ${m}`); if (!c) fallos++; };
@@ -40,6 +40,17 @@ ok(claveLocal("storyOutlines", "abc") === "u:abc:storyOutlines" && claveLocal("s
   const rv = remapRevisiones([{ id: "a", clipIndex: 0 }, { id: "b", clipIndex: 3 }], r.mapa);
   ok(rv.length === 1 && rv[0].id === "a" && rv[0].a === 2, "las revisiones de clips pasan al índice nuevo (las que no cambian no se tocan)");
   ok(moverEscenaCorta(out, 2, 2) === null, "mover a la misma posición no cambia nada");
+}
+
+
+// Director de escenas: duplicar y editar.
+{
+  const out = { scenes: [1, 2, 3].map(n => ({ n, speaker: "A", line: `F${n}` })), guionJson: { clips: [1, 2, 3].map(n => [["A", `F${n}`]]) } };
+  const d = duplicarEscena(out, 2)!;
+  ok(d.out.scenes.length === 4 && d.out.scenes[2].line === "F2" && d.out.scenes[3].n === 4 && d.nueva === 3, "duplicar inserta la copia detrás y renumera");
+  ok(d.mapa[3] === 4 && d.mapa[2] === 2 && d.out.guionJson.clips.length === 4, "las escenas siguientes suben un número (revisiones y archivos las siguen)");
+  const e = editarEscena(out, 2, { line: "Nueva" });
+  ok(e.scenes[1].line === "Nueva" && e.guionJson.clips[1][0][1] === "Nueva" && out.scenes[1].line === "F2", "editar la frase cambia también el diálogo del montaje sin tocar el original");
 }
 
 // Creación reanudable: falla el episodio, se reintenta sin repetir serie ni personajes.

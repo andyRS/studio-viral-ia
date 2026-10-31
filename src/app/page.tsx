@@ -5,6 +5,7 @@ import MissionControl from "@/components/MissionControl";
 import { DataProvider, SessionBar, useData } from "@/lib/DataContext";
 import { growthStage } from "@/lib/profiles";
 import AutoMetaSync from "@/components/AutoMetaSync";
+import { PreferenciaEfectos } from "@/components/AuroraEngine";
 import dynamic from "next/dynamic";
 // Cada módulo se descarga al abrirlo (no todos al entrar): la página inicial pesa menos.
 const CargandoModulo = () => <div role="status" aria-live="polite" className="module-loading rounded-2xl border border-white/10 p-6 text-sm text-slate-400"><span className="generation-indicator mr-2 inline-block align-middle" aria-hidden="true" />Abriendo el módulo…</div>;
@@ -272,6 +273,7 @@ function DashboardInner() {
           </button>
         </div>
         <div className="mt-4 px-2"><SessionBar /></div>
+        <div className="mt-2 px-2"><PreferenciaEfectos /></div>
       </div>
     </aside>
 

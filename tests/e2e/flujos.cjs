@@ -114,6 +114,37 @@ const ir = async (page, espacio, modulo) => {
         ok(datos.ep.versions.length === 1, "el orden anterior queda en el historial del episodio");
       } else ok(false, "no se encontró la barra de escenas del episodio");
       await ctx.close(); }
+
+    // 7. Director de escenas: la selección cambia el inspector, editar guarda, duplicar y deshacer conservan las revisiones.
+    { const { ctx, page } = await abrir(b, () => {
+        const S = (k, v) => localStorage.setItem("estudio-viral:" + k, JSON.stringify(v));
+        S("series", [{ id: "s1", title: "Serie Director", description: "x" }]);
+        S("episodes", [{ id: "e1", seriesId: "s1", title: "Episodio Director", status: "Guion", createdAt: new Date().toISOString(), versions: [],
+          output: { title: "Episodio Director", mode: "llm", cast: [{ name: "Fresa" }, { name: "Mango" }], seriesBible: { style: "frutinovela" },
+            scenes: [1, 2, 3].map(n => ({ n, durationSec: 8, title: `Beat ${n}`, location: "Colmado", setting: `Acción ${n}`, speaker: n === 2 ? "Mango" : "Fresa", line: `Frase ${n}`, emotion: "calma", imagePromptFlow: "x", animationPrompt: "y" })),
+            guionJson: { clips: [1, 2, 3].map(n => [[n === 2 ? "Mango" : "Fresa", `Frase ${n}`]]) } } }]);
+        S("clipChecks", [{ id: "c3", episodeId: "e1", clipIndex: 2, approved: false, notes: "rehacer" }]);
+      });
+      await ir(page, "Creative Studio", "Generador");
+      await page.getByRole("button", { name: /Abrir episodio/ }).first().click(); await page.waitForTimeout(1200);
+      await page.locator("#sd-card-2").click(); await page.waitForTimeout(300);
+      ok((await page.locator(".sd-canvas blockquote").innerText()).includes("Frase 2"), "seleccionar una escena actualiza el lienzo y el inspector");
+      await page.locator("#sd-line-2").fill("Frase editada"); await page.locator("#sd-emotion-2").click(); await page.waitForTimeout(900);
+      let ep = await page.evaluate(() => JSON.parse(localStorage.getItem("estudio-viral:episodes"))[0]);
+      ok(ep.output.scenes[1].line === "Frase editada" && ep.output.guionJson.clips[1][0][1] === "Frase editada", "editar en el inspector guarda la escena y el diálogo del montaje");
+      ok(/Guardado/.test(await page.locator(".sd-save").innerText()), "el estado de guardado se muestra");
+      await page.getByRole("button", { name: "⧉ Duplicar" }).click(); await page.waitForTimeout(900);
+      let ck = await page.evaluate(() => JSON.parse(localStorage.getItem("estudio-viral:clipChecks"))[0]);
+      ep = await page.evaluate(() => JSON.parse(localStorage.getItem("estudio-viral:episodes"))[0]);
+      ok(ep.output.scenes.length === 4 && ck.clipIndex === 3, "duplicar añade la escena y la revisión siguiente cambia de número");
+      await page.getByRole("button", { name: "Deshacer" }).click(); await page.waitForTimeout(900);
+      ck = await page.evaluate(() => JSON.parse(localStorage.getItem("estudio-viral:clipChecks"))[0]);
+      ep = await page.evaluate(() => JSON.parse(localStorage.getItem("estudio-viral:episodes"))[0]);
+      ok(ep.output.scenes.length === 3 && ck.clipIndex === 2, "deshacer devuelve las escenas y la revisión a su sitio");
+      await page.locator(".sd-views").getByRole("button", { name: "Guion" }).click(); await page.waitForTimeout(300);
+      await page.locator(".sd-script article").nth(2).click(); await page.getByRole("button", { name: /Ver en el director/ }).click(); await page.waitForTimeout(300);
+      ok((await page.locator(".sd-canvas blockquote").innerText()).includes("Frase 3"), "del guion al director se conserva la escena elegida");
+      await ctx.close(); }
   } finally {
     await b.close();
     if (srv) try { process.kill(-srv.pid); } catch {}

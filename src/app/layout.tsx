@@ -2,6 +2,8 @@ import "./globals.css";
 import "./cinematic.css";
 import "./studio-stages.css";
 import "./growth-workspaces.css";
+import "./aurora.css";
+import AuroraEngine from "@/components/AuroraEngine";
 import type { ReactNode } from "react";
 import type { Viewport } from "next";
 import { Inter } from "next/font/google";
@@ -10,5 +12,5 @@ const inter = Inter({ subsets: ["latin"], display: "swap", variable: "--font-int
 export const metadata = { title: "Estudio Viral", description: "Creative Intelligence Studio para crear, producir y analizar contenido audiovisual." };
 export const viewport: Viewport = { width: "device-width", initialScale: 1, viewportFit: "cover", themeColor: "#080f14" };
 export default function RootLayout({ children }: { children: ReactNode }) {
-  return <html lang="es" className="dark"><body className={`${inter.variable} min-h-screen text-slate-100 antialiased`}>{children}</body></html>;
+  return <html lang="es" className="dark"><body className={`${inter.variable} min-h-screen text-slate-100 antialiased`}><AuroraEngine />{children}</body></html>;
 }
