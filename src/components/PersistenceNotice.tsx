@@ -1,5 +1,6 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { generacionesInterrumpidas, olvidarInterrumpidas, type Generacion } from "@/lib/api-client";
 import { useData } from "@/lib/DataContext";
 
 const COLLECTION_LABELS: Record<string, string> = { accounts: "Cuenta", series: "Serie", characters: "Personaje", formulas: "Fórmula", episodes: "Episodio", productionCards: "Producción", clipChecks: "Revisión de clip", costs: "Costo", calendarEntries: "Publicación", metrics: "Métrica", viralAnalyses: "Análisis", products: "Producto", productTests: "Prueba de producto", accountProfiles: "Perfil", storyOutlines: "Proyecto largo" };
@@ -10,7 +11,10 @@ export default function PersistenceNotice() {
   const { data, falloGuardado, conflictos, resolverConflicto, descargarRespaldo } = useData();
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState("");
-  if (!falloGuardado && !conflictos.length) return null;
+  // Generaciones que se cortaron porque la página se recargó o cerró antes de recibir la respuesta.
+  const [cortadas, setCortadas] = useState<Generacion[]>([]);
+  useEffect(() => { setCortadas(generacionesInterrumpidas()); }, []);
+  if (!falloGuardado && !conflictos.length && !cortadas.length) return null;
   async function resolve(id: string, choice: "mio" | "servidor") {
     setBusy(id); setMessage("");
     try { await resolverConflicto(id, choice); }
@@ -18,6 +22,7 @@ export default function PersistenceNotice() {
     finally { setBusy(null); }
   }
   return <section className="persistence-notice" aria-label="Cambios que requieren atención">
+    {!!cortadas.length && <div className="persistence-failure" role="status"><div><strong>{cortadas.length === 1 ? "Una generación se interrumpió" : `${cortadas.length} generaciones se interrumpieron`}</strong><p>La página se recargó o cerró antes de recibir el resultado de: {cortadas.map(g => `«${g.etiqueta}» (${new Date(g.inicio).toLocaleTimeString("es-DO", { hour: "2-digit", minute: "2-digit" })})`).join(", ")}. No se guardó nada de eso: vuelve a pedirlo.</p></div><button type="button" className="studio-secondary-action" onClick={() => { olvidarInterrumpidas(); setCortadas([]); }}>Entendido</button></div>}
     {falloGuardado && <div className="persistence-failure" role="alert"><div><strong>Sin guardar en este navegador</strong><p>El contenido sigue en pantalla. Descarga una copia antes de cerrar o recargar.</p><p className="persistence-detail">{falloGuardado.mensaje}</p></div><button type="button" className="studio-secondary-action" onClick={descargarRespaldo}>Descargar copia</button></div>}
     {!!conflictos.length && <div className="persistence-conflicts"><header><strong>Otra ventana cambió el mismo contenido</strong><p>Ves la versión del servidor. Tu cambio está apartado: elige qué conservar.</p></header><ul>{conflictos.map(c => {
       const record = (data[c.collection] as { id: string; title?: string; name?: string }[]).find(r => r.id === c.recordId);

@@ -1,5 +1,6 @@
 "use client";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { borrarBorrador, escribirBorrador, leerBorrador } from "@/lib/borradores";
 import { useData } from "@/lib/DataContext";
 import WorkspaceIntro, { WorkspaceLoading } from "./WorkspaceIntro";
 
@@ -30,6 +31,21 @@ export default function CalendarModule({ focusEntryId }: { focusEntryId?: string
     setToday(localToday);
     setForm(previous => ({ ...previous, date: previous.date || localDateKey(localToday) }));
   }, []);
+  // Borrador de la entrada que se estaba escribiendo (sobrevive a cambiar de módulo o recargar).
+  const { userId, mode: modoDatos } = useData();
+  const restaurado = useRef(false);
+  useEffect(() => {
+    if (modoDatos === "cargando" || restaurado.current) return;
+    restaurado.current = true;
+    const b = leerBorrador<typeof form>("calendario:entrada", userId);
+    if (b?.title?.trim()) { setForm(prev => ({ ...prev, ...b })); setFormMessage("Recuperé la entrada que estabas escribiendo."); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modoDatos, userId]);
+  useEffect(() => {
+    if (!restaurado.current) return;
+    const t = setTimeout(() => { if (form.title.trim()) escribirBorrador("calendario:entrada", userId, form); else borrarBorrador("calendario:entrada", userId); }, 400);
+    return () => clearTimeout(t);
+  }, [form, userId]);
   useEffect(() => {
     if (!today || !focusEntryId) return;
     const entry = document.getElementById(`calendar-entry-${focusEntryId}`);

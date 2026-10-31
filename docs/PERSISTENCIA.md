@@ -31,12 +31,61 @@ La IA genera serie, elenco y episodio, y la app los guarda en varios pasos. Ante
 
 Cada paso terminado queda anotado. Si uno falla, `GeneratorModule` muestra «Reintentar guardado». El reintento sigue desde el paso que falló, sin volver a generar y sin duplicar la serie ni los personajes.
 
-## Pendiente (necesita diseño o un contrato nuevo)
+## Archivos de trabajo (`archivosTrabajo.ts`)
 
-- Arrastrar escenas y tomas: usar los handlers de orden existentes (`mover` en `TomasPanel`). Las escenas cortas dependen del índice para archivos y `clipChecks`.
-- Etapas reales de generación: hoy las rutas devuelven la respuesta completa. Hace falta un contrato de trabajos (job id, estados, cancelación) antes de mostrar porcentajes.
-- Borradores entre módulos y archivos de trabajo persistentes: requieren definir almacenamiento de medios (Supabase Storage con políticas por usuario) y una clave de borrador por módulo.
+Los clips e imágenes de la mesa de escenas se guardan en el navegador (IndexedDB), por usuario y episodio. Se recuperan al recargar, se borran solos a los 30 días sin abrir el episodio y hay un botón «Liberar espacio de este episodio». No es la nube: otro navegador u otro dispositivo no los ve. Si no caben, la mesa avisa de que ese archivo queda solo en la sesión.
 
+## Borradores y «Retomar» (`borradores.ts`)
+
+- `useBorrador(clave, inicial)` funciona como `useState`, pero guarda el valor (por usuario, 14 días) y lo restaura al volver al módulo o al recargar. Devuelve `{ restaurado, limpiar }`. Se usa en:
+  - la premisa de la mesa creativa;
+  - idea, notas, réplica y deseo del generador;
+  - el laboratorio narrativo;
+  - la entrada del calendario.
+- `anotarPunto` / `leerUltimoPunto`: episodio, serie y pestaña de la última edición. «Retomar donde lo dejé» de MissionControl abre ese episodio en esa pestaña, si sigue existiendo.
+
+## Generación observable (`api-client.ts`)
+
+- Las rutas devuelven la respuesta completa al final: no hay etapas reales. `GenerationStatus` muestra solo el tiempo transcurrido, y a partir de 90 s avisa del corte del servidor (180 s).
+- `postApi(ruta, cuerpo, { signal })` admite cancelar (`AbortController`). Cancelar devuelve `status 499`; una conexión cortada devuelve `status 0`, con un mensaje claro en vez de una excepción.
+- Cada generación de IA queda apuntada mientras dura. Si la página se recarga o se cierra antes de recibir la respuesta, `PersistenceNotice` avisa en la carga siguiente: «se interrumpió; no se guardó nada». Las pestañas vivas tienen latido, así que una generación en curso en otra pestaña no cuenta como cortada.
+
+## Orden de escenas cortas (`ordenEscenas.ts`)
+
+`moverEscenaCorta(out, desde, hasta)` renumera las escenas y, con ellas, todo lo que depende del número:
+- el diálogo del montaje (`guionJson.clips`);
+- los bloques del guion;
+- las escenas elegidas para Dola.
+
+`GeneratorModule` aplica además tres cosas:
+- `remapRevisiones` (`clipChecks.clipIndex`);
+- `renumerarArchivos` (archivos guardados en el navegador);
+- una copia del orden anterior en `episode.versions`.
+
+En `NarrativeDesk`, el reordenado se hace con los botones ◀ ▶ o con Alt+← / Alt+→ en la barra de escenas. No se ofrece en episodios terminados.
+
+## Carga por módulo
+
+`page.tsx` carga cada módulo con `next/dynamic` al abrirlo, con un estado «Abriendo el módulo…». La página inicial bajó de 354 kB a 183 kB de First Load JS. La sesión y el retorno OAuth (`?modulo=metricas`) no cambian.
+
+## Pruebas
+
+- `npm test`: 60 comprobaciones de lógica.
+- `npm run test:e2e`: 14 flujos en el navegador, en modo sin sesión y con datos aislados:
+  - crear y recuperar tras recargar;
+  - almacenamiento lleno;
+  - borradores;
+  - calendario;
+  - generación interrumpida;
+  - reordenar con el teclado.
+- Ambas corren en CI después del build.
+
+## Sigue pendiente
+
+- Archivos en la nube (otro dispositivo): Supabase Storage gratis limita a 50 MB por archivo y 1 GB en total, y hace falta definir cuánto se guarda.
+- Persistir los ajustes de prompts del PromptWorkbench: falta decidir su relación con prompts derivados, revisiones y snapshots de personaje.
+- Publicar en redes o reprogramar desde la app: requiere permisos de publicación de cada red (Meta: `pages_manage_posts`), que hoy la conexión no pide.
+- Tipado estricto (`strict: true`): empezó con `storyOutlines: Outline[]`; el resto de los `any` se migrará por módulos.
 
 ## Integración con la presentación cinematográfica
 

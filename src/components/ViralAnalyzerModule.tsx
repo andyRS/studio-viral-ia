@@ -1,5 +1,6 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useBorrador } from "@/lib/borradores";
 import AiAuthNotice from "./AiAuthNotice";
 import { useData } from "@/lib/DataContext";
 import { postApi, isAuthError } from "@/lib/api-client";
@@ -15,12 +16,13 @@ function readable(value: any): string {
 
 export default function ViralAnalyzerModule(){
   const { data, insert, remove, mode } = useData();
-  const [transcript, setTranscript] = useState("");
-  const [notes, setNotes] = useState("");
-  const [sourceUrl, setSourceUrl] = useState("");
+  const [transcript, setTranscript, transcriptB] = useBorrador("laboratorio:transcripcion", "");
+  const [notes, setNotes] = useBorrador("laboratorio:notas", "");
+  const [sourceUrl, setSourceUrl] = useBorrador("laboratorio:url", "");
   const [out, setOut] = useState<any>(null);
   const [authError, setAuthError] = useState(false);
   const [notice, setNotice] = useState("");
+  useEffect(() => { if (transcriptB.restaurado) setNotice("Recuperé la transcripción y las notas que estabas escribiendo."); }, [transcriptB.restaurado]);
   const [busy, setBusy] = useState(false);
 
   async function persist(structure: any, note: string){

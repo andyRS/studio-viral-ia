@@ -1,6 +1,7 @@
 // Pruebas de persistencia (sin red ni navegador real): npm test
 import { clasificarError, columnasCambiadas, esMigracionPendiente, resolverChoque, claveLocal } from "../src/lib/persistencia";
 import { completarCreacion, type CreacionPendiente } from "../src/lib/creacion";
+import { moverEscenaCorta, remapRevisiones } from "../src/lib/ordenEscenas";
 
 let fallos = 0;
 const ok = (c: boolean, m: string) => { console.log(`${c ? "ok" : "FALLA"} · ${m}`); if (!c) fallos++; };
@@ -27,6 +28,19 @@ ok(resolverChoque(base, { ...base, title: "B" }, { title: "B" }).reintentar, "si
 
 // Respaldo local por usuario.
 ok(claveLocal("storyOutlines", "abc") === "u:abc:storyOutlines" && claveLocal("storyOutlines", null) === "storyOutlines", "clave local separada por usuario");
+
+
+// Reordenar escenas cortas: todo lo que depende del número sigue a su escena.
+{
+  const out = { scenes: [1, 2, 3, 4].map(n => ({ n, line: `F${n}` })), guionJson: { clips: [1, 2, 3, 4].map(n => [["A", `F${n}`]]) }, scriptBlocks: [1, 2, 3, 4].map(n => ({ block: n, scene: `L${n}` })), dolaSceneNumbers: [1, 4] };
+  const r = moverEscenaCorta(out, 1, 3)!;
+  ok(r.out.scenes.map((s: any) => s.line).join() === "F2,F3,F1,F4" && r.out.scenes.every((s: any, i: number) => s.n === i + 1), "mover la escena 1 a la 3 renumera todas");
+  ok(r.out.guionJson.clips[2][0][1] === "F1" && r.out.scriptBlocks[2].scene === "L1" && r.out.scriptBlocks[2].block === 3, "diálogo del montaje y bloques del guion siguen a su escena");
+  ok(JSON.stringify(r.out.dolaSceneNumbers) === "[3,4]", "las escenas elegidas para Dola cambian de número");
+  const rv = remapRevisiones([{ id: "a", clipIndex: 0 }, { id: "b", clipIndex: 3 }], r.mapa);
+  ok(rv.length === 1 && rv[0].id === "a" && rv[0].a === 2, "las revisiones de clips pasan al índice nuevo (las que no cambian no se tocan)");
+  ok(moverEscenaCorta(out, 2, 2) === null, "mover a la misma posición no cambia nada");
+}
 
 // Creación reanudable: falla el episodio, se reintenta sin repetir serie ni personajes.
 (async () => {

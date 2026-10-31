@@ -1,5 +1,8 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { moverEscenaCorta, remapRevisiones } from "@/lib/ordenEscenas";
+import { renumerarArchivos } from "@/lib/archivosTrabajo";
+import { anotarPunto, leerUltimoPunto, useBorrador } from "@/lib/borradores";
 import NarrativeDesk, { SceneRail } from "./NarrativeDesk";
 import PromptWorkbench from "./PromptWorkbench";
 import CreativeDesk from "./CreativeDesk";
@@ -114,7 +117,8 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
   const [openTab, setOpenTab] = useState<EpisodeTab | undefined>(undefined);
 
   // Historia nueva
-  const [idea, setIdea] = useState(initialIdea);
+  // Borradores: lo que se escribe aquí sobrevive a cambiar de módulo o recargar (por usuario, 14 días).
+  const [idea, setIdea, ideaB] = useBorrador(initialIdea ? "generador:idea-sugerida" : "generador:idea", initialIdea);
   const [style, setStyleRaw] = useState<StyleKey>("frutinovela");
   // El estilo es obligatorio: hay que elegirlo antes de crear (no vale el valor por defecto).
   const [styleChosen, setStyleChosen] = useState(false);
@@ -124,7 +128,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
   const [formato, setFormato] = useState<"corto" | "largo">("corto");
   const [clipIds, setClipIds] = useState<string[]>([]);
   const [duration, setDuration] = useState(88);
-  const [notes, setNotes] = useState("");
+  const [notes, setNotes, notesB] = useBorrador("generador:notas", "");
   // «Usar esta idea»: rellena la idea y deja en las notas lo que la IA debe respetar (base bíblica,
   // gancho, objeto, giro y elenco sugeridos). Las notas van a «MI PEDIDO» del prompt maestro.
   const notesFromIdea = (i: StoryIdea) => [
@@ -144,10 +148,11 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
   };
   // Tipo de pedido: historia nueva o réplica de un viral ajeno (se copia estructura y emoción).
   const [kind, setKind] = useState<"nueva" | "replica">("nueva");
-  const [replica, setReplica] = useState("");
+  const [replica, setReplica] = useBorrador("generador:replica", "");
   // Continuar
   const [seriesId, setSeriesId] = useState("");
-  const [wish, setWish] = useState("");
+  const [wish, setWish] = useBorrador("generador:deseo", "");
+  useEffect(() => { if (ideaB.restaurado || notesB.restaurado) setNotice("Recuperé lo que estabas escribiendo la última vez (idea y notas). Bórralo si ya no lo necesitas."); }, [ideaB.restaurado, notesB.restaurado]);
   const [chosenHook, setChosenHook] = useState<string[] | null>(null);
 
   const episodesOf = (sid: string) => data.episodes.filter((e: any) => e.seriesId === sid).sort((a: any, b: any) => String(a.createdAt).localeCompare(String(b.createdAt)));
@@ -198,10 +203,14 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
     else if (p.style === "epica") setDuration(48);
   }, [account?.id, data.accountProfiles]);
 
+  // Cancelar la generación en curso (la IA puede terminar en el servidor, pero no se guarda nada).
+  const abortRef = useRef<AbortController | null>(null);
   async function call(path: string, body: any, local: () => any) {
     // Sin sesión: plantilla local en el navegador (elenco de frutas y escenas completas, sin IA).
     if (mode !== "supabase") return { data: local(), note: "Modo sin sesión: borrador creado con la plantilla local y guardado en este navegador. Inicia sesión para que la IA escriba el guion." };
-    const r = await postApi(path, body);
+    abortRef.current = new AbortController();
+    const r = await postApi(path, body, { signal: abortRef.current.signal });
+    abortRef.current = null;
     if (isAuthError(r)) { setAuthError(true); return null; }
     if (!r.json?.ok) { setNotice(r.json?.error || "No se pudo generar el contenido. Inténtalo de nuevo."); return null; }
     const d = r.json.data;
@@ -262,7 +271,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
         },
         guardarEpisodio: (sid, ep, bible) => saveEpisode(sid, 1, ep, bible),
       }, q => apartar(q, userId));
-      borrarPendiente(userId); setPendiente(null);
+      borrarPendiente(userId); setPendiente(null); ideaB.limpiar(); notesB.limpiar();
       setSeriesId(r.seriesId); setResult({ episode: r.output, episodeId: r.episodeId, seriesId: r.seriesId, part: 1 }); setView("resultado"); setNotice(nota); setChosenHook(null);
     } catch (error: any) {
       setPendiente(leerPendiente(userId));
@@ -298,7 +307,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
     finally { setLoading(false); }
   }
 
-  function openEpisode(sid: string, ep: any, part: number, tab?: EpisodeTab) { setSeriesId(sid); setOpenTab(tab); setResult({ episode: ep.output || {}, episodeId: ep.id, seriesId: sid, part }); setView("resultado"); setNotice(""); window.scrollTo?.({ top: 0, behavior: "smooth" }); }
+  function openEpisode(sid: string, ep: any, part: number, tab?: EpisodeTab) { anotarPunto(userId, { episodeId: ep.id, seriesId: sid, tab }); setSeriesId(sid); setOpenTab(tab); setResult({ episode: ep.output || {}, episodeId: ep.id, seriesId: sid, part }); setView("resultado"); setNotice(""); window.scrollTo?.({ top: 0, behavior: "smooth" }); }
   function openSeries(sid: string) { setSeriesId(sid); setView("continuar"); setNotice(""); setWish(""); setChosenHook(null); }
   // Serie de una cuenta de Instagram con perfil: el episodio siguiente sale a 40 s (formato de esa cuenta).
   useEffect(() => { if (view === "continuar" && current && profileOf(current.accountId)?.platform === "Instagram") setDuration(40); }, [view, current?.id]);
@@ -312,8 +321,12 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
     const siblings = data.episodes.filter(ep => ep.seriesId === episode.seriesId)
       .sort((a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || "")));
     const part = episode.output?.partNumber || siblings.findIndex(ep => ep.id === episode.id) + 1 || 1;
-    openEpisode(episode.seriesId || "", episode, part);
+    // «Retomar»: si es el último episodio editado, se abre en la pestaña donde se dejó.
+    const punto = leerUltimoPunto(userId);
+    openEpisode(episode.seriesId || "", episode, part, !focusTab && punto?.episodeId === episode.id ? punto.tab as EpisodeTab : undefined);
     focusedEpisodeRef.current = focusEpisodeId;
+  // Solo al cambiar el episodio enfocado (focusTab, userId y openEpisode se leen en ese momento).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusEpisodeId, data.episodes]);
 
   const Back = ({ to = "inicio" as View }) => <button onClick={() => { setView(to); setNotice(""); setAuthError(false); setChosenHook(null); }} className="mb-4 text-sm text-slate-400 hover:text-white">← Volver</button>;
@@ -486,6 +499,23 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
         onUnlock={async () => { if (result.episodeId && window.confirm("¿Desbloquear este episodio para volver a editarlo?")) await update("episodes", result.episodeId, { status: "Guion" }); }}
         backLabel={data.series.find((s: any) => s.id === result.seriesId)?.title}
         onBack={() => { if (result.seriesId && data.series.some((s: any) => s.id === result.seriesId)) openSeries(result.seriesId); else setView("inicio"); }} onNext={() => { setSeriesId(result.seriesId); setView("continuar"); }}
+        onMoveScene={async (desde: number, hasta: number) => {
+          // Reordenar una escena: se renumeran escenas, diálogo del montaje, revisiones y archivos guardados;
+          // la versión anterior queda en el historial del episodio.
+          if (!result.episodeId) return;
+          const r = moverEscenaCorta(result.episode, desde, hasta); if (!r) return;
+          const firstBible = data.episodes.find((e: any) => e.seriesId === result.seriesId && e.output?.seriesBible?.style)?.output?.seriesBible;
+          const st = (result.episode?.seriesBible?.style || firstBible?.style || (result.episode?.cast?.some((c: any) => c.fruit) ? "frutinovela" : "cine90")) as StyleKey;
+          const output = refreshPrompts(r.out, st);
+          const ep = data.episodes.find((e: any) => e.id === result.episodeId) as any;
+          try {
+            await update("episodes", result.episodeId, { output, versions: [...(Array.isArray(ep?.versions) ? ep.versions : []), result.episode].slice(-10) });
+            for (const c of remapRevisiones(data.clipChecks.filter((x: any) => x.episodeId === result.episodeId), r.mapa)) await update("clipChecks", c.id, { clipIndex: c.a });
+            await renumerarArchivos(userId || "local", result.episodeId, r.mapa).catch(() => {});
+            setResult({ ...result, episode: output });
+            setNotice(`Escena ${desde} movida a la posición ${hasta}: se renumeraron las escenas, su diálogo en el montaje, sus revisiones y sus archivos. Si ya enviaste el lote a Flow, los clips nuevos llevan los números nuevos.`);
+          } catch (e: any) { setNotice(`No se pudo mover la escena: ${e?.message || e}. No se cambió nada más.`); }
+        }}
         onRefreshPrompts={async () => {
           // Rehace los prompts con las reglas actuales, sin IA: el guion, las escenas y los personajes no cambian.
           const firstBible = data.episodes.find((e: any) => e.seriesId === result.seriesId && e.output?.seriesBible?.style)?.output?.seriesBible;
@@ -510,7 +540,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
           setNotice("Revisa la idea y crea una versión nueva con Gemini. El borrador anterior se conserva hasta que decidas eliminarlo.");
         }} />}
 
-      {loading && <GenerationStatus label={mode === "supabase" ? "Creando y guardando tu historia" : "Preparando tu borrador local"} detail={mode !== "supabase" ? "Se prepara una plantilla sin IA y se guarda en este navegador." : undefined} />}
+      {loading && <GenerationStatus label={mode === "supabase" ? "Creando y guardando tu historia" : "Preparando tu borrador local"} detail={mode !== "supabase" ? "Se prepara una plantilla sin IA y se guarda en este navegador." : undefined}>{mode === "supabase" && <button type="button" onClick={() => abortRef.current?.abort()} className="studio-text-action">Cancelar</button>}</GenerationStatus>}
       {authError && <div className="mt-4"><AiAuthNotice /></div>}
       {notice && <p role="status" className="mt-4 rounded-xl border border-amber-400/20 bg-amber-400/10 p-3 text-sm text-amber-100">{notice}</p>}
       {pendiente && !loading && <div role="alert" className="mt-4 flex flex-wrap items-center gap-2 rounded-xl border border-sky-400/30 bg-sky-400/[.06] p-3 text-sm text-sky-100">
@@ -565,9 +595,9 @@ function DownloadText({ text, filename, label }: { text: string; filename: strin
 const Field = ({ label, value }: { label: string; value?: string }) => value ? <div><dt className="inline font-semibold text-slate-200">{label}: </dt><dd className="inline text-slate-300">{value}</dd></div> : null;
 const RefChips = ({ refs }: { refs?: string[] }) => <p className="mt-2 text-[11px] text-sky-200">Referencias a seleccionar (fuera del prompt): {(refs || []).length ? (refs || []).map(r => <span key={r} className="ml-1 rounded-full bg-sky-400/15 px-2 py-0.5">{r}</span>) : <span className="text-slate-400">ninguna</span>}</p>;
 
-function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialTab, status, onFinish, onUnlock, onAcceptDraft, backLabel, onBack, onNext, onRecreate, onDelete, onRefreshPrompts }: any) {
+function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialTab, status, onFinish, onUnlock, onAcceptDraft, backLabel, onBack, onNext, onRecreate, onDelete, onRefreshPrompts, onMoveScene }: any) {
   type Tab = "guion" | "elenco" | "imagenes" | "animacion" | "mesa" | "redes" | "plataformas" | "archivos";
-  const { data, update } = useData();
+  const { data, update, userId } = useData();
   const cast: any[] = Array.isArray(out.cast) ? out.cast : [];
   const scenes: any[] = Array.isArray(out.scenes) ? out.scenes : [];
   const ficha = out.ficha || null; const social = out.social || null;
@@ -589,6 +619,8 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
   const pack = useMemo(() => publishPack(out, out.seriesBible?.style || (cast.some((c: any) => c.fruit) ? "frutinovela" : "cine90"), part, seriesTitle || "", data.accounts.find((a: any) => a.id === data.series.find((x: any) => x.id === seriesId)?.accountId)?.platform || ""), [out, part, seriesTitle, data.accounts, data.series, seriesId]);
   const [reviewed, setReviewed] = useState(false);
   useEffect(() => { setReviewed(false); setTab(initialTab || "guion"); }, [out, initialTab]);
+  // Último punto editado: «Retomar» vuelve a este episodio y a esta pestaña.
+  useEffect(() => { if (episodeId) anotarPunto(userId, { episodeId, seriesId, tab }); }, [episodeId, seriesId, tab, userId]);
   const fromAI = !!out.mode && out.mode !== "plantilla-local" && out.mode !== "gemini-borrador" && cast.length >= 2;
   const isTemplate = out.mode === "plantilla-local";
   const isAIDraft = out.mode === "gemini-borrador";
@@ -674,7 +706,7 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
       {tab === "guion" && <div className="space-y-3">
         {ficha && <details className="episode-sheet-drawer"><summary>Ficha narrativa, estructura y evaluación <span aria-hidden="true">＋</span></summary><EpisodeSheet ficha={ficha} bible={out.bible} score={out.selfScore} cast={cast} scenes={scenes.length} seconds={fullDuration} /></details>}
         {!ficha && !!(out.hook || []).length && <div className="rounded-xl border border-amber-400/20 bg-amber-400/10 p-4"><p className="text-[11px] font-semibold uppercase tracking-wider text-amber-300">Gancho de los primeros 3 s</p><p className="mt-1 text-lg font-bold">{(out.hook || []).join(" / ")}</p></div>}
-        {scenes.length ? <NarrativeDesk scenes={scenes} cast={cast} masters={master} active={activeScene.n} onSelect={setActiveSceneN} onCharacters={() => setTab("elenco")} onPrompts={() => setTab("imagenes")} productionReady={productionReady} renderPhone={(phone, speaker) => <PhoneBadge phone={phone} speaker={speaker} />} /> : (out.scriptBlocks || []).map((b: any, i: number) => (
+        {scenes.length ? <NarrativeDesk scenes={scenes} cast={cast} masters={master} active={activeScene.n} onMove={!finished && episodeId && onMoveScene ? (n: number, a: number) => { void onMoveScene(n, a).then(() => setActiveSceneN(a)); } : undefined} onSelect={setActiveSceneN} onCharacters={() => setTab("elenco")} onPrompts={() => setTab("imagenes")} productionReady={productionReady} renderPhone={(phone, speaker) => <PhoneBadge phone={phone} speaker={speaker} />} /> : (out.scriptBlocks || []).map((b: any, i: number) => (
           <div key={i} className="rounded-xl bg-[#121826] p-4">
             <p className="text-xs font-semibold text-amber-300">Bloque {b.block ?? i + 1} · {b.time}</p>
             {b.scene && <p className="mt-1 text-sm text-slate-400">{b.scene}</p>}

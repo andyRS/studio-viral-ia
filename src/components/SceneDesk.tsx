@@ -6,6 +6,7 @@ import ReferencePreview from "./ReferencePreview";
 import CopyButton from "./CopyButton";
 import MontajePanel from "./MontajePanel";
 import type { Scene } from "@/lib/types";
+import { borrarEpisodio, cargarArchivos, espacio, guardarArchivo, limpiarViejos, pedirPersistencia, quitarArchivo, DIAS_RETENCION } from "@/lib/archivosTrabajo";
 
 type AssetMap = Record<number, File>;
 type Kind = "image" | "clip";
@@ -27,7 +28,10 @@ export function sceneNumberOf(fileName: string): { n: number; variant: number } 
 const kindOf = (f: File): Kind | null => f.type.startsWith("video/") || /\.(mp4|mov|webm|m4v)$/i.test(f.name) ? "clip" : f.type.startsWith("image/") || /\.(png|jpe?g|webp)$/i.test(f.name) ? "image" : null;
 
 export default function SceneDesk({ episodeId, scenes, guion, title, referencesReady, referenceSignature, style, part, onDownloaded, publish, music, cover, recap }: { recap?: string; music?: Record<string, any>; cover?: { serie?: string; frase?: string[]; parte?: number }; episodeId: string; scenes: Scene[]; guion: any; title: string; referencesReady: boolean; referenceSignature: string; style?: string; part?: number; onDownloaded?: () => void; publish?: { platform: string; text: string; hashtags: string; extra?: string }[] }) {
-  const { data, insert, update, remove } = useData();
+  const { data, insert, update, remove, userId, mode } = useData();
+  const usuario = userId || "local";
+  // Archivos guardados en este navegador (IndexedDB): se recuperan al recargar. null = aún leyendo.
+  const [guardados, setGuardados] = useState<{ n: number; recuperados: number; usado?: number } | null>(null);
   const [selectedScene, setSelectedScene] = useState<number>(scenes[0]?.n || 1);
   const activeScene = scenes.find(s => s.n === selectedScene) || scenes[0];
   const [images, setImages] = useState<AssetMap>({});
@@ -62,8 +66,37 @@ export default function SceneDesk({ episodeId, scenes, guion, title, referencesR
   useEffect(() => () => { Object.values(clipUrls).forEach(URL.revokeObjectURL); }, [clipUrls]);
   useEffect(() => () => { Object.values(imageUrls).forEach(URL.revokeObjectURL); }, [imageUrls]);
 
+  // Al abrir: limpia lo caducado y recupera los clips e imágenes que se subieron antes a este episodio.
+  useEffect(() => {
+    if (mode === "cargando") return;
+    let vivo = true;
+    (async () => {
+      try {
+        await limpiarViejos();
+        const a = await cargarArchivos(usuario, episodeId);
+        if (!vivo) return;
+        const n = Object.keys(a.image).length + Object.keys(a.clip).length;
+        if (n) { setImages(prev => ({ ...a.image, ...prev })); setClips(prev => ({ ...a.clip, ...prev })); }
+        const e = await espacio();
+        setGuardados({ n, recuperados: n, usado: e?.usado });
+        if (n) void pedirPersistencia();
+      } catch { if (vivo) setGuardados({ n: 0, recuperados: 0 }); }
+    })();
+    return () => { vivo = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [episodeId, usuario, mode]);
+
   function place(kind: Kind, mapped: AssetMap) {
     if (!Object.keys(mapped).length) return;
+    // Copia en el navegador para no perderlos al recargar; si no cabe, siguen en esta sesión y se avisa.
+    void (async () => {
+      let ok = 0;
+      for (const [n, f] of Object.entries(mapped)) {
+        try { await guardarArchivo(usuario, episodeId, kind, Number(n), f); ok++; }
+        catch { setMessage(`«${f.name}» queda solo en esta sesión: el navegador no tiene espacio para guardarlo. Si recargas, súbelo de nuevo.`); }
+      }
+      if (ok) { void pedirPersistencia(); setGuardados(g => ({ recuperados: g?.recuperados || 0, n: (g?.n || 0) + ok, usado: g?.usado })); }
+    })();
     (kind === "image" ? setImages : setClips)(prev => ({ ...prev, ...mapped }));
     setDirtyClips(prev => Array.from(new Set([...prev, ...Object.keys(mapped).map(Number)])));
   }
@@ -103,6 +136,13 @@ export default function SceneDesk({ episodeId, scenes, guion, title, referencesR
   function dropFile(n: number, kind: "image" | "clip") {
     const strip = (prev: AssetMap) => { const next = { ...prev }; delete next[n]; return next; };
     if (kind === "image") setImages(strip); else setClips(strip);
+    void quitarArchivo(usuario, episodeId, kind, n).catch(() => {});
+  }
+  async function liberarEspacio() {
+    if (!window.confirm("¿Borrar de este navegador los clips e imágenes guardados de este episodio? Seguirán en pantalla hasta que recargues.")) return;
+    const n = await borrarEpisodio(usuario, episodeId).catch(() => 0);
+    setGuardados(g => ({ recuperados: g?.recuperados || 0, n: 0, usado: g?.usado }));
+    setMessage(`${n} archivo(s) borrados de este navegador.`);
   }
   async function deleteReview(n: number) {
     const old = checks.find(c => c.clipIndex === n - 1);
@@ -152,6 +192,11 @@ export default function SceneDesk({ episodeId, scenes, guion, title, referencesR
         <span className="text-xs text-slate-300">Arrastra aquí los clips y las imágenes del episodio (o haz clic). Cada uno va a su escena por el número del nombre: s01, 001, [003], escena 4, 05_manzanita…</span>
         <input className="sr-only" type="file" accept="video/*,image/*" multiple onChange={e => { assignAll(e.target.files); e.target.value = ""; }} />
       </label>
+      {guardados && <p className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-slate-400" role="status">
+        {guardados.recuperados > 0 && <b className="text-emerald-300">Recuperados {guardados.recuperados} archivo(s) que subiste antes.</b>}
+        <span>{(Object.keys(images).length + Object.keys(clips).length) ? `Los archivos se guardan en este navegador (no en la nube): siguen aquí si recargas y se borran solos a los ${DIAS_RETENCION} días sin abrir el episodio.` : "Los archivos que subas se guardarán en este navegador para no perderlos al recargar."}{guardados.usado ? ` Espacio usado por el sitio: ${(guardados.usado / 1048576).toFixed(0)} MB.` : ""}</span>
+        {guardados.n > 0 && <button type="button" onClick={() => { void liberarEspacio(); }} className="text-sky-300 underline">Liberar espacio de este episodio</button>}
+      </p>}
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <button type="button" disabled={bulkBusy || !referencesReady || !Object.keys(clips).length} onClick={() => { void approveAll(); }} className="rounded-lg bg-emerald-400 px-3 py-2 text-xs font-bold text-slate-950 disabled:opacity-40">{bulkBusy ? "Aprobando…" : "✓ Aprobar todas"}</button>
         <span className="text-[11px] text-slate-400">Aprueba de una vez las escenas con clip. Las que quieras rehacer, márcalas antes con «↻ Rehacer».</span>

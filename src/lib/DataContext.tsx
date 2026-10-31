@@ -19,6 +19,7 @@ import { hasKey, load, loadAsync, loadIdb, save, uid } from "./store";
 import { COLLECTIONS, LOCAL_KEY_OF, OPTIONAL_TABLES, TABLE_OF, fromRow, toRow, type CollectionName } from "./db";
 import { claveLocal, clasificarError, columnasCambiadas, esMigracionPendiente, explicarError, resolverChoque } from "./persistencia";
 import { seedAccounts, seedFormulas } from "./seed";
+import type { Outline } from "./outline";
 import type { Account, AccountProfile, CalendarEntry, Character, ClipCheck, Cost, Episode, Formula, Metric, Product, ProductTest, ProductionCard, Series, ViralAnalysis } from "./types";
 
 export type { CollectionName };
@@ -27,7 +28,7 @@ export interface DataState {
   accounts: Account[]; series: Series[]; characters: Character[]; formulas: Formula[];
   episodes: Episode[]; productionCards: ProductionCard[]; clipChecks: ClipCheck[]; costs: Cost[];
   calendarEntries: CalendarEntry[]; metrics: Metric[]; viralAnalyses: ViralAnalysis[];
-  products: Product[]; productTests: ProductTest[]; accountProfiles: AccountProfile[]; storyOutlines: any[];
+  products: Product[]; productTests: ProductTest[]; accountProfiles: AccountProfile[]; storyOutlines: Outline[];
 }
 
 export type DataMode = "cargando" | "supabase" | "local";

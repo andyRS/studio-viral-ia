@@ -3,19 +3,22 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import PersistenceNotice from "@/components/PersistenceNotice";
 import MissionControl from "@/components/MissionControl";
 import { DataProvider, SessionBar, useData } from "@/lib/DataContext";
-import AccountsModule from "@/components/AccountsModule";
 import { growthStage } from "@/lib/profiles";
-import CharactersModule from "@/components/CharactersModule";
-import FormulasModule from "@/components/FormulasModule";
-import GeneratorModule from "@/components/GeneratorModule";
-import ProductionModule from "@/components/ProductionModule";
-import CalendarModule from "@/components/CalendarModule";
-import MetricsModule from "@/components/MetricsModule";
-import ViralAnalyzerModule from "@/components/ViralAnalyzerModule";
-import DropshippingModule from "@/components/DropshippingModule";
-import DolaStudioModule from "@/components/DolaStudioModule";
 import AutoMetaSync from "@/components/AutoMetaSync";
-import ToolsModule from "@/components/ToolsModule";
+import dynamic from "next/dynamic";
+// Cada módulo se descarga al abrirlo (no todos al entrar): la página inicial pesa menos.
+const CargandoModulo = () => <div role="status" aria-live="polite" className="module-loading rounded-2xl border border-white/10 p-6 text-sm text-slate-400"><span className="generation-indicator mr-2 inline-block align-middle" aria-hidden="true" />Abriendo el módulo…</div>;
+const AccountsModule = dynamic(() => import("@/components/AccountsModule"), { loading: CargandoModulo });
+const CharactersModule = dynamic(() => import("@/components/CharactersModule"), { loading: CargandoModulo });
+const FormulasModule = dynamic(() => import("@/components/FormulasModule"), { loading: CargandoModulo });
+const GeneratorModule = dynamic(() => import("@/components/GeneratorModule"), { loading: CargandoModulo });
+const ProductionModule = dynamic(() => import("@/components/ProductionModule"), { loading: CargandoModulo });
+const CalendarModule = dynamic(() => import("@/components/CalendarModule"), { loading: CargandoModulo });
+const MetricsModule = dynamic(() => import("@/components/MetricsModule"), { loading: CargandoModulo });
+const ViralAnalyzerModule = dynamic(() => import("@/components/ViralAnalyzerModule"), { loading: CargandoModulo });
+const DropshippingModule = dynamic(() => import("@/components/DropshippingModule"), { loading: CargandoModulo });
+const DolaStudioModule = dynamic(() => import("@/components/DolaStudioModule"), { loading: CargandoModulo });
+const ToolsModule = dynamic(() => import("@/components/ToolsModule"), { loading: CargandoModulo });
 
 const I = (d: string, size = "h-[18px] w-[18px]") => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className={size + " shrink-0"} aria-hidden="true">

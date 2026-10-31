@@ -4,7 +4,7 @@ Responsabilidades acordadas: este trabajo implementa diseño UX/UI y presentaci�
 
 ## Estado de integración · 31 octubre 2026
 
-Los puntos **1–5 y 10** ya fueron implementados por el agente de persistencia e integrados desde `a2aefac`. Se conservan aquí como diagnóstico histórico, no como trabajo pendiente para repetir. El contrato vigente está en [PERSISTENCIA.md](PERSISTENCIA.md). Hay 47 comprobaciones existentes; las de sesión real con Supabase siguen pendientes. La migración `20261104_revisiones.sql` está incluida y no fue ejecutada por este agente.
+Los puntos **1–11 y 13** ya fueron implementados (6: escenas cortas con revisiones y archivos; 7: generación cancelable y aviso de interrumpidas; 8: borradores y «Retomar»; 9: archivos en el navegador; 11: carga por módulo; 13: pruebas de integración en CI). El 12 empezó (outline tipado). Los puntos 1–5 y 10 se implementaron primero por el agente de persistencia e integrados desde `a2aefac`. Se conservan aquí como diagnóstico histórico, no como trabajo pendiente para repetir. El contrato vigente está en [PERSISTENCIA.md](PERSISTENCIA.md). Hay 47 comprobaciones existentes; las de sesión real con Supabase siguen pendientes. La migración `20261104_revisiones.sql` está incluida y no fue ejecutada por este agente.
 
 El diseño conserva SessionBar y añade PersistenceNotice en el contenido principal: aviso persistente de guardado fallido con descarga de copia, y lista de conflictos con acciones de reaplicar o conservar servidor. No oculta el estado de fallo tras un tiempo ni declara un guardado exitoso por cerrar un aviso. Los flujos de creación reanudable e importación explícita se preservan en GeneratorModule y StoryArchitect.
 
