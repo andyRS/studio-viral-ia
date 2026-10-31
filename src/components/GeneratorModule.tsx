@@ -18,7 +18,7 @@ import { templateSeries, templateNext } from "@/lib/story";
 import { isGenericName } from "@/lib/cast";
 import { buildFlowBatch, refreshPrompts, PROMPT_RULES_VERSION, sceneCountFor } from "@/lib/production";
 import { seriesSignals } from "@/lib/seriesSignals";
-import { stylePublish, formatDescription, viralHashtags } from "@/lib/platforms";
+import { stylePublish, formatDescription, sinLlamadas, viralHashtags } from "@/lib/platforms";
 import { profileText } from "@/lib/profiles";
 
 type View = "inicio" | "nueva" | "continuar" | "resultado";
@@ -52,7 +52,9 @@ function publishPack(out: any, style: string, part: number, seriesTitle = "", ac
     const hashtags = viralHashtags(style, platform, seriesTitle, [...(a?.hashtags || []), ...(out?.hashtags || [])]);
     const text = String(a?.description || (platform === "TikTok" && out?.social?.tiktokDescription ? `${out.social.tiktokDescription}\n${hashtags.slice(0, 5).join(" ")}` : formatDescription(title, sp.word(part), hashtags))).replace(/#[^\s#]+/g, "").replace(/[ \t]+\n/g, "\n").trim();
     const credit = style === "cine90" && !/higgsfield/i.test(text) ? "\nHecho con @higgsfield.ai" : "";
-    return { platform, text: text + credit, hashtags: hashtags.join(" "), extra: platform === "Facebook" ? (a?.topic || sp.topic ? `Tema al publicar: ${a?.topic || sp.topic}` : "") : (a?.bestTime ? `Mejor hora: ${a.bestTime}` : "") };
+    // Cristianas: fuera cualquier «comenta / AMÉN / like / sígueme / comparte» (Meta desmonetiza por eso).
+    const clean = sp.word(part) ? text : (sinLlamadas(text) || formatDescription(title, "", hashtags));
+    return { platform, text: clean + credit, hashtags: hashtags.join(" "), extra: platform === "Facebook" ? (a?.topic || sp.topic ? `Tema al publicar: ${a?.topic || sp.topic}` : "") : (a?.bestTime ? `Mejor hora: ${a.bestTime}` : "") };
   });
 }
 // Duración del vídeo montado; cada escena queda en ~4,5 s tras el recorte (ritmo viral).
@@ -68,6 +70,11 @@ const IDEAS: Record<StyleKey, string[]> = {
     "Una hija se avergüenza de su madre vendedora de dulces hasta que la ve orar por ella en la iglesia",
     "Un padre que abandonó a sus hijos vuelve enfermo y pide perdón en Nochebuena",
     "Un joven se burla de la fe de su abuela hasta que una noche ella es la única que contesta su llamada",
+  ],
+  biblica: [
+    "José vendido por sus hermanos: un joven traicionado por sus socios del colmado termina dirigiendo la empresa (Génesis 50:20)",
+    "La viuda de Sarepta: una madre soltera con el último arroz y aceite ayuda a un desconocido (1 Reyes 17:16)",
+    "Daniel en el foso: un empleado cristiano no firma un negocio sucio y lo acusan (Daniel 6:22)",
   ],
   cine90: [
     "Una mujer encuentra en una tienda de antigüedades las cartas de amor que su madre nunca envió",
@@ -165,6 +172,8 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
     const p = profileOf(account?.id); if (!p) return;
     if (p.style) setStyle(p.style as StyleKey);
     if (p.platform === "Instagram") setDuration(40);
+    // Drama bíblico: 14 escenas (~64 s tras quitar pausas): Facebook pide 60 s o más para monetizar.
+    else if (p.style === "biblica") setDuration(64);
   }, [account?.id, data.accountProfiles]);
 
   async function call(path: string, body: any, local: () => any) {
@@ -194,7 +203,12 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
     if (!idea_.trim() && !(kind_ === "replica" && replica.trim())) { setNotice(kind === "replica" ? "Describe el viral que quieres replicar." : "Escribe la idea de la historia o elige una de las sugerencias."); return; }
     setLoading(true); setNotice(""); setAuthError(false);
     try {
-      const body = { idea: idea_, style, duration, account, notes: notes_, learnings, chosenHook, replica: kind_ === "replica" ? replica : "", accountProfile: profileFor(account?.id) };
+      // Historias que la cuenta ya usó (para rotar tipos del banco bíblico y no repetir).
+      const usadas = data.series.filter((x: any) => x.accountId && x.accountId === account?.id).map((x: any) => {
+        const ep = data.episodes.find((e: any) => e.seriesId === x.id);
+        return [x.title, ep?.output?.bible?.story].filter(Boolean).join(" = ");
+      });
+      const body = { idea: idea_, style, duration, account, notes: notes_, learnings, chosenHook, replica: kind_ === "replica" ? replica : "", accountProfile: profileFor(account?.id), usadas };
       const res = await call("/api/series", body, () => templateSeries(body)); if (!res) return;
       const d = res.data;
       const s = await insert("series", { title: d.series?.title || idea_.slice(0, 60), description: d.series?.logline || idea_, accountId: account?.id });
@@ -298,7 +312,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
             <legend className="field-label">Estilo <span className="normal-case tracking-normal text-amber-300">· obligatorio{styleChosen ? "" : ": elige uno"}</span></legend>
             <div className="grid gap-2 sm:grid-cols-3">
               {(Object.keys(STYLES) as StyleKey[]).map(k => (
-                <button key={k} type="button" aria-pressed={styleChosen && style === k} onClick={() => setStyle(k)} className={`rounded-xl border px-3 py-3 text-left text-sm ${styleChosen && style === k ? "border-amber-400/60 bg-amber-400/10 text-amber-100" : "border-white/10 bg-white/[.03] text-slate-300"}`}>{STYLES[k].label}</button>
+                <button key={k} type="button" aria-pressed={styleChosen && style === k} onClick={() => { setStyle(k); if (k === "biblica") setDuration(64); }} className={`rounded-xl border px-3 py-3 text-left text-sm ${styleChosen && style === k ? "border-amber-400/60 bg-amber-400/10 text-amber-100" : "border-white/10 bg-white/[.03] text-slate-300"}`}>{STYLES[k].label}</button>
               ))}
             </div>
           </fieldset>
@@ -605,7 +619,7 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
     {lockedTab && <p className="mt-4 rounded-xl border border-emerald-400/25 bg-emerald-400/[.06] p-3 text-xs text-emerald-100">🔒 Episodio terminado: esta sección queda de solo lectura. Pulsa «Desbloquear para editar» arriba si necesitas cambiar algo.</p>}
     <fieldset disabled={lockedTab} className={`mt-4 min-w-0 ${lockedTab ? "opacity-70" : ""}`}>
       {tab === "guion" && <div className="space-y-3">
-        {ficha && <EpisodeSheet ficha={ficha} score={out.selfScore} cast={cast} scenes={scenes.length} seconds={fullDuration} />}
+        {ficha && <EpisodeSheet ficha={ficha} bible={out.bible} score={out.selfScore} cast={cast} scenes={scenes.length} seconds={fullDuration} />}
         {!ficha && !!(out.hook || []).length && <div className="rounded-xl border border-amber-400/20 bg-amber-400/10 p-4"><p className="text-[11px] font-semibold uppercase tracking-wider text-amber-300">Gancho de los primeros 3 s</p><p className="mt-1 text-lg font-bold">{(out.hook || []).join(" / ")}</p></div>}
         {scenes.length ? scenes.map((s: any) => { const c = cast.find((x: any) => x.name === s.speaker); return <article key={s.n} className="rounded-xl bg-[#121826] p-4">
           <p className="text-xs font-semibold text-amber-300">ESCENA {String(s.n).padStart(2, "0")} — {s.title || ""} · {(s.n - 1) * 8}-{s.n * 8} s</p>
@@ -768,7 +782,7 @@ const ARC: [string, string, string][] = [
   ["conflict", "Conflicto", "#f97316"], ["development", "Desarrollo", "#eab308"], ["climax", "Clímax", "#ef4444"],
   ["resolution", "Resolución", "#22c55e"], ["closing", "Cierre", "#a78bfa"],
 ];
-function EpisodeSheet({ ficha, score, cast, scenes, seconds }: { ficha: any; score: any; cast: any[]; scenes: number; seconds: number }) {
+function EpisodeSheet({ ficha, bible, score, cast, scenes, seconds }: { ficha: any; bible?: any; score: any; cast: any[]; scenes: number; seconds: number }) {
   const metrics = score ? ([["Gancho 0-1 s", score.hook], ["Claridad sin contexto", score.clarity], ["Escalada", score.escalation], ["Giro final", score.twist], ["Ganas de comentar", score.comments]] as [string, number | null][]).filter(([, v]) => v) : [];
   const avg = metrics.length ? Math.round((metrics.reduce((t, [, v]) => t + Number(v), 0) / metrics.length) * 10) / 10 : 0;
   const steps = ARC.filter(([k]) => ficha[k]);
@@ -778,6 +792,12 @@ function EpisodeSheet({ ficha, score, cast, scenes, seconds }: { ficha: any; sco
         <div className="min-w-[240px] flex-1">
           <p className="text-[11px] font-semibold uppercase tracking-[.18em] text-amber-300">Ficha del episodio</p>
           {ficha.synopsis && <p className="mt-2 text-lg font-semibold leading-snug text-white">{ficha.synopsis}</p>}
+          {bible?.verse && <div className="mt-3 rounded-xl border border-amber-300/25 bg-amber-300/[.07] p-3 text-sm">
+            <p className="text-[11px] font-semibold uppercase tracking-[.14em] text-amber-300">{bible.story || "Historia bíblica"} · {bible.verse}</p>
+            {bible.verseText && <p className="mt-1 italic text-slate-200">«{bible.verseText}»</p>}
+            {bible.message && <p className="mt-1 font-semibold text-white">Mensaje: {bible.message}</p>}
+            <p className="mt-1 text-[11px] text-slate-400">El versículo sale en la tarjeta final del montaje (últimos 3 s).</p>
+          </div>}
           <div className="mt-3 flex flex-wrap gap-2 text-xs">
             {!!seconds && <span className="stat-chip">⏱ {seconds} s</span>}
             {!!scenes && <span className="stat-chip">🎬 {scenes} escenas</span>}

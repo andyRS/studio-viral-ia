@@ -7,7 +7,7 @@ export function profileText(p?: Partial<AccountProfile> | null, sharedCast: { na
   if (!p) return "";
   const lines = [
     `PERFIL DE LA CUENTA @${p.handle} (${p.platform}${p.verified ? ", verificada" : ""}). Sus reglas MANDAN sobre las reglas generales si se contradicen.`,
-    p.style && `Estilo: ${p.style === "cine90" ? "cine romántico de los 90 realista (personas reales)" : p.style}${p.onlyThisStyle ? ". SOLO este tipo de contenido en esta cuenta: nunca frutinovelas ni personajes de fruta" : ""}.`,
+    p.style && `Estilo: ${p.style === "cine90" ? "cine romántico de los 90 realista (personas reales)" : p.style === "biblica" ? "drama bíblico moderno dominicano (personas reales)" : p.style}${p.onlyThisStyle ? ". SOLO este tipo de contenido en esta cuenta: nunca frutinovelas ni personajes de fruta" : ""}.`,
     p.setting && `Escenario principal: ${p.setting}.`,
     p.objective && `Objetivo: ${p.objective}.`,
     p.goals?.length && `Metas: ${p.goals.join(" | ")}.`,

@@ -34,7 +34,10 @@ export function accentPrompt(member: Partial<CastMember> | null | undefined, lan
 // Colores de reserva cuando dos personajes coinciden (hex sin #).
 export const PALETTE = ["FF9A1F", "C08BFF", "5BC94A", "FF4D6D", "FFD23F", "4DD0E1", "B6F08A", "D9A066", "FF6B81", "F2C14E"];
 
-export const isFruitStyle = (style?: string) => style !== "cine90";
+export const isFruitStyle = (style?: string) => style !== "cine90" && style !== "biblica";
+// Estilos con personas reales (cine de los 90 y drama bíblico moderno) y estilos para público cristiano.
+export const isRealStyle = (style?: string) => style === "cine90" || style === "biblica";
+export const isChristianStyle = (style?: string) => style === "cristiana" || style === "biblica";
 const clean = (v: unknown) => String(v ?? "").trim();
 export const norm = (v: unknown) => clean(v).toLocaleLowerCase("es").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9ñ ]+/g, " ").replace(/\s+/g, " ").trim();
 

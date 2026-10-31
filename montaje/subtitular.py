@@ -833,6 +833,25 @@ try:
                            "arreglo": "Escribe la frase de resumen y sube el vídeo final completo de la parte anterior."})
         else:
             bien.append(f"«Anteriormente...» con {len(RECAP_PIEZAS)} momentos y resumen.")
+    if G.get("cristiana"):
+        # Control de calidad de la cuenta cristiana (Un Minuto en Oración).
+        textos = " ".join([str(G.get("cierre") or ""), str(G.get("cierre_cta") or ""), *[str(x) for x in (G.get("gancho") or [])],
+                           *[str(t) for blk in G["clips"] for _, t in (blk or [])]])
+        if re.search(r"\b(comenta|escribe am[eé]n|di am[eé]n|dale (me gusta|like)|s[ií]gueme|comparte)\b", textos, re.I):
+            nota -= 20
+            avisos.append({"tipo": "llamadas", "texto": "Hay una llamada a interacción en pantalla o en el diálogo («comenta», «AMÉN», «like», «sígueme», «comparte»).",
+                           "arreglo": "Quítala: Meta lo penaliza como interacción no auténtica y puede desmonetizar la página."})
+        else:
+            bien.append("Sin llamadas a interacción (apto para Facebook).")
+        if not G.get("versiculo"):
+            nota -= 5
+            avisos.append({"tipo": "versiculo", "texto": "La tarjeta final no lleva versículo.", "arreglo": "Pon el versículo base (p. ej. «Génesis 50:20») en la ficha del episodio."})
+        else:
+            bien.append(f"Versículo en pantalla al final: {G['versiculo']}.")
+        if total < 60:
+            nota -= 10
+            avisos.append({"tipo": "facebook60", "texto": f"Dura {mmss(total)}: Facebook pide al menos 60 s para monetizar.",
+                           "arreglo": "Añade escenas (14 escenas dan ~65 s tras quitar pausas) o usa un Ritmo más lento."})
     if REORDENADOS:
         nota -= 5
         avisos.append({"tipo": "orden", "texto": "Clips en otro orden que el guion: " + ", ".join(f"clip {c} = escena {b}" for c, b in REORDENADOS) + ". Los subtítulos ya siguen lo que se oye.",

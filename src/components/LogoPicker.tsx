@@ -42,7 +42,7 @@ export async function defaultLogo(key: string, style?: string): Promise<string> 
   let saved = ""; try { saved = localStorage.getItem(`estudio-viral:logo:${key}`) || ""; } catch {}
   const logos = await listLogos();
   if (saved && (BUILTIN.some(b => b.id === saved) || logos.some(l => l.id === saved))) return saved;
-  if (style === "cristiana") return "un-minuto-en-oracion";
+  if (style === "cristiana" || style === "biblica") return "un-minuto-en-oracion";
   return FRUTI;
 }
 export function rememberLogo(key: string, id: string) { try { localStorage.setItem(`estudio-viral:logo:${key}`, id); } catch {} }

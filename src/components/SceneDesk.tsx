@@ -36,6 +36,23 @@ export default function SceneDesk({ episodeId, scenes, guion, title, referencesR
   const [dragging, setDragging] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
   const checks = data.clipChecks.filter(c => c.episodeId === episodeId);
+  // Cadena de continuidad: el último fotograma del clip N, en PNG, para animar la escena N+1 desde él.
+  async function lastFrame(url: string, n: number) {
+    try {
+      const v = document.createElement("video"); v.src = url; v.muted = true; v.preload = "auto";
+      await new Promise((res, rej) => { v.onloadedmetadata = res; v.onerror = rej; });
+      v.currentTime = Math.max(0, v.duration - 0.05);
+      await new Promise(res => { v.onseeked = res; });
+      const c = document.createElement("canvas"); c.width = v.videoWidth; c.height = v.videoHeight;
+      c.getContext("2d")!.drawImage(v, 0, 0);
+      const blob: Blob = await new Promise(res => c.toBlob(b => res(b!), "image/png"));
+      const name = `s${String(n + 1).padStart(2, "0")}-inicio-desde-s${String(n).padStart(2, "0")}.png`;
+      const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; a.click();
+      // Además queda como imagen de la escena siguiente en la mesa.
+      place("image", { [n + 1]: new File([blob], name, { type: "image/png" }) });
+      setMessage(`Último fotograma de s${String(n).padStart(2, "0")} descargado y puesto como imagen de s${String(n + 1).padStart(2, "0")}: anímala desde esa imagen.`);
+    } catch { setMessage("No se pudo sacar el último fotograma de ese clip."); }
+  }
   const clipUrls = useMemo(() => Object.fromEntries(Object.entries(clips).map(([n, file]) => [n, URL.createObjectURL(file)])), [clips]);
   const imageUrls = useMemo(() => Object.fromEntries(Object.entries(images).map(([n, file]) => [n, URL.createObjectURL(file)])), [images]);
   useEffect(() => () => { Object.values(clipUrls).forEach(URL.revokeObjectURL); }, [clipUrls]);
@@ -164,6 +181,7 @@ export default function SceneDesk({ episodeId, scenes, guion, title, referencesR
               {clips[scene.n] && <button type="button" onClick={() => dropFile(scene.n, "clip")} className="text-slate-400 hover:text-red-300">Quitar clip</button>}
               {/* Cambiar (o subir) el archivo de ESTA escena, sin depender del nombre del archivo. */}
               <label className="cursor-pointer text-sky-300 hover:text-sky-200">{clips[scene.n] ? "Cambiar clip" : "Subir clip"}<input type="file" accept="video/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) { place("clip", { [scene.n]: f }); setMessage(`Clip de s${String(scene.n).padStart(2, "0")} cambiado por «${f.name}». Revísalo y apruébalo.`); } e.target.value = ""; }} /></label>
+              {clips[scene.n] && scene.n < scenes.length && <button type="button" onClick={() => lastFrame(clipUrls[scene.n], scene.n)} className="text-sky-300 hover:text-sky-200" title="Úsalo como primer fotograma (imagen) de la escena siguiente: así los personajes no cambian">Último fotograma → s{String(scene.n + 1).padStart(2, "0")}</button>}
               <label className="cursor-pointer text-sky-300 hover:text-sky-200">{images[scene.n] ? "Cambiar imagen" : "Subir imagen"}<input type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) place("image", { [scene.n]: f }); e.target.value = ""; }} /></label>
               {check && <button type="button" onClick={() => { void deleteReview(scene.n); }} className="text-slate-400 hover:text-red-300">Borrar revisión</button>}
             </div>

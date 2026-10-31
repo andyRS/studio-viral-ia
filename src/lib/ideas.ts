@@ -52,6 +52,14 @@ const BY_STYLE: Record<StyleKey, { who: string[]; conflict: string[]; object: st
     twist: ["descubre que esa persona oró por ella cada noche", "la persona humillada es quien termina salvándola", "todo lo que tenía lo pagó la persona que despreció", "llega tarde para pedir perdón… o eso cree"],
     mech: ["madre negada", "humillación pública", "ironía dramática", "bomba de tiempo"],
   },
+  biblica: {
+    who: ["un joven del barrio", "una madre soltera", "un motoconchista", "un empleado de oficina", "una nuera", "un empresario del Cibao", "una muchacha callada de la iglesia", "dos hermanos"],
+    conflict: ["es traicionado por sus socios del colmado", "lo pierde todo y no maldice", "se niega a firmar un negocio sucio y lo acusan", "gasta la herencia en Nueva York y vuelve sin nada", "envidia el éxito de su hermano", "ayuda al que todos ignoraron", "la juzgan en la iglesia por no tener hijos"],
+    object: ["una carta", "una Biblia vieja", "una llave", "una foto", "un recibo", "una pulsera", "el último saco de arroz"],
+    place: ["en el colmado", "en el campo", "en la iglesia evangélica sencilla", "en el hospital público", "en una oficina", "en el aeropuerto", "en el barrio después del huracán"],
+    twist: ["la verdad sale a la luz", "el que lo traicionó termina necesitándolo", "llega la ayuda inesperada", "alguien cambia de corazón"],
+    mech: ["traición", "prueba de fe", "integridad", "estatus y humildad"],
+  },
   frutinovela: {
     who: ["un motoconchista de Los Mina", "una muchacha rica de Piantini", "un colmadero", "una suegra chismosa", "un tíguere del barrio", "una vecina metiche"],
     conflict: ["se enamora de quien su familia jamás aceptaría", "gana la lotería y todo el barrio aparece como familia", "descubre que su esposo tiene otra en el mismo barrio", "humilla al novio pobre de su hija", "esconde un hijo que nadie conocía"],

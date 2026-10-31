@@ -28,7 +28,9 @@ const STYLE_PUBLISH: Record<string, { word: (part: number) => string; topic: str
 // Etiquetas que repiten los vídeos de frutinovelas que más alcance tienen en TikTok: las del nicho
 // (#frutinovela #frutinovelas), el género (#drama #minidrama) y #ia; las de alcance van aparte.
   frutinovela: { word: p => `PARTE ${p + 1}`, topic: "Animación", tags: ["#frutinovela", "#frutinovelas", "#drama", "#minidrama", "#ia"] },
-  cristiana: { word: () => "AMÉN", topic: "Religión", tags: ["#frutinovela", "#frutinovelas", "#reflexion", "#cristianos", "#ia"] },
+  // Cristianas: sin palabra para comentar (Meta penaliza «comenta AMÉN» como interacción no auténtica).
+  cristiana: { word: () => "", topic: "Religión", tags: ["#frutinovela", "#frutinovelas", "#reflexion", "#cristianos", "#ia"] },
+  biblica: { word: () => "", topic: "Religión", tags: ["#historiasbiblicas", "#reflexion", "#fe", "#cristianos", "#dramacristiano"] },
   cine90: { word: () => "BUTACA", topic: "Películas", tags: ["#peliculasquenoexisten", "#historiadeamor", "#cortometraje", "#videoia", "#romance"] },
 };
 export const stylePublish = (style?: string) => STYLE_PUBLISH[style || ""] || STYLE_PUBLISH.frutinovela;
@@ -49,17 +51,22 @@ export function viralHashtags(style: string, platform: "TikTok" | "Facebook" | s
   return Array.from(new Set(list.filter(t => t && t.length > 2))).slice(0, platform === "TikTok" ? 8 : 5);
 }
 // Descripción: título corto en MAYÚSCULAS + palabra para comentar + 3-6 hashtags.
-export function formatDescription(title: string, word: string, hashtags: string[]) {
+export function formatDescription(title: string, word: string, hashtags: string[], question = "¿Qué harías tú en su lugar?") {
+  if (!word) return `${title.toUpperCase()}\n${question}\n${hashtags.slice(0, 5).join(" ")}`;
   return `${title.toUpperCase()}\nComenta ${word} 👇\n${hashtags.slice(0, 6).join(" ")}`;
 }
+// Llamadas a interacción que Meta penaliza (cuentas cristianas): se quitan de cualquier texto.
+export const ENGAGEMENT_BAIT = /\b(comenta|comente|comenten|escribe am[eé]n|di am[eé]n|dale (me gusta|like)|dale like|s[ií]gueme|s[ií]guenos|comparte|compartan|etiqueta a)\b/i;
+export const sinLlamadas = (t: string) => String(t || "").split("\n").filter(l => !ENGAGEMENT_BAIT.test(l)).join("\n").trim();
 // La descripción que escribe la IA se completa hasta cumplir el formato: primera línea en MAYÚSCULAS,
 // la palabra para comentar y los hashtags (sin repetirlos si ya están).
 export function normalizeDescription(desc: string, title: string, word: string, hashtags: string[]) {
   let d = String(desc || "").trim();
   if (!d) return formatDescription(title, word, hashtags);
+  if (!word) d = sinLlamadas(d) || formatDescription(title, word, hashtags);
   const first = d.split("\n")[0];
   if (first !== first.toUpperCase()) d = `${title.toUpperCase()}\n${d}`;
-  if (!d.toLowerCase().includes(word.toLowerCase())) d += `\nComenta ${word} 👇`;
+  if (word && !d.toLowerCase().includes(word.toLowerCase())) d += `\nComenta ${word} 👇`;
   if (!/#\w/.test(d)) d += `\n${hashtags.slice(0, 6).join(" ")}`;
   return d;
 }
@@ -232,7 +239,22 @@ export function buildPlatformAdaptations(input: any): PlatformAdaptation[] {
     fileName: `${slug}-parte-${part}-youtube-shorts-limpio.mp4`,
   };
 
-  return [instagram, facebook, tiktok, youtube];
+  const all = [instagram, facebook, tiktok, youtube];
+  if (!word) {
+    // Cuentas cristianas: ninguna llamada a interacción en ningún texto; una pregunta abierta en su lugar.
+    // Cada vídeo se entiende solo: el título no lleva «Parte N» salvo que sea una serie (parte 2 o más).
+    const q = "¿Qué harías tú en su lugar?";
+    for (const a of all) {
+      a.cta = q;
+      a.pinnedComment = q;
+      a.editingChanges = a.editingChanges.filter(e => !/me gusta|comenta|comparte|continuar/i.test(e)).concat("Cerrar con el versículo en pantalla los últimos 3 s; nunca pedir comentarios, me gusta, seguir ni compartir (Meta lo penaliza)");
+      // Historia suelta (parte 1): sin «Parte 1» ni «mira la siguiente parte»; en una serie se conserva.
+      if (part <= 1) { a.title = seriesTitle; a.description = formatDescription(seriesTitle, "", a.hashtags, q); }
+      else a.description = sinLlamadas(a.description) || formatDescription(shortTitle, "", a.hashtags, q);
+      a.checklist = (a.checklist || []).filter(c => !ENGAGEMENT_BAIT.test(c)).concat("Marcar «Contenido de IA» al publicar", "Sin «comenta AMÉN», «dale like», «sígueme» ni «comparte» en pantalla ni en el texto");
+    }
+  }
+  return all;
 }
 
 // Textos de publicación que escribe la IA (título, descripción, hashtags, hora, CTA y comentario

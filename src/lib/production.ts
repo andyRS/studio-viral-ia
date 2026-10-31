@@ -2,8 +2,22 @@
 // prompts con formato fijo, guion.json para el montaje y las 4 fichas de plataforma.
 // Los prompts se construyen en el código (no los escribe la IA) para que siempre cumplan el formato.
 import { BASE_FORMULA, buildPlatformAdaptations, formatCoverText, mergeModelPlatforms, normalizeDescription, stylePublish } from "./platforms";
-import { CHRISTIAN_SCENE_GUARD, NARRATOR_COLOR, type StyleKey } from "./knowledge";
-import { accentOf, accentPrompt, dialectPronunciations, isFruitStyle, norm, type CastMember } from "./cast";
+import { BIBLE_GUARD_EN, BIBLE_VIDEO_END, CHRISTIAN_SCENE_GUARD, NARRATOR_COLOR, type StyleKey } from "./knowledge";
+import { accentOf, accentPrompt, dialectPronunciations, isChristianStyle, isFruitStyle, norm, type CastMember } from "./cast";
+
+// Estilos con personas reales: el aspecto de cada uno (imagen y vídeo en inglés; Dola en español).
+// v15: drama bíblico moderno (Un Minuto en Oración): RD de hoy, luz natural, sin imágenes católicas en NINGÚN
+// prompt, vestuario modesto y cada vídeo termina con la línea obligatoria de idioma y sin música ni texto.
+const REAL_LOOK: Record<string, { img: string; vid: string; es: string }> = {
+  cine90: { img: "Cinematic 1990s Dominican romance film still, 35mm grain, warm golden light", vid: "1990s Dominican romance film, 35mm grain, warm golden light", es: "Película romántica dominicana de los 90, 35 mm" },
+  biblica: { img: "Cinematic modern Dominican drama still, natural light, 35mm film grain", vid: "Modern Dominican drama, natural light, 35mm film grain", es: "Drama moderno dominicano, luz natural, grano de 35 mm" },
+};
+const look = (style: StyleKey) => REAL_LOOK[style] || REAL_LOOK.cine90;
+const bibleImg = (style: StyleKey) => style === "biblica" ? ` Modest long-sleeved clothing, nothing suggestive. ${BIBLE_GUARD_EN}.` : "";
+const bibleVid = (style: StyleKey) => style === "biblica"
+  ? `\n${BIBLE_GUARD_EN}. Modest long-sleeved clothing, no graphic violence.\nCONTINUITY: end on a steady, sharp shot with no motion blur: this last frame is the first frame of the next scene, so faces and wardrobe never change.\n${BIBLE_VIDEO_END}`
+  : "";
+const voicesEnd = (style: StyleKey) => style === "biblica" ? "" : " No subtitles or on-screen text.";
 import type { Scene } from "./types";
 
 export const SCENE_SECONDS = 8;
@@ -17,7 +31,7 @@ export function timeJump(text: string) {
 export const NARRATOR = "Narrador";
 // Súbelo cada vez que cambien las reglas de los prompts: los episodios guardados con una versión
 // anterior muestran «Actualizar prompts» (rehace los prompts sin IA y sin tocar el guion).
-export const PROMPT_RULES_VERSION = 14;
+export const PROMPT_RULES_VERSION = 15;
 // v12: «Usa Seedance 2.5.» solo en vídeo; plano según lo que pasa; escenas de cine 90 en inglés con [P0X].
 // v11: los prompts de cine de los 90 empiezan por «Usa Seedance 2.5.» (regla de @peliculasquenoexisten.rd).
 // v10: cristiana con vocabulario neutro y global (sin jerga ni groserías) y acento dominicano suave.
@@ -133,7 +147,7 @@ function rawScenes(raw: any): any[] {
 function pronunciationFor(speakerMember: CastMember | undefined, line: string, style?: StyleKey) {
   const list = Array.from(new Set([...(speakerMember?.pronunciations || []), ...dialectPronunciations(line)]));
   if (list.length) return list.join("; ");
-  return style === "cristiana" ? "cada palabra completa y clara, con sus tildes" : "tíguere = TÍ-gue-re, nunca tigre; yipeta = yi-PE-ta; vaina = VAI-na, nunca baila; Piña = PI-ña; mi cualto con L";
+  return isChristianStyle(style) ? "cada palabra completa y clara, con sus tildes" : "tíguere = TÍ-gue-re, nunca tigre; yipeta = yi-PE-ta; vaina = VAI-na, nunca baila; Piña = PI-ña; mi cualto con L";
 }
 
 // Cristiana: lenguaje neutro y global. Cambia la jerga dominicana por su equivalente y quita groserías.
@@ -245,7 +259,7 @@ function imagePrompt(s: { setting: string; speaker: string; emotion: string; loc
     const people = [member, ...others].filter((m): m is CastMember => !!m);
     const who = people.length ? people.map(m => `${m.name}${tag(m)} (${m.visualEN || m.visualES}; outfit: ${m.clothing})`).join("; ") : EMPTY_EN;
     const shotName = shot.en.charAt(0).toUpperCase() + shot.en.slice(1);
-    return `Cinematic 1990s Dominican romance film still, 35mm grain, warm golden light, vertical 9:16, photorealistic, real people, same faces and wardrobe as the reference sheets, no text, no watermark.${location ? ` Location (identical in every scene set here: same set, time of day and light): ${location}.` : ""} ${shotName}: ${setting}. ${who}${s.emotion && tidy(s.emotion).split(/\s+/).length >= 2 ? `, ${tidy(s.emotion)}` : ""}.`;
+    return `${look(style).img}, vertical 9:16, photorealistic, real people, same faces and wardrobe as the reference sheets, no text, no watermark.${bibleImg(style)}${location ? ` Location (identical in every scene set here: same set, time of day and light): ${location}.` : ""} ${shotName}: ${setting}. ${who}${s.emotion && tidy(s.emotion).split(/\s+/).length >= 2 ? `, ${tidy(s.emotion)}` : ""}.`;
   }
   const guard = style === "cristiana" ? ` ${CHRISTIAN_SCENE_GUARD[0].toUpperCase()}${CHRISTIAN_SCENE_GUARD.slice(1)}.` : "";
   const who = member ? `${member.name}${tag(member)} (piel de ${member.fruit}: ${member.headES}; ${member.clothing}) con expresión ${s.emotion}`
@@ -261,14 +275,14 @@ function animationPrompt(s: { setting: string; speaker: string; line: string; em
   const setting = tidy(s.setting), location = tidy(s.location || "");
   if (!isFruitStyle(style)) {
     const voice = narrator ? `Off-screen narrator voice; nobody moves their lips.` : `Only ${member!.name} speaks; lip sync only for ${member!.name}. Voice: ${member!.voice}.`;
-    return `Usa Seedance 2.5. 1990s Dominican romance film, 35mm grain, warm golden light, vertical 9:16, 8 seconds. Animate from the scene image as the first frame.
+    return `Usa Seedance 2.5. ${look(style).vid}, vertical 9:16, 8 seconds. Animate from the scene image as the first frame.
 References: image 1 = scene${member ? `; image 2 = character sheet of ${member.name}` : others.length ? others.map((o, k) => `; image ${k + 2} = character sheet of ${o.name}`).join("") : ""}.
 CHARACTERS: ${member ? `${member.name}: ${member.visualEN || member.visualES}; outfit: ${member.clothing}. Real people.` : others.length ? `${others.map(o => `${o.name}: ${o.visualEN || o.visualES}; outfit: ${o.clothing}`).join(". ")}. Real people, identical to their sheets; nobody speaks on camera.` : `${EMPTY_EN}. Nobody appears at any moment.`}
 SCENE: ${location ? `${location} (same set as the other scenes here). ` : ""}${setting}.
 SHOTS: ${shot.en}, ${shot.moveEn}. From 0.3 s, with no pause before, ${narrator ? "slow push-in while the narrator says" : `${member!.name}, already in full ${s.emotion}, says while the camera dollies slowly toward the face`} (in Spanish, exact words): "${s.line}" Right after the line: 1 s ${narrator ? "holding on the scene" : `close-up of ${member!.name} holding the emotion`}, then the same shot continues without cuts.
 ${SOUND_EN}${kissNote(s, "en")}
 PRONUNCIATION: ${narrator ? accentPrompt(null, "en") : accentPrompt(member, "en")}.
-VOICES: ${voice} No subtitles or on-screen text.`;
+VOICES: ${voice}${voicesEnd(style)}${bibleVid(style)}`;
   }
   const guard = style === "cristiana" ? ` ${CHRISTIAN_SCENE_GUARD[0].toUpperCase()}${CHRISTIAN_SCENE_GUARD.slice(1)}.` : "";
   const personajes = member
@@ -298,14 +312,14 @@ function phoneCallPrompt(s: { setting: string; speaker: string; line: string; em
   const shot = pickShot(s, others.length, i);
   const location = tidy(s.location || "");
   if (!isFruitStyle(style)) {
-    return `Usa Seedance 2.5. 1990s Dominican romance film, 35mm grain, warm golden light, vertical 9:16, 8 seconds. Animate from the scene image as the first frame.
+    return `Usa Seedance 2.5. ${look(style).vid}, vertical 9:16, 8 seconds. Animate from the scene image as the first frame.
 References: image 1 = scene; image 2 = character sheet of ${listener.name}.
 CHARACTERS: ${listener.name}: ${listener.visualEN || listener.visualES}; outfit: ${listener.clothing}. Real people. ${caller.name} does NOT appear.
 SCENE: ${location ? `${location} (same set as the other scenes here). ` : ""}${tidy(s.setting)}${phoneVisual(s, caller, others, style, "en")}
 SHOTS: ${shot.en}, ${shot.moveEn}. From 0.3 s, ${caller.name}'s voice is heard THROUGH THE ${s.phone?.type === "nota_de_voz" ? "ANSWERING MACHINE" : "PHONE"} (thin telephone sound) saying (in Spanish, exact words): "${s.line}" ${listener.name} listens in silence, lips closed, reacting with ${s.emotion}; the camera slowly pushes in on the face.
 ${SOUND_EN}
 PRONUNCIATION: ${accentPrompt(caller, "en")}.
-VOICES: only ${caller.name}'s voice, through the phone (${caller.voice}); nobody on screen moves their lips. No subtitles or on-screen text.`;
+VOICES: only ${caller.name}'s voice, through the phone (${caller.voice}); nobody on screen moves their lips.${voicesEnd(style)}${bibleVid(style)}`;
   }
   const guard = style === "cristiana" ? ` ${CHRISTIAN_SCENE_GUARD[0].toUpperCase()}${CHRISTIAN_SCENE_GUARD.slice(1)}.` : "";
   return `Telenovela animada 3D (render CGI de película animada premium), vertical 9:16, 8 segundos. Anima a partir de la imagen de la escena como primer fotograma.
@@ -322,7 +336,7 @@ ${SOUND_ES}`;
 // Prompt de Dola (Seedance) con las escenas elegidas para la versión corta.
 function buildDolaPrompt(dolaScenes: { n: number; setting: string; speaker: string; line: string; emotion: string }[], cast: CastMember[], style: StyleKey, total: number, dolaDuration: number) {
   const castLine = cast.map(c => isFruitStyle(style) ? `${c.name}: personaje 3D animado con rostro humano y piel de ${c.fruit} (${c.headES}); ${c.clothing}` : `${c.name}: ${c.visualEN || c.visualES}; ${c.clothing}`).join(". ");
-  return `Usa Seedance 2.5. ${isFruitStyle(style) ? `Telenovela animada 3D (render CGI de película animada premium), vertical 9:16; personajes 3D animados de rostro humano con piel de su fruta, nunca una fruta entera como cabeza. ${ANIMATION_STYLE_LOCK}` : "Película romántica dominicana de los 90, 35 mm, vertical 9:16, personas reales."} ${total > dolaDuration ? `Adaptación de ${dolaDuration} s del episodio de ${total} s. Conserva el gancho y el cierre; elimina solo escenas intermedias.` : `Episodio completo de ${total} s.`}${style === "cristiana" ? ` ${CHRISTIAN_SCENE_GUARD[0].toUpperCase()}${CHRISTIAN_SCENE_GUARD.slice(1)}.` : ""} PERSONAJES: ${castLine}. ${dolaScenes.map((s, i) => `${i * SCENE_SECONDS}-${(i + 1) * SCENE_SECONDS}s [escena ${s.n}]: ${s.setting}. ${s.speaker === NARRATOR ? `Narrador en off: "${s.line}"` : `${s.speaker} dice con ${s.emotion}: "${s.line}"`}`).join(" ")} PRONUNCIACIÓN OBLIGATORIA: ${Array.from(new Set(cast.flatMap(c => c.pronunciations).concat(dialectPronunciations(dolaScenes.map(s => s.line).join(" "))))).join("; ") || "palabras completas con acentos correctos"}. VOCES: cada personaje con su acento (${cast.map(c => `${c.name}: ${accentOf(c) || "latino neutro"}`).join("; ")}), cada palabra completa, nunca acento inglés; sincronización de labios solo para quien habla; sin subtítulos ni texto en pantalla. RITMO: cada personaje responde enseguida, sin pausas entre frases; ambiente continuo y SIN música de fondo (se añade en la edición).`;
+  return `Usa Seedance 2.5. ${isFruitStyle(style) ? `Telenovela animada 3D (render CGI de película animada premium), vertical 9:16; personajes 3D animados de rostro humano con piel de su fruta, nunca una fruta entera como cabeza. ${ANIMATION_STYLE_LOCK}` : `${look(style).es}, vertical 9:16, personas reales.${style === "biblica" ? ` ${BIBLE_GUARD_EN}.` : ""}`} ${total > dolaDuration ? `Adaptación de ${dolaDuration} s del episodio de ${total} s. Conserva el gancho y el cierre; elimina solo escenas intermedias.` : `Episodio completo de ${total} s.`}${style === "cristiana" ? ` ${CHRISTIAN_SCENE_GUARD[0].toUpperCase()}${CHRISTIAN_SCENE_GUARD.slice(1)}.` : ""} PERSONAJES: ${castLine}. ${dolaScenes.map((s, i) => `${i * SCENE_SECONDS}-${(i + 1) * SCENE_SECONDS}s [escena ${s.n}]: ${s.setting}. ${s.speaker === NARRATOR ? `Narrador en off: "${s.line}"` : `${s.speaker} dice con ${s.emotion}: "${s.line}"`}`).join(" ")} PRONUNCIACIÓN OBLIGATORIA: ${Array.from(new Set(cast.flatMap(c => c.pronunciations).concat(dialectPronunciations(dolaScenes.map(s => s.line).join(" "))))).join("; ") || "palabras completas con acentos correctos"}. VOCES: cada personaje con su acento (${cast.map(c => `${c.name}: ${accentOf(c) || "latino neutro"}`).join("; ")}), cada palabra completa, nunca acento inglés; sincronización de labios solo para quien habla; sin subtítulos ni texto en pantalla. RITMO: cada personaje responde enseguida, sin pausas entre frases; ambiente continuo y SIN música de fondo (se añade en la edición).`;
 }
 
 // Construye todo el paquete de producción del episodio a partir de lo que devolvió la IA.
@@ -355,12 +369,18 @@ export function buildProduction(raw: any, ctx: Ctx) {
     if (a.split(" ").length < 5 || b.split(" ").length < 5) return [s];
     return [{ ...s, line: a }, { ...s, line: b }];
   });
+  // Cristianas: nada católico en escena; la frutinovela cristiana además con vocabulario neutro.
   if (style === "cristiana") base = base.map(s => ({ ...s, setting: stripForbidden(s.setting), line: neutralize(stripForbidden(s.line)) }));
-  // Cristiana: el final pide "Escribe AMÉN" en boca del narrador.
-  if (style === "cristiana" && !base.some(s => /escribe am[eé]n/i.test(s.line))) {
+  if (style === "biblica") base = base.map(s => ({ ...s, setting: stripForbidden(s.setting), line: stripForbidden(s.line) }));
+  // v15: nunca «Escribe AMÉN» ni otras llamadas a interacción (Meta lo penaliza y desmonetiza la página).
+  // El cierre es la frase del Narrador con el mensaje; si falta, se añade.
+  if (isChristianStyle(style)) {
+    base = base.map(s => ({ ...s, line: s.line.replace(/\s*(escribe|comenta|di)\s+am[eé]n\.?/gi, "").trim() })).filter(s => s.line.length >= 3);
     const last = base[base.length - 1];
-    if (last?.speaker === NARRATOR) last.line = `${last.line} Escribe AMÉN.`;
-    else base.push({ phone: undefined, location: last?.location || "", shot: "", setting: last?.setting || "iglesia evangélica sencilla", speaker: NARRATOR, line: "Si crees que Dios restaura lo que el orgullo rompe… Escribe AMÉN.", emotion: "esperanza", present: [], title: "Cierre", goal: "Invitar al público a responder", sfx: "Silencio y respiración suave", music: "Piano emotivo que se apaga", transition: "Fundido a negro", link: "" });
+    if (last?.speaker !== NARRATOR) {
+      const msg = clean(raw?.bible?.message) || "Lo que el hombre rompe, Dios lo puede restaurar.";
+      base.push({ phone: undefined, location: last?.location || "", shot: "", setting: last?.setting || "iglesia evangélica sencilla", speaker: NARRATOR, line: msg, emotion: "esperanza", present: [], title: "Cierre", goal: "El mensaje de la historia", sfx: "Silencio y respiración suave", music: "Piano emotivo que se apaga", transition: "Fundido a negro", link: "" });
+    }
   }
   base = assignLocations(selectShortScenes(base, Math.min(MAX_SCENES, target)));
 
@@ -392,14 +412,17 @@ export function buildProduction(raw: any, ctx: Ctx) {
   if (scenes.some(s => s.speaker === NARRATOR)) colores[NARRATOR] = NARRATOR_COLOR;
   // Saltos de tiempo («Horas después...») → tarjeta negra corta antes de esa escena en el montaje.
   const tarjetas = scenes.map((s, i) => ({ antes: i, texto: timeJump(`${s.transition || ""} ${s.setting || ""}`) })).filter(t => t.antes > 0 && t.texto);
-  const guionJson = { colores, gancho: hook, cierre: "Continuará...", clips: scenes.map(s => [[s.speaker, s.line]]), ...(tarjetas.length ? { tarjetas } : {}), ...phoneMontage(scenes) };
+  // Drama bíblico: cada vídeo se entiende solo; la tarjeta final es el versículo (p. ej. «Génesis 50:20»).
+  const bible = style === "biblica" ? { story: clean(raw?.bible?.story), verse: clean(raw?.bible?.verse), verseText: clean(raw?.bible?.verseText), message: clean(raw?.bible?.message) } : undefined;
+  const guionJson = { colores, gancho: hook, cierre: bible?.verse || "Continuará...", ...(bible?.verse ? { versiculo: bible.verse } : {}), clips: scenes.map(s => [[s.speaker, s.line]]), ...(tarjetas.length ? { tarjetas } : {}), ...phoneMontage(scenes) };
   const total = scenes.length * SCENE_SECONDS;
   const scriptBlocks = scenes.map(s => ({ block: s.n, time: `${(s.n - 1) * SCENE_SECONDS}-${s.n * SCENE_SECONDS}s`, scene: s.setting, dialogue: [{ speaker: s.speaker, text: s.line }], onScreen: s.speaker === NARRATOR ? [] : [s.speaker] }));
   // Dola: versión corta sin perder el último giro, narrador ni cliffhanger.
   const dolaScenes = selectShortScenes(scenes, Math.floor(60 / SCENE_SECONDS));
   const dolaDuration = dolaScenes.length * SCENE_SECONDS;
   const dolaPrompt = buildDolaPrompt(dolaScenes, cast, style, total, dolaDuration);
-  const shortTitle = `${ctx.seriesTitle || clean(raw?.title) || "Serie"} · Parte ${ctx.partNumber || 1}`;
+  // Drama bíblico: cada vídeo se entiende solo, «· Parte N» solo cuando es una serie (parte 2 o más).
+  const shortTitle = style === "biblica" && (ctx.partNumber || 1) <= 1 ? (clean(raw?.title) || ctx.seriesTitle || "Historia") : `${ctx.seriesTitle || clean(raw?.title) || "Serie"} · Parte ${ctx.partNumber || 1}`;
   const word = stylePublish(style).word(ctx.partNumber || 1);
   const platformAdaptations = mergeModelPlatforms(buildPlatformAdaptations({ theme: ctx.idea || clean(raw?.title), seriesTitle: ctx.seriesTitle || clean(raw?.title), partNumber: ctx.partNumber || 1, previousSummary: ctx.previousSummary, hook, style }), raw?.platforms).map(p => ({ ...p, description: normalizeDescription(p.description, shortTitle, word, p.hashtags) }));
   const f = raw?.ficha || {};
@@ -432,12 +455,12 @@ export function buildProduction(raw: any, ctx: Ctx) {
     biblicalPassage: clean(so.biblicalPassage) || ficha.biblicalBase,
   };
   return {
-    title: clean(raw?.title) || `Episodio ${ctx.partNumber || 1}`, ficha, social, cover, selfScore,
+    title: clean(raw?.title) || `Episodio ${ctx.partNumber || 1}`, ficha, social, cover, selfScore, ...(bible ? { bible } : {}),
     summary: clean(raw?.summary) || ctx.idea,
     cast, scenes, scriptBlocks, prompts: scenes.map(s => s.animationPrompt), promptsVersion: PROMPT_RULES_VERSION,
     dolaPrompt, dolaDuration, dolaSceneNumbers: dolaScenes.map(s => s.n), dolaIsAdaptation: total > dolaDuration, duration: total, editDuration: Math.round(scenes.length * EDIT_SECONDS),
     shortForLongPlatforms: total < 60 ? "Facebook y TikTok necesitan al menos 60 s: añade la tarjeta «Continuará…» de 3 s al final." : "",
-    dialogueRules: style === "cristiana" ? "Español neutro y global, respetuoso y sin jerga ni vulgaridades; con acento dominicano suave. Un solo personaje habla por escena." : "Palabras dominicanas completas con acentos (tíguere, yipeta, jevito, vaina, un chin, mi cualto). Nunca pa', vamo', e', ta'. Un solo personaje habla por escena.",
+    dialogueRules: style === "biblica" ? "Español latino neutro, palabras completas (nunca pa', vamo'), con tildes; dominicanismos completos solo si aportan (vaina, tíguere, colmado). Frases de 2 a 6 palabras. Un solo personaje habla por escena; el Narrador solo en la última." : style === "cristiana" ? "Español neutro y global, respetuoso y sin jerga ni vulgaridades; con acento dominicano suave. Un solo personaje habla por escena." : "Palabras dominicanas completas con acentos (tíguere, yipeta, jevito, vaina, un chin, mi cualto). Nunca pa', vamo', e', ta'. Un solo personaje habla por escena.",
     // Portada con formato fijo (zona segura arriba, «PARTE n» dorado abajo); la descripción, título en MAYÚSCULAS + palabra + hashtags.
     hook, coverText: formatCoverText(ctx.seriesTitle || clean(raw?.title) || "Serie", cover.lines.join(" "), ctx.partNumber || 1), description: normalizeDescription(clean(raw?.description), shortTitle, word, stylePublish(style).tags),
     hashtags: Array.isArray(raw?.hashtags) && raw.hashtags.length ? raw.hashtags.map(clean).filter(Boolean).slice(0, 6) : ["#Frutinovelas", "#RD", "#Microdrama", "#Viral"],
@@ -448,7 +471,7 @@ export function buildProduction(raw: any, ctx: Ctx) {
 // Plantilla local (sin IA o si la IA falla): mismas escenas y formato, con diálogo de estructura viral.
 export function templateScenes(idea: string, cast: CastMember[], style: StyleKey, count: number) {
   const [a, b, c] = [cast[0], cast[1] || cast[0], cast[2] || cast[1] || cast[0]];
-  const place = style === "cristiana" ? "frente al colegio, por la mañana" : style === "cine90" ? "una calle de Santo Domingo en 1994" : "una calle del barrio con colmado y motores";
+  const place = style === "biblica" ? "un colmado del barrio en Santo Domingo, por la tarde" : style === "cristiana" ? "frente al colegio, por la mañana" : style === "cine90" ? "una calle de Santo Domingo en 1994" : "una calle del barrio con colmado y motores";
   // Ida y vuelta entre dos personajes, frases de 2 a 6 palabras (nunca discursos).
   const beats: [CastMember, string, string, string][] = [
     [b, place, "desprecio", `¿Tú aquí? ¡Vete ya!`],

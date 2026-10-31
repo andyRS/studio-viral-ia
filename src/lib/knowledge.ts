@@ -16,6 +16,11 @@ export const STYLES = {
     visual: `Telenovela animada 3D premium, vertical 9:16. ${FRUIT_LOOK} Luz cálida, emoción, lágrimas, abrazos.`,
     voice: "Español latino neutro, cálido y respetuoso (un personaje puede tener acento dominicano marcado). Puede usar alguna palabra dominicana suave. Sin humor burlón sobre la fe.",
   },
+  biblica: {
+    label: "Drama bíblico moderno (personas reales)",
+    visual: "Drama moderno dominicano cinematográfico, personas reales, luz natural, grano de 35 mm, vertical 9:16. Escenarios reales de RD: barrio, colmado, campo, iglesia evangélica sencilla, hospital público, oficina, aeropuerto. Vestuario modesto de manga larga.",
+    voice: "Español latino neutro, palabras completas (nunca pa', vamo'), con sus tildes; dominicanismos escritos completos solo cuando aporten (vaina, tíguere, colmado). Frases de 2 a 6 palabras.",
+  },
   cine90: {
     label: "Cine romántico de los 90 (realista)",
     visual: "Película romántica de los años 90 en República Dominicana, grano de 35 mm, luz cálida dorada, vestuario y peinados de los 90, vertical 9:16, personas reales.",
@@ -125,9 +130,34 @@ export const CHRISTIAN_RULES = `
 REGLAS CRISTIANAS (público pentecostal/evangélico):
 - La iglesia es evangélica sencilla: púlpito de madera, cruz lisa sin cristo, Biblia, bancos.
 - PROHIBIDO poner santos, vírgenes, altares, velas votivas, rosarios o cuadros religiosos, ni en la iglesia ni en la casa. Esto se evita al generar (va dentro de cada prompt de escena), nunca se difumina después.
-- Estructura: pecado u orgullo -> caída -> regreso a Dios o a la familia -> frase final del narrador -> "Escribe AMÉN".
+- Estructura: pecado u orgullo -> caída -> regreso a Dios o a la familia -> frase final del narrador con el mensaje. Nunca «Escribe AMÉN» ni otras llamadas a interacción (Meta las penaliza y desmonetiza la página).
 - Lenguaje: español neutro y global (para todo el público hispano), respetuoso, sin jerga dominicana ni vulgaridades; la voz con acento dominicano suave.
 `.trim();
 // Va dentro de CADA prompt de escena cristiana (público pentecostal). «Si aparece» evita que el
 // generador ponga un púlpito en escenas de casa o de calle.
 export const CHRISTIAN_SCENE_GUARD = "iglesia (si aparece): evangélica sencilla, con púlpito de madera, cruz lisa sin cristo, Biblia y bancos. Sin imágenes de santos ni de la Virgen, sin altares, sin velas votivas, sin rosarios ni cuadros religiosos, tampoco en la casa";
+
+// Drama bíblico moderno (cuenta «Un Minuto en Oración»): una historia o principio de la Biblia contado como
+// drama de la República Dominicana de hoy. Se rota el tipo de historia (no solo redención).
+export const BIBLE_BANK = [
+  { story: "José vendido por sus hermanos", modern: "Joven traicionado por sus socios del colmado que termina dirigiendo la empresa", message: "Dios convierte la traición en propósito", verse: "Génesis 50:20" },
+  { story: "El hijo pródigo", modern: "Hijo que gasta la herencia en Nueva York y vuelve al campo", message: "La gracia recibe al que vuelve", verse: "Lucas 15:24" },
+  { story: "David y Goliat", modern: "Muchacho de barrio contra el gigante dueño de la cooperativa", message: "La fe vence lo que parece imposible", verse: "1 Samuel 17:47" },
+  { story: "Rut y Noemí", modern: "Nuera dominicana que no abandona a su suegra viuda", message: "La lealtad es recompensada", verse: "Rut 1:16" },
+  { story: "Job", modern: "Empresario que lo pierde todo (negocio, casa, salud) y no maldice", message: "Fe en la prueba", verse: "Job 1:21" },
+  { story: "La viuda de Sarepta", modern: "Madre soltera con el último arroz y aceite que ayuda a un desconocido", message: "Dar desde la escasez", verse: "1 Reyes 17:16" },
+  { story: "Daniel en el foso", modern: "Empleado cristiano que no firma un negocio sucio y lo acusan", message: "Integridad", verse: "Daniel 6:22" },
+  { story: "Jonás", modern: "Joven que huye de su llamado y vive su tormenta", message: "Obediencia", verse: "Jonás 2:2" },
+  { story: "El buen samaritano", modern: "Motoconchista que ayuda al que todos ignoraron", message: "Amor al prójimo", verse: "Lucas 10:37" },
+  { story: "Ester", modern: "Joven callada que, cuando llega el momento, habla por su gente", message: "Para un tiempo como este", verse: "Ester 4:14" },
+  { story: "Zaqueo", modern: "Cobrador abusivo que cambia al recibir un trato digno", message: "Dios restaura al rechazado", verse: "Lucas 19:10" },
+  { story: "Ana y Samuel", modern: "Mujer que ora por un hijo y a la que juzgan en la iglesia", message: "Dios escucha lo que nadie ve", verse: "1 Samuel 1:27" },
+  { story: "Los talentos", modern: "Tres hermanos reciben herencias distintas; uno la entierra", message: "Usa lo que Dios te dio", verse: "Mateo 25:21" },
+  { story: "Caín y Abel", modern: "Dos hermanos: uno envidia el éxito del otro", message: "La envidia destruye", verse: "Génesis 4:7" },
+  { story: "Nehemías", modern: "Hombre que reconstruye el barrio y la iglesia dañados por un huracán", message: "Reconstruir con fe", verse: "Nehemías 2:18" },
+] as const;
+
+// Prohibido en todas las imágenes y vídeos para el público pentecostal (en inglés para los modelos de imagen y vídeo).
+export const BIBLE_GUARD_EN = "No saints, no Virgin, no altars, no votive candles, no rosaries, plain evangelical church, plain empty cross";
+// Final obligatorio de cada prompt de vídeo del drama bíblico.
+export const BIBLE_VIDEO_END = "Español latino neutro, cada palabra completa, nunca acento inglés. Sin música, sin subtítulos ni texto en pantalla.";

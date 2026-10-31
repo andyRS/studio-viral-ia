@@ -3,7 +3,7 @@
 // todos los prompts de producción (production.ts). Si la IA no responde, plantilla local con aviso.
 import { callLLM } from "./llm";
 import { jsonrepair } from "jsonrepair";
-import { CHRISTIAN_RULES, FRUIT_CAST_RULES, MANUAL_VIRAL, STYLES, type StyleKey } from "./knowledge";
+import { BIBLE_BANK, CHRISTIAN_RULES, FRUIT_CAST_RULES, MANUAL_VIRAL, STYLES, type StyleKey } from "./knowledge";
 import { templateHookVariants, type HookVariant } from "./hooks";
 import { castNeedsRepair, isFruitStyle, norm, normalizeCast, templateCast, type CastMember } from "./cast";
 import { buildProduction, NARRATOR, sceneCountFor, templateScenes } from "./production";
@@ -46,13 +46,27 @@ function extraContext(input: any) {
   const parts: string[] = [];
   if (input.accountProfile) parts.push(String(input.accountProfile).slice(0, 8000));
   if (input.learnings) parts.push(String(input.learnings));
+  if (Array.isArray(input.usadas) && input.usadas.length) parts.push(`YA USADAS en esta cuenta (no repitas su historia bíblica ni su conflicto; elige otro tipo del banco): ${input.usadas.slice(-40).join(" · ")}`);
   const hook = Array.isArray(input.chosenHook) ? input.chosenHook.filter(Boolean) : [];
   if (hook.length) parts.push(`GANCHO ELEGIDO POR EL USUARIO (obligatorio): usa exactamente estas líneas como hook y construye los primeros 3 segundos alrededor de ellas: ${hook.map((l: string) => `"${l}"`).join(" / ")}`);
   return parts.length ? "\n\n" + parts.join("\n\n") : "";
 }
 
+// Drama bíblico moderno (Un Minuto en Oración): instrucción de trabajo de Andy (oct. 2026).
+const BIBLICA_RULES = `
+DRAMA BÍBLICO MODERNO (cuenta «Un Minuto en Oración»; público pentecostal/evangélico):
+IDEA CENTRAL: una historia bíblica (o un principio bíblico) contada como drama de la República Dominicana de hoy. El público siente «esto me pasó a mí» y SOLO al final descubre el versículo y el mensaje. Nada de predicar al inicio: primero la emoción, luego la verdad.
+VARIEDAD (obligatorio): rota el tipo de historia; no todo es redención. Banco (elige uno que NO esté en «ya usadas», o un principio bíblico equivalente):
+${BIBLE_BANK.map(b => `- ${b.story} → ${b.modern} → «${b.message}» (${b.verse})`).join("\n")}
+Cada historia: 1 versículo base, 1 conflicto cotidiano reconocible (dinero, familia, traición, enfermedad, injusticia, migración), 1 giro emocional, 1 frase final con el mensaje.
+ESTRUCTURA: 0-3 s gancho con conflicto visible y texto de 2 líneas («La acusaron de robar…» / «y solo Dios sabía la verdad») → estatus y contraste claros (quién tiene poder y quién no) → objeto que revela (carta, Biblia vieja, llave, foto, recibo, pulsera) → escalada con frases de 2 a 6 palabras, un solo personaje por clip → giro (la verdad sale a la luz, alguien cambia o llega la ayuda inesperada) → cierre emotivo (oración, abrazo o decisión) con la frase del mensaje en boca del Narrador (el Narrador SOLO en la última escena). El versículo va en pantalla al final (lo pone el montaje).
+CADA VÍDEO SE ENTIENDE SOLO: no depende de otra parte; las series son opcionales y solo si la historia lo pide.
+PROHIBIDO: santos, Virgen, altares, velas votivas, rosarios (tampoco en la casa); iglesia evangélica sencilla con púlpito, cruz lisa y Biblia. Nunca el nombre de Dios en vano, nunca violencia gráfica, vestuario modesto de manga larga. No inventar milagros ni curas médicas como promesa real: es ficción.
+SIN LLAMADAS A INTERACCIÓN en ningún texto ni en el diálogo: nunca «comenta AMÉN», «escribe AMÉN», «dale like», «sígueme» ni «comparte» (Meta lo penaliza como interacción no auténtica y desmonetiza la página). En la descripción, una pregunta abierta sin pedir acción («¿Qué harías tú en su lugar?»).
+`.trim();
+
 function styleRules(style: StyleKey) {
-  return [MANUAL_VIRAL, isFruitStyle(style) ? FRUIT_CAST_RULES : "", style === "cristiana" ? CHRISTIAN_RULES : ""].filter(Boolean).join("\n\n");
+  return [MANUAL_VIRAL, isFruitStyle(style) ? FRUIT_CAST_RULES : "", style === "cristiana" ? CHRISTIAN_RULES : "", style === "biblica" ? BIBLICA_RULES : ""].filter(Boolean).join("\n\n");
 }
 
 // Sección «MI PEDIDO» del prompt maestro, con los datos del formulario.
@@ -76,7 +90,7 @@ function sceneBrief(style: StyleKey, count: number) {
   return `FORMATO DE ENTREGA (la app construye los prompts de imagen y animación con tus campos: NO los escribas). Usa los hechos concretos de la idea (relaciones, oficio, lugar, objeto que revela, desenlace).
 ESTILO VISUAL: ${st.visual}
 ESTILO DE VOZ: ${st.voice}
-ESCENAS: exactamente ${count} escenas. En cada escena habla UN SOLO personaje con UNA frase natural de 4 a 12 palabras, como se habla de verdad (nunca discursos ni frases de relleno). El diálogo es una conversación rápida de ida y vuelta: cada frase responde a la anterior, como en una pelea, un coqueteo o una confesión real; en el vídeo montado sale una frase cada 3-4 segundos, sin silencios. Escena 1 = gancho visual y conflicto visible desde el segundo 0. Cada escena avanza la historia con información nueva; nada de repetir frases ni escenas. Incluye la revelación con un objeto y un triángulo o personaje cuestionable que obligue a opinar. La última escena, y SOLO esa (una sola escena, nunca partida en dos), es del Narrador (hasta 14 palabras; su "setting" muestra al protagonista o el objeto clave en el último lugar, con "onScreen" si sale alguien; NUNCA una pantalla oscura ni texto) y deja una pregunta abierta: "Lo que X no sabe... es que..."${style === "cristiana" ? ' y después el Narrador pide "Escribe AMÉN"' : ""}.
+ESCENAS: exactamente ${count} escenas. En cada escena habla UN SOLO personaje con UNA frase natural de ${style === "biblica" ? "2 a 6" : "4 a 12"} palabras, como se habla de verdad (nunca discursos ni frases de relleno). El diálogo es una conversación rápida de ida y vuelta: cada frase responde a la anterior, como en una pelea, un coqueteo o una confesión real; en el vídeo montado sale una frase cada 3-4 segundos, sin silencios. Escena 1 = gancho visual y conflicto visible desde el segundo 0. Cada escena avanza la historia con información nueva; nada de repetir frases ni escenas. Incluye la revelación con un objeto y un triángulo o personaje cuestionable que obligue a opinar. La última escena, y SOLO esa (una sola escena, nunca partida en dos), es del Narrador (hasta 14 palabras; su "setting" muestra al protagonista o el objeto clave en el último lugar, con "onScreen" si sale alguien; NUNCA una pantalla oscura ni texto) y deja una pregunta abierta: "Lo que X no sabe... es que..."${style === "biblica" ? " (en el drama bíblico NO es un misterio: es la frase con el mensaje, p. ej. «Lo que sus hermanos hicieron para mal, Dios lo convirtió en bien»)" : ""}.
 TÉCNICAS DE LOS VIRALES (obligatorias, son las que hacen que el público no deje de mirar):
 1. Arranca en mitad del conflicto: la frase 1 ya es una acusación, una tentación o un secreto; nada de presentaciones.
 2. Ironía dramática: muy pronto el público sabe un secreto que la víctima NO sabe (una infidelidad, una mentira, un billete, un embarazo) y la ve hablar sin saberlo.
@@ -89,7 +103,7 @@ TÉCNICAS DE LOS VIRALES (obligatorias, son las que hacen que el público no dej
 9. Nada se resuelve del todo: cada respuesta abre una pregunta nueva y el final deja al público pidiendo la parte siguiente.
 VESTUARIO: ${style === "cristiana" ? "recatado, elegante y de manga larga; nunca bikinis, toallas, escotes ni tirantes." : "a la moda y atractivo según el personaje, como en los virales: la chica coqueta o seductora es una mujer adulta de figura curvilínea con top corto, camiseta de tirantes, shorts o jeans ajustados o vestido ceñido; el galán, camiseta ajustada. Traje de baño solo en piscina, playa o jacuzzi. Nunca desnudos, lencería ni toallas."}
 ROMANCE: ${style === "cristiana" ? "solo cariño respetuoso (abrazos, tomarse de la mano)." : "cautiva sin pasarte: miradas, coqueteo, abrazos y, si el guion lo pide, besos en la boca breves y románticos (escríbelo en el \"setting\" de esa escena). Para no salir del For You de TikTok: la cámara nunca se recrea en el cuerpo, nada de poses ni movimientos sexuales, nada de caricias íntimas. Nunca sexo explícito."}
-PUBLICACIÓN: cada "description" = título corto en MAYÚSCULAS + la palabra para comentar (${style === "cristiana" ? "AMÉN" : style === "cine90" ? "BUTACA" : "PARTE 2"}) + 3 a 6 hashtags (#frutinovela #frutinovelas o los del estilo, 1 o 2 del tema concreto del episodio como #suegratoxica #infidelidad #traicion, y #parati); en "hashtags" pon sobre todo los del tema concreto. En "platforms.facebook.topic" indica el tema que hay que elegir al publicar (${style === "cristiana" ? "Religión" : style === "cine90" ? "Películas" : "Animación"}). En "social.music" propone la canción de firma de la serie (la misma en todas las partes, elegida en la biblioteca de sonidos de la plataforma).
+PUBLICACIÓN: cada "description" = título corto en MAYÚSCULAS + ${style === "cristiana" || style === "biblica" ? "una pregunta abierta que invite a pensar SIN pedir ninguna acción (nunca «comenta», «escribe AMÉN», «dale like», «sígueme» ni «comparte»: Meta lo penaliza)" : `la palabra para comentar (${style === "cine90" ? "BUTACA" : "PARTE 2"})`} + ${style === "biblica" ? "3 a 5" : "3 a 6"} hashtags (#frutinovela #frutinovelas o los del estilo, 1 o 2 del tema concreto del episodio como #suegratoxica #infidelidad #traicion, y #parati); en "hashtags" pon sobre todo los del tema concreto. En "platforms.facebook.topic" indica el tema que hay que elegir al publicar (${style === "cristiana" || style === "biblica" ? "Religión" : style === "cine90" ? "Películas" : "Animación"}). En "social.music" propone la canción de firma de la serie (la misma en todas las partes, elegida en la biblioteca de sonidos de la plataforma).
 DIÁLOGO: ${style === "cristiana" ? "español NEUTRO y global, que entienda cualquier hispanohablante: sin jerga ni modismos dominicanos (nada de tíguere, yipeta, vaina, jevito, un chin, cualto) y sin vulgaridades ni groserías; tono respetuoso y emotivo. La voz sí puede tener un acento dominicano suave" : "palabras dominicanas escritas completas y con acentos (tíguere, yipeta, jevito, vaina, un chin, mi cualto / lo cualto mío)"}; NUNCA contracciones (pa', vamo', e', ta').
 ESTRUCTURA: reparte las escenas como Gancho -> Contexto -> Desarrollo -> Clímax -> Consecuencia -> Resolución (la primera es el Gancho y la última la Resolución). Si la historia es bíblica, indica la base bíblica y no presentes diálogos inventados como citas literales.
 "setting" = lugar y acción visual concreta de la escena${isFruitStyle(style) ? "" : " (ENTERA en inglés, sin mezclar español, sin «Usa Seedance» ni puntos dobles)"}; "emotion" = lo que se VE en la cara y el cuerpo${isFruitStyle(style) ? "" : ", en inglés"} (p. ej. ${isFruitStyle(style) ? "«ojos llenos de lágrimas, labios temblando»" : "«eyes full of tears, trembling lips»"}), nunca una palabra suelta como «Amargura» o «Serenidad»; "shot" = el plano que pide lo que pasa (general, medio, primer plano, detalle de un objeto, detalle de las manos con el objeto, a dos, de espaldas, en movimiento): un personaje que cruza los brazos es plano medio, no un detalle de objeto; una revelación necesita ver la cara, nunca una silueta a contraluz; "speaker" = nombre exacto del elenco o "Narrador".`;
@@ -101,6 +115,8 @@ const SCENES_SCHEMA = `"scenes":[{"title":"título corto de la escena","goal":"o
 // Ficha del episodio y paquete para redes (estructura del prompt maestro).
 // Portada, publicación por plataforma y autoevaluación (secciones 5, 6 y 7 del prompt maestro).
 const PUBLISH_SCHEMA = `"cover":{"frame":"qué fotograma usar (máxima emoción, sin spoiler)","lines":["línea 1","línea 2"],"part":"PARTE 1"},"platforms":{"facebook":{"title":"","description":"","hashtags":[],"hour":"","cta":"","pinnedComment":"","topic":"tema de Facebook a elegir al publicar"},"tiktok":{"title":"","description":"","hashtags":[],"hour":"","cta":"","pinnedComment":""},"instagram":{"title":"","description":"","hashtags":[],"hour":"","cta":"","pinnedComment":""},"youtube":{"title":"","description":"","hashtags":[],"hour":"","cta":"","pinnedComment":""}},"selfScore":{"hook":0,"clarity":0,"escalation":0,"twist":0,"comments":0}`;
+// Drama bíblico: historia del banco, versículo (va en la tarjeta final) y mensaje en una frase.
+const BIBLE_SCHEMA = (style: StyleKey) => style === "biblica" ? `"bible":{"story":"historia bíblica del banco","verse":"Libro capítulo:versículo, bien citado (p. ej. Génesis 50:20)","verseText":"el versículo, corto (RVR1960)","message":"el mensaje en una frase"},` : "";
 const FICHA_SCHEMA = `"ficha":{"biblicalBase":"libro capítulo:versículos si aplica, si no vacío","synopsis":"","hookImage":"primera imagen impactante","hookText":"frase del fotograma cero","conflict":"qué quiere el protagonista y qué se lo impide","development":"","climax":"","resolution":"","closing":"reflexión, pregunta o conexión con el siguiente episodio"},"social":{"title":"","hooks":["","",""],"frameZeroText":"","tiktokDescription":"","question":"","coverIdea":"portada vertical 9:16","music":"canción de firma de la serie: tipo de canción y que se elija en la biblioteca de sonidos de la plataforma; la misma en todas las partes","biblicalPassage":""}`;
 
 // Si un personaje cambió de nombre al repararlo, sus frases en las escenas se reasignan.
@@ -134,6 +150,7 @@ async function ensureNarratorEnding(raw: any, idea: string, style: StyleKey, tim
   const scenes = Array.isArray(raw?.scenes) ? raw.scenes : [];
   const last = scenes[scenes.length - 1];
   if (!last || /narrador|narradora|voz en off/.test(norm(last.speaker))) return raw;
+  if (style === "biblica") return raw;   // su cierre es el mensaje (lo añade buildProduction), no un misterio para la Parte 2
   if (timeoutMs < 5000) return raw;
   try {
     const response = await callLLM(
@@ -144,7 +161,7 @@ async function ensureNarratorEnding(raw: any, idea: string, style: StyleKey, tim
     let line = String(parseJson(response).linea || "").replace(/\s+/g, " ").trim();
     const words = line.split(/\s+/).length;
     if (words < 6 || words > 18 || norm(line) === norm(last.line)) return raw;
-    if (style === "cristiana" && !/escribe am[eé]n/i.test(line)) line += " Escribe AMÉN.";
+    line = line.replace(/\s*(escribe|comenta|di)\s+am[eé]n\.?/gi, "").trim();
     return { ...raw, scenes: [...scenes, { title: "Cierre y cliffhanger", goal: "Abrir el siguiente episodio", setting: last.setting, speaker: NARRATOR, line, emotion: "intriga", onScreen: [], transition: "Fundido a negro" }] };
   } catch { return raw; }
 }
@@ -181,7 +198,7 @@ export async function generateSeries(input: any) {
     const count = sceneCountFor(duration);
     const type = String(input.replica || "").trim() ? "replica" : "nueva";
     const system = `${styleRules(style)}${extraContext(input)}\n\n${sceneBrief(style, count)}\n\n${miPedido(input, style, duration, count, type)}\n\nTAREA: crea una SERIE NUEVA a partir del pedido y escribe su EPISODIO 1 (Parte 1). Elenco de 3 a 6 personajes.
-Responde SOLO JSON: {"series":{"title":"","logline":"","world":"","tone":""},"characters":[${CAST_FIELDS(style)}],"episode":{"title":"","summary":"3-4 frases con el cliffhanger final","hook":["línea 1","línea 2"],"coverText":"","description":"","hashtags":[],${FICHA_SCHEMA},${PUBLISH_SCHEMA},${SCENES_SCHEMA}}}`;
+Responde SOLO JSON: {"series":{"title":"","logline":"","world":"","tone":""},"characters":[${CAST_FIELDS(style)}],"episode":{"title":"","summary":"3-4 frases con el cliffhanger final","hook":["línea 1","línea 2"],"coverText":"","description":"","hashtags":[],${FICHA_SCHEMA},${BIBLE_SCHEMA(style)}${PUBLISH_SCHEMA},${SCENES_SCHEMA}}}`;
     const parsed = await askJson(system, JSON.stringify({ idea, duracionSegundos: duration, cuentaPrincipal: input.account?.name, notas: input.notes }));
     // Elenco sin fruta o con nombres genéricos: primero se le pide a la IA solo el elenco
     // (llamada corta); lo que siga faltando lo completa el código en normalizeCast.
@@ -230,7 +247,7 @@ ELENCO FIJO (reutilízalo SIN cambiar nombre, fruta, cara ni ropa; sus fichas ya
 ${castSheet}${input.signatureSong ? `
 CANCIÓN DE FIRMA de la serie (repítela tal cual en social.music): ${String(input.signatureSong).slice(0, 200)}` : ""}
 Si la historia necesita un personaje nuevo, créalo en newCharacters (máximo 2) con una fruta que no use nadie del elenco.
-Responde SOLO JSON: {"episode":{"title":"","summary":"","hook":["",""],"coverText":"","description":"","hashtags":[],${FICHA_SCHEMA},${PUBLISH_SCHEMA},${SCENES_SCHEMA}},"newCharacters":[${CAST_FIELDS(style)}]}`;
+Responde SOLO JSON: {"episode":{"title":"","summary":"","hook":["",""],"coverText":"","description":"","hashtags":[],${FICHA_SCHEMA},${BIBLE_SCHEMA(style)}${PUBLISH_SCHEMA},${SCENES_SCHEMA}},"newCharacters":[${CAST_FIELDS(style)}]}`;
     const parsed = await askJson(system, JSON.stringify({
       serie: input.series, mundo: input.bible, episodiosAnteriores: input.history,
       deseoDelUsuario: input.wish || "Decide tú lo que pasa para que enganche más", duracionSegundos: duration,
@@ -297,7 +314,7 @@ Respeta los hechos principales del relato y su enseñanza; indica biblicalBase (
   const system = `${styleRules(style)}${accountBlock(input)}
 
 TAREA: eres el director creativo. Propón ${count} ideas NUEVAS para ${STYLES[style].label}, distintas entre sí y distintas de todo lo que aparece en EVITAR.
-Cada idea cumple la fórmula: conflicto o humillación visible en el segundo 0-1, juego de estatus, revelación mediante un objeto, escalada, giro final y narrador solo en la última frase${style === "cristiana" ? ', y cierre con "Escribe AMÉN"' : ""}. Varía los mecanismos entre ideas (madre negada, amor prohibido por clase, traición o hijo escondido, herencia, ironía dramática, bomba de tiempo). Identidad dominicana.
+Cada idea cumple la fórmula: conflicto o humillación visible en el segundo 0-1, juego de estatus, revelación mediante un objeto, escalada, giro final y narrador solo en la última frase${style === "cristiana" ? ', y cierre con la frase del mensaje (sin pedir comentarios)' : style === "biblica" ? ", cierre con la frase del mensaje y su versículo; cada idea es una historia bíblica DISTINTA del banco llevada a la RD de hoy (no repitas tipo)" : ""}. Varía los mecanismos entre ideas (madre negada, amor prohibido por clase, traición o hijo escondido, herencia, ironía dramática, bomba de tiempo). Identidad dominicana.
 ${biblical}
 Si el usuario pide algo concreto en la conversación, priorízalo.
 Responde SOLO JSON: {"reply":"1-2 frases para el usuario","ideas":[{"title":"","idea":"una o dos frases para el formulario","hook":["línea 1 (máx 7 palabras)","línea 2"],"object":"","twist":"","mechanism":"","cast":[{"name":"","fruit":"","role":""}],"biblicalBase":"","why":"por qué engancha"}]}`;
@@ -317,7 +334,7 @@ Responde SOLO JSON: {"reply":"1-2 frases para el usuario","ideas":[{"title":"","
       biblicalBase: String(x.biblicalBase || "").trim() || undefined, why: String(x.why || "").trim() || undefined,
     }));
     if (!ideas.length) return fallback("respuesta sin ideas");
-    if (style === "cristiana") for (const i of ideas) {
+    if (style === "cristiana" || style === "biblica") for (const i of ideas) {
       i.title = christianSafe(i.title); i.idea = christianSafe(i.idea); i.hook = i.hook.map(christianSafe);
       if (i.object) i.object = christianSafe(i.object); if (i.twist) i.twist = christianSafe(i.twist);
     }

@@ -4,6 +4,8 @@ import { useState, type FormEvent } from "react";
 import { useData } from "@/lib/DataContext";
 import type { Account, AccountProfile } from "@/lib/types";
 import { PELICULAS_HANDLE, isPeliculasAccount, seedPeliculas } from "@/lib/seedPeliculas";
+import { seedOracion } from "@/lib/seedOracion";
+import { STYLES, type StyleKey } from "@/lib/knowledge";
 
 // Perfil de cuenta: se edita como texto (una línea por elemento) y se guarda tal cual.
 const lines = (v?: string[]) => (v || []).join("\n");
@@ -11,6 +13,7 @@ const unlines = (t: string) => t.split("\n").map(x => x.trim()).filter(Boolean);
 function ProfileEditor({ account, profile, onClose }: { account: Account; profile?: AccountProfile; onClose: () => void }) {
   const { insert, update, isLocalOnly } = useData();
   const p: Partial<AccountProfile> = profile || { handle: account.name.replace(/^@/, ""), platform: account.platform, style: account.niche === "cine90" ? "cine90" : account.niche === "cristiano" ? "cristiana" : "frutinovela" };
+  const [estilo, setEstilo] = useState<string>(p.style || "frutinovela");
   const [f, setF] = useState({
     objective: p.objective || "", goals: lines(p.goals), audience: p.audience || account.audience || "", setting: p.setting || "", results: p.results || "",
     contentRules: lines(p.contentRules), schedule: (p.schedule || []).map(x => `${x.day}: ${x.piece}`).join("\n"), scheduleNotes: lines(p.scheduleNotes),
@@ -24,7 +27,7 @@ function ProfileEditor({ account, profile, onClose }: { account: Account; profil
     setBusy(true);
     try {
       const patch: any = {
-        handle: p.handle, platform: account.platform, style: p.style, verified: f.verified, onlyThisStyle: f.onlyThisStyle, objective: f.objective.trim(), goals: unlines(f.goals),
+        handle: p.handle, platform: account.platform, style: estilo as AccountProfile["style"], verified: f.verified, onlyThisStyle: f.onlyThisStyle, objective: f.objective.trim(), goals: unlines(f.goals),
         audience: f.audience.trim(), setting: f.setting.trim(), results: f.results.trim(), contentRules: unlines(f.contentRules),
         schedule: unlines(f.schedule).map(l => { const [day, ...rest] = l.split(":"); return { day: day.trim(), piece: rest.join(":").trim() }; }),
         scheduleNotes: unlines(f.scheduleNotes), cta: f.cta.trim(), commentWords: f.commentWords.split(",").map(x => x.trim()).filter(Boolean),
@@ -45,9 +48,11 @@ function ProfileEditor({ account, profile, onClose }: { account: Account; profil
         {isLocalOnly("accountProfiles") && <p className="mt-1 text-xs text-amber-200">Se guarda en este navegador: falta crear la tabla en Supabase (supabase/migrations/20261024_account_profiles.sql).</p>}</div>
       <button type="button" onClick={onClose} className="ml-auto text-xs text-slate-400 hover:text-white">Cerrar</button>
     </div>
+    <label className="block text-xs text-slate-300">Estilo de la cuenta <span className="text-slate-500">· el Generador lo elige solo para esta cuenta</span>
+      <select value={estilo} onChange={e => setEstilo(e.target.value)} className="mt-1 max-w-sm">{(Object.keys(STYLES) as StyleKey[]).map(k => <option key={k} value={k}>{STYLES[k].label}</option>)}</select></label>
     <div className="flex flex-wrap gap-4 text-xs text-slate-300">
       <label className="flex items-center gap-2"><input type="checkbox" checked={f.verified} onChange={e => setF({ ...f, verified: e.target.checked })} /> Cuenta verificada</label>
-      <label className="flex items-center gap-2"><input type="checkbox" checked={f.onlyThisStyle} onChange={e => setF({ ...f, onlyThisStyle: e.target.checked })} /> Solo su estilo ({p.style}): nunca otro tipo de contenido</label>
+      <label className="flex items-center gap-2"><input type="checkbox" checked={f.onlyThisStyle} onChange={e => setF({ ...f, onlyThisStyle: e.target.checked })} /> Solo su estilo ({STYLES[estilo as StyleKey]?.label || estilo}): nunca otro tipo de contenido</label>
     </div>
     <div className="grid gap-3 md:grid-cols-2">
       {input("objective", "Objetivo")}{input("followers", "Seguidores actuales", "lo actualizas tú")}
@@ -82,6 +87,14 @@ export default function AccountsModule() {
     if (!window.confirm(`Se creará la cuenta @${PELICULAS_HANDLE} con su perfil, su elenco fijo y las series «La butaca de su madre» (partes 1-5 cerradas) y «Al otro lado del Malecón» (episodios 1 y 2 como guion). ¿Continuar?`)) return;
     setBusy(true); setSeedMsg("");
     try { await seedPeliculas({ insert }, { accounts: data.accounts, profiles }); setSeedMsg(`Listo: @${PELICULAS_HANDLE} cargada. Míralo en su «Perfil», en Generador → Continuar una serie y en Personajes.`); }
+    catch (e: any) { setSeedMsg(`No se pudo cargar: ${e?.message || String(e)}`); }
+    finally { setBusy(false); }
+  }
+
+  async function loadOracion() {
+    if (!window.confirm("Se creará (o se actualizará) la cuenta de Facebook «Un Minuto en Oración» con el perfil de drama bíblico moderno: banco de 15 historias, estructura, reglas pentecostales y de Facebook (sin llamadas a interacción). ¿Continuar?")) return;
+    setBusy(true); setSeedMsg("");
+    try { await seedOracion({ insert, update }, { accounts: data.accounts, profiles }); setSeedMsg("Listo: «Un Minuto en Oración» cargada con su perfil. En el Generador, elige esa cuenta: el estilo «Drama bíblico moderno» se pone solo."); }
     catch (e: any) { setSeedMsg(`No se pudo cargar: ${e?.message || String(e)}`); }
     finally { setBusy(false); }
   }
@@ -154,6 +167,10 @@ export default function AccountsModule() {
       <span className="min-w-[220px] flex-1">Carga la cuenta <b>@{PELICULAS_HANDLE}</b> con todo lo definido: perfil, metas, reglas, ritmo semanal, elenco fijo y sus dos series.</span>
       <button type="button" disabled={busy} onClick={loadPeliculas} className="rounded-xl bg-[#FF9F1C] px-4 py-2 text-sm font-bold text-[#090D16] disabled:opacity-60">{busy ? "Cargando…" : `Cargar @${PELICULAS_HANDLE}`}</button>
     </div>}
+    <div className="studio-panel flex flex-wrap items-center gap-3 p-4 text-sm text-slate-300">
+      <span className="min-w-[220px] flex-1">Perfil de <b>Un Minuto en Oración</b> (drama bíblico moderno): banco de historias, estructura, reglas pentecostales y de Facebook. Si ya existe, se actualiza.</span>
+      <button type="button" disabled={busy} onClick={loadOracion} className="rounded-xl bg-[#598BFF] px-4 py-2 text-sm font-bold text-white disabled:opacity-60">{busy ? "Cargando…" : "Cargar Un Minuto en Oración"}</button>
+    </div>
     {seedMsg && <p role="status" className="rounded-xl border border-amber-400/20 bg-amber-400/10 p-3 text-sm text-amber-100">{seedMsg}</p>}
 
     <form id="account-form" className="studio-panel scroll-mt-24 p-4 sm:p-5" onSubmit={submit}>
