@@ -94,7 +94,8 @@ const CONTRACTIONS: [RegExp, string][] = [
   [/\bna'(?=\s|$)/gi, "nada"], [/\bto'(?=\s|$)/gi, "todo"], [/\bpa(?= (el|la|que|mi|tu|su|ti|mí)\b)/gi, "para"],
 ];
 export function fixDialogue(line: string) {
-  let s = clean(line).replace(/^["“”]+|["“”]+$/g, "");
+  // Sin rótulos colados en la frase («Acento: …», «Voz: …», «Tono: …»): saldrían en los subtítulos.
+  let s = clean(line).replace(/^(?:(?:acento|voz|tono|emoci[oó]n|diálogo|dialogo|frase|l[ií]nea)\s*[:：-]\s*)+/i, "").replace(/^["“”]+|["“”]+$/g, "");
   for (const [re, rep] of CONTRACTIONS) s = s.replace(re, rep);
   return s;
 }

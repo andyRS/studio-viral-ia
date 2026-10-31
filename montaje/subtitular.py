@@ -289,6 +289,8 @@ if ANTERIOR:
             w = wave.open(wav)
             xa = np.frombuffer(w.readframes(w.getnframes()), np.int16).astype(np.float32) / 32768
             segs = [(sg.start, sg.end, sg.text.strip()) for sg in model.transcribe(xa, language="es")[0]]
+            siguiente = {i: (segs[i + 1][0] if i + 1 < len(segs) else fin) for i in range(len(segs))}   # dónde empieza la frase siguiente
+            segs = [(a0, min(e0, siguiente[i]), tx, siguiente[i]) for i, (a0, e0, tx) in enumerate(segs)]
             narr = re.compile(r"^(lo que|pero lo que|y lo que|nadie sab|escribe am[eé]n|continuar)", re.I)
             marca_n = [i for i, sg in enumerate(segs) if sg[0] > fin - 14 and (narr.search(sg[2]) or "no sabe" in sg[2].lower())]
             if marca_n:
@@ -309,8 +311,9 @@ if ANTERIOR:
                     elegidos.add(min(range(len(cand)), key=lambda i: abs(cand[i][0] - objetivo)))
                 total_r = 0.0
                 for i in sorted(elegidos, key=lambda i: -i):   # de atrás hacia delante: la última nunca sobra
-                    s0, e0, _ = cand[i]
-                    pieza = (max(0.0, s0 - 0.12), min(fin, e0 + 0.3))
+                    s0, e0, _, sig = cand[i]
+                    # termina antes de que empiece la frase siguiente (si no, se cuela el Narrador)
+                    pieza = (max(0.0, s0 - 0.12), min(fin, e0 + 0.3, sig - 0.05))
                     if total_r + pieza[1] - pieza[0] > RECAP_MAX:
                         continue
                     RECAP_PIEZAS.append(pieza); total_r += pieza[1] - pieza[0]
@@ -365,6 +368,46 @@ for ci, clip in enumerate(clips):
     t += (b - a) / VEL
 _quitado = sum(dur(c) - (b - a) for c, (a, b) in zip(clips, recortes))
 progreso(61, (f"Pausas quitadas: {_quitado:.1f} s en total en {sum(1 for c, (a, b) in zip(clips, recortes) if dur(c) - (b - a) > 0.05)} de {len(clips)} clips. " if RECORTAR else "Sin quitar pausas (desactivado). ") + "Alineando el texto del guion con las voces")
+
+# Rótulos colados en el texto del guion («Acento: …»): no son diálogo y no deben salir en los subtítulos.
+ROTULO = re.compile(r"^(?:(?:acento|voz|tono|emoci[oó]n|di[aá]logo|frase|l[ií]nea)\s*[:：-]\s*)+", re.I)
+G["clips"] = [[[spk, ROTULO.sub("", str(txt)).strip()] for spk, txt in (blk or [])] for blk in G["clips"]]
+
+# 1b) ¿Cada clip dice el texto de su escena? Si los clips se subieron en otro orden (o la IA animó la frase
+# de otra escena), los subtítulos saldrían con el texto equivocado. Se compara lo que se oye en cada clip con
+# el guion y, si otra escena encaja claramente mejor, ese clip se queda con el texto que de verdad dice.
+REORDENADOS = []
+
+
+def _parecido(ci, bj):
+    oido = [norm(x["w"]) for x in words_per_clip[ci]]
+    guion = [norm(t) for _, txt in G["clips"][bj] for t in txt.split()]
+    if not oido or not guion:
+        return 0.0
+    return difflib.SequenceMatcher(a=guion, b=oido, autojunk=False).ratio()
+
+
+try:
+    sospechosos = [ci for ci in range(len(clips)) if G["clips"][ci] and len(words_per_clip[ci]) >= 2 and _parecido(ci, ci) < 0.45]
+    if len(sospechosos) >= 2:
+        pares = sorted(((_parecido(ci, bj), ci, bj) for ci in sospechosos for bj in sospechosos), reverse=True)
+        nuevo, usados_c, usados_b = {}, set(), set()
+        for sim, ci, bj in pares:
+            if ci in usados_c or bj in usados_b or sim < 0.5:
+                continue
+            nuevo[ci] = bj; usados_c.add(ci); usados_b.add(bj)
+        antes = sum(_parecido(ci, ci) for ci in nuevo)
+        despues = sum(_parecido(ci, bj) for ci, bj in nuevo.items())
+        if nuevo and any(ci != bj for ci, bj in nuevo.items()) and despues > antes + 0.3:
+            orig = [list(b) for b in G["clips"]]
+            for ci, bj in nuevo.items():
+                if ci != bj:
+                    G["clips"][ci] = orig[bj]
+                    REORDENADOS.append((ci + 1, bj + 1))
+            progreso(61, "Orden corregido: " + ", ".join(f"el clip {c} dice la frase de la escena {b}" for c, b in REORDENADOS)
+                     + ". Los subtítulos siguen lo que se oye.")
+except Exception as e:   # nunca impide montar
+    progreso(61, f"No pude comprobar el orden de los clips ({str(e)[:60]})")
 
 # 2) alinear texto del guion con las palabras oídas
 sw, times = [], []   # sw: (hablante, palabra)
@@ -790,6 +833,10 @@ try:
                            "arreglo": "Escribe la frase de resumen y sube el vídeo final completo de la parte anterior."})
         else:
             bien.append(f"«Anteriormente...» con {len(RECAP_PIEZAS)} momentos y resumen.")
+    if REORDENADOS:
+        nota -= 5
+        avisos.append({"tipo": "orden", "texto": "Clips en otro orden que el guion: " + ", ".join(f"clip {c} = escena {b}" for c, b in REORDENADOS) + ". Los subtítulos ya siguen lo que se oye.",
+                       "arreglo": "Comprueba que la historia se entienda en ese orden; si no, coloca bien los clips en la mesa de escenas y vuelve a montar."})
     if not G.get("gancho"):
         nota -= 10
         avisos.append({"tipo": "gancho", "texto": "Sin texto de gancho en los primeros 3 s.", "arreglo": "Añade el gancho (2 líneas) en el guion."})
