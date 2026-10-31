@@ -1,5 +1,6 @@
 import "./globals.css";
 import "./cinematic.css";
+import "./studio-stages.css";
 import type { ReactNode } from "react";
 import type { Viewport } from "next";
 import { Inter } from "next/font/google";

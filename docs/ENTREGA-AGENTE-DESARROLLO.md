@@ -44,3 +44,10 @@ El diseño conserva SessionBar y añade PersistenceNotice en el contenido princi
 ## Verificación
 
 La base pasó typecheck y las 29 comprobaciones narrativas existentes. Las comprobaciones tras esta renovación y el build se registran en UX-RENOVACION.md. Lint bloqueado por configuración ausente. No hay validación de una sesión autenticada de producción ni migraciones ejecutadas.
+
+
+## Avance de la interfaz por etapas
+
+Se completó el arrastre de **tomas de proyectos largos**, con soporte por puntero/teclado y `guardar` existente; no requiere nueva migración. El helper de orden conserva IDs y medios y respeta candados. Las escenas cortas siguen pendientes por sus asociaciones basadas en índice. Hay 8 comprobaciones nuevas de estas invariantes (55 en total).
+
+Los prompts admiten copias temporales para comparar/copiar/exportar; no se escriben ajustes directos al proyecto ni se cambia la versión canónica. Para persistir esos ajustes debe definirse su relación con prompts derivados, revisiones y snapshots de personaje. Los archivos de vídeo siguen siendo de sesión. No confundir selección de escena conservada entre pestañas de un episodio con recuperación de borradores entre módulos o tras recargar: esta última sigue pendiente.

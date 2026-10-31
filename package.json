@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test": "npx -y tsx tests/outline.test.ts && npx -y tsx tests/persistencia.test.ts",
+    "test": "npx -y tsx tests/outline.test.ts && npx -y tsx tests/persistencia.test.ts && npx -y tsx tests/studio.test.ts",
     "check": "npm run typecheck && npm run lint && npm test && npm run build"
   },
   "dependencies": {

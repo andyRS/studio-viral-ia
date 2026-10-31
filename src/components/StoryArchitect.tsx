@@ -250,12 +250,13 @@ function GuionEditor({ escena, protegido, busy, onGuardar, onAprobar, onIA }: { 
   const mover = (i: number, d: number) => setEls(l => { const n = [...l]; const j = i + d; if (j < 0 || j >= n.length) return l; [n[i], n[j]] = [n[j], n[i]]; return n; });
   const hist = escena.scriptHistory || [];
   const diff = comparar !== null && hist[comparar] ? diffLines(hist[comparar].elements.map(lineOf), (escena.script || []).map(lineOf)) : null;
-  return <div className="mt-2 space-y-2 rounded-lg border border-teal-400/25 bg-teal-400/[.04] p-2">
+  return <div className="script-writing-desk mt-2 space-y-2 rounded-lg border border-teal-400/25 bg-teal-400/[.04] p-2">
+    <p className="studio-eyebrow cinematic-gold">EDITOR DE GUION / VERSIONES</p>
     <p className="font-mono text-[11px] text-teal-200">{escena.heading} · {scriptSeconds(els)} s estimados{bloqueado ? " · bloqueado" : ""}</p>
     {els.map((e, i) => <div key={i} className="flex flex-wrap items-start gap-1">
-      <select value={e.type} disabled={bloqueado} onChange={ev => set(i, { type: ev.target.value as ScriptElement["type"] })} className="w-auto text-[11px]">{TIPOS.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}</select>
-      {(e.type === "dialogo" || e.type === "off") && <input value={e.speaker || ""} disabled={bloqueado} onChange={ev => set(i, { speaker: ev.target.value })} placeholder="Personaje" className="w-32 text-[11px]" />}
-      <textarea value={e.text} disabled={bloqueado} onChange={ev => set(i, { text: ev.target.value })} rows={1} className="min-w-[200px] flex-1 text-xs" />
+      <select aria-label={`Tipo de línea ${i + 1}`} value={e.type} disabled={bloqueado} onChange={ev => set(i, { type: ev.target.value as ScriptElement["type"] })} className="w-auto text-[11px]">{TIPOS.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}</select>
+      {(e.type === "dialogo" || e.type === "off") && <input aria-label={`Personaje de la línea ${i + 1}`} value={e.speaker || ""} disabled={bloqueado} onChange={ev => set(i, { speaker: ev.target.value })} placeholder="Personaje" className="w-32 text-[11px]" />}
+      <textarea aria-label={`Contenido de la línea ${i + 1}`} value={e.text} disabled={bloqueado} onChange={ev => set(i, { text: ev.target.value })} rows={1} className="min-w-[200px] flex-1 text-xs" />
       {!bloqueado && <span className="flex gap-1 text-slate-400"><button type="button" onClick={() => mover(i, -1)} aria-label="Subir">↑</button><button type="button" onClick={() => mover(i, 1)} aria-label="Bajar">↓</button><button type="button" onClick={() => setEls(l => l.filter((_, k) => k !== i))} aria-label="Quitar" className="hover:text-rose-300">✕</button></span>}
     </div>)}
     {!els.length && <p className="text-xs text-slate-400">Sin guion todavía: escríbelo a mano o con la IA.</p>}

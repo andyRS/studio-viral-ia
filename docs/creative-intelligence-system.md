@@ -86,3 +86,8 @@ Por aclaración expresa del usuario, Inicio no es un editor. MissionControl pres
 Los pendientes proceden de productionCards con etapa distinta de Publicado; los borradores de episodios marcados Borrador o plantilla-local; las fichas por aprobar de personajes sin imagen o sin aprobación. No se suman estas categorías como si fueran tareas independientes sin solapamiento. Las visualizaciones usan la suma de métricas actuales, sin inventar variaciones o comparaciones temporales. Ausencia de métricas se representa con raya y explicación.
 
 CreativeDesk conserva la mesa de edición visual dentro del inicio del Generador. La premisa pasa a la configuración existente sin guardar ni generar automáticamente. Sus referencias de personajes se etiquetan como referencias, no como escenas generadas. Se conserva el resto de biblioteca, banco de ganchos y archivo del Generador.
+
+
+## Interior de Creative Studio · cuatro referencias
+
+La implementación por etapas y sus límites se documentan en [ETAPAS-CREATIVE-STUDIO.md](ETAPAS-CREATIVE-STUDIO.md). NarrativeDesk y SceneRail conectan guion y escenas seleccionadas; TomasPanel combina tarjetas e inspector; PromptWorkbench permite trabajar copias temporales con comparación y exportación; SceneDesk centra la revisión en la escena elegida. Los estados de guardado/conflicto siguen procediendo de DataContext y los registros de aprobación siguen siendo la fuente de verdad. Inicio inteligente conserva su diseño y sus datos.

@@ -88,3 +88,10 @@ Se integró la implementación `a2aefac` del agente de desarrollo, leyendo `docs
 `npm run check` pasa sobre el conjunto integrado: TypeScript, ESLint, 47 comprobaciones y build de 18 páginas. ESLint mantiene seis avisos conocidos de dependencias y semántica existentes; no se desactivaron reglas para ocultarlos. No se ejecutaron migraciones ni se probó una sesión autenticada de Supabase. El archivo de montaje previamente modificado por el usuario queda fuera de los commits y conserva el mismo SHA-256 antes y después de la integración.
 
 Estado actual del traspaso: puntos 1–5 y 10 completados e integrados por desarrollo; parte del 13 cubierta por 18 pruebas nuevas. La migración `20261104_revisiones.sql` está en el repositorio y sigue pendiente de ejecución en Supabase junto con las anteriores que no se hayan aplicado. Las fases de IA observables y el almacenamiento de medios siguen pendientes de contrato.
+
+
+## Interior del estudio · siguiente bloque
+
+Se implementaron las cuatro referencias dentro de Creative Studio: lectura y dirección por escena; storyboard con inspector y orden por puntero/teclado; trabajo enfocado de copias de prompts; revisión central de clips y referencias. Detalle en ETAPAS-CREATIVE-STUDIO.md. La ruta de revisión visual con datos ficticios fue temporal y se eliminó antes del build. Inicio inteligente y los contratos de persistencia se conservan. Se añadieron 8 comprobaciones de orden y candados a las 47 existentes.
+
+Verificación final del bloque: `npm run check` correcto (55 comprobaciones, build de 18 páginas, seis avisos de lint previos). La ruta temporal de pruebas no forma parte de las páginas entregadas.

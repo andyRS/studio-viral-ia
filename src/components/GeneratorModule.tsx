@@ -1,5 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
+import NarrativeDesk, { SceneRail } from "./NarrativeDesk";
+import PromptWorkbench from "./PromptWorkbench";
 import CreativeDesk from "./CreativeDesk";
 import ReferencePreview from "./ReferencePreview";
 import GenerationStatus from "./GenerationStatus";
@@ -570,6 +572,8 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
   const scenes: any[] = Array.isArray(out.scenes) ? out.scenes : [];
   const ficha = out.ficha || null; const social = out.social || null;
   const [tab, setTab] = useState<Tab>("guion");
+  const [activeSceneN, setActiveSceneN] = useState<number | null>(null);
+  const activeScene = scenes.find(s => s.n === activeSceneN) || scenes[0];
   const finished = status === FINISHED;
   // Terminado: se puede ver, publicar y descargar textos, pero no editar fichas, prompts ni la mesa.
   const lockedTab = finished && (tab === "elenco" || tab === "imagenes" || tab === "animacion" || tab === "mesa");
@@ -613,9 +617,9 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
     reader.readAsDataURL(file);
   }
   const sceneId = (n: number) => `[${String(n).padStart(3, "0")}]`;
-  return <>
+  return <section className="episode-workspace" aria-label="Mesa de producción del episodio">
     <button onClick={onBack} className="mb-4 text-sm text-slate-400 hover:text-white">← {backLabel ? `Serie: ${backLabel}` : "Inicio"}</button>
-    <div className="flex flex-wrap items-start gap-3">
+    <div className="episode-heading flex flex-wrap items-start gap-3">
       <div className="flex-1 min-w-[220px]">
         <p className="text-[11px] font-semibold uppercase tracking-wider text-amber-300/80">{seriesTitle} · Episodio {part}</p>
         <h2 className="text-xl font-bold">{out.title || `Episodio ${part}`}</h2>
@@ -662,26 +666,15 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
       <button type="button" disabled={!productionReady} aria-current={tab === "imagenes" || tab === "animacion" ? "step" : undefined} onClick={() => setTab("imagenes")}><b>03 · Dirección visual</b><small>{productionReady ? "Prompts disponibles" : "Requiere fichas vigentes"}</small></button>
       <button type="button" disabled={!productionReady} data-complete={finished} aria-current={tab === "mesa" ? "step" : undefined} onClick={() => setTab("mesa")}><b>04 · Mesa y montaje</b><small>{finished ? "Vídeo descargado" : "Revisión y montaje"}</small></button>
     </nav>}
-    <div className="tabs mt-5">{tabs.map(([k, l]) => <button key={k} onClick={() => setTab(k)} disabled={(k === "imagenes" || k === "animacion" || k === "mesa") && !productionReady} className={`${tab === k ? "tab-active" : ""} disabled:cursor-not-allowed disabled:opacity-40`}>{l}</button>)}</div>
+    <nav className="tabs episode-tabs mt-5" aria-label="Áreas del episodio">{tabs.map(([k, l]) => <button key={k} onClick={() => setTab(k)} disabled={(k === "imagenes" || k === "animacion" || k === "mesa") && !productionReady} aria-current={tab === k ? "page" : undefined} className={`${tab === k ? "tab-active" : ""} disabled:cursor-not-allowed disabled:opacity-40`}>{l}</button>)}</nav>
     {lockedTab && <p className="mt-4 rounded-xl border border-emerald-400/25 bg-emerald-400/[.06] p-3 text-xs text-emerald-100">🔒 Episodio terminado: esta sección queda de solo lectura. Pulsa «Desbloquear para editar» arriba si necesitas cambiar algo.</p>}
-    <fieldset disabled={lockedTab} className={`mt-4 min-w-0 ${lockedTab ? "opacity-70" : ""}`}>
+    <div className={`episode-stage-layout ${tab === "imagenes" || tab === "animacion" ? "with-inspector" : ""}`}>
+    <fieldset disabled={lockedTab} className={`episode-content min-w-0 ${lockedTab ? "opacity-70" : ""}`}>
+      {(tab === "imagenes" || tab === "animacion") && activeScene && <SceneRail scenes={scenes} active={activeScene.n} onSelect={setActiveSceneN} />}
       {tab === "guion" && <div className="space-y-3">
-        {ficha && <EpisodeSheet ficha={ficha} bible={out.bible} score={out.selfScore} cast={cast} scenes={scenes.length} seconds={fullDuration} />}
+        {ficha && <details className="episode-sheet-drawer"><summary>Ficha narrativa, estructura y evaluación <span aria-hidden="true">＋</span></summary><EpisodeSheet ficha={ficha} bible={out.bible} score={out.selfScore} cast={cast} scenes={scenes.length} seconds={fullDuration} /></details>}
         {!ficha && !!(out.hook || []).length && <div className="rounded-xl border border-amber-400/20 bg-amber-400/10 p-4"><p className="text-[11px] font-semibold uppercase tracking-wider text-amber-300">Gancho de los primeros 3 s</p><p className="mt-1 text-lg font-bold">{(out.hook || []).join(" / ")}</p></div>}
-        {scenes.length ? scenes.map((s: any) => { const c = cast.find((x: any) => x.name === s.speaker); return <article key={s.n} className="rounded-xl bg-[#121826] p-4">
-          <p className="text-xs font-semibold text-amber-300">ESCENA {String(s.n).padStart(2, "0")} — {s.title || ""} · {(s.n - 1) * 8}-{s.n * 8} s</p>
-          <div className="mt-2 rounded-lg border-l-4 bg-white/[.03] px-3 py-2" style={{ borderColor: c?.subtitleColor || "#94a3b8" }}>
-            <p className="text-xs"><span className="mr-1">{c?.fruitEmoji || "🎙️"}</span><b style={{ color: c?.subtitleColor || "#fff" }}>{s.speaker}</b>{s.emotion && <span className="text-slate-400"> · {s.emotion}</span>}</p>
-            <p className="mt-0.5 text-base font-medium leading-snug">“{s.line}”</p>
-            {s.phone && <PhoneBadge phone={s.phone} speaker={s.speaker} />}
-          </div>
-          <dl className="mt-2 grid gap-x-4 gap-y-1 text-xs leading-5 sm:grid-cols-2">
-            <Field label="Objetivo" value={s.goal} /><Field label="Personajes" value={(s.characters || []).join(", ") || "—"} />
-            <Field label="Lugar" value={s.location} /><Field label="Plano" value={s.shot} /><Field label="Acción visual" value={s.setting} />
-            <Field label="Efectos" value={s.sfx} /><Field label="Música" value={s.music} />
-            <Field label="Transición" value={s.transition} /><Field label="Conexión" value={s.nextLink} />
-          </dl>
-        </article>; }) : (out.scriptBlocks || []).map((b: any, i: number) => (
+        {scenes.length ? <NarrativeDesk scenes={scenes} cast={cast} masters={master} active={activeScene.n} onSelect={setActiveSceneN} onCharacters={() => setTab("elenco")} onPrompts={() => setTab("imagenes")} productionReady={productionReady} renderPhone={(phone, speaker) => <PhoneBadge phone={phone} speaker={speaker} />} /> : (out.scriptBlocks || []).map((b: any, i: number) => (
           <div key={i} className="rounded-xl bg-[#121826] p-4">
             <p className="text-xs font-semibold text-amber-300">Bloque {b.block ?? i + 1} · {b.time}</p>
             {b.scene && <p className="mt-1 text-sm text-slate-400">{b.scene}</p>}
@@ -692,7 +685,7 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
       </div>}
       {tab === "elenco" && <div>
         <p className="mb-3 text-sm text-slate-300">Genera la ficha una vez en Flow, guárdala aquí y apruébala. En todos los episodios siguientes se usa esta referencia maestra, no una ficha inventada de nuevo.</p>
-        <div className="grid gap-3 md:grid-cols-2">{cast.map((generated: any, i: number) => { const c = master[i] || generated; return <article key={c.name} className="rounded-2xl border border-white/10 bg-[#151C2B] p-4">
+        <div className="episode-character-gallery grid gap-3 md:grid-cols-2">{cast.map((generated: any, i: number) => { const c = master[i] || generated; return <article key={c.name} className="rounded-2xl border border-white/10 bg-[#151C2B] p-4">
           <div className="flex items-start gap-3">
             {c.fruitEmoji && <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/5 text-3xl" aria-hidden="true">{c.fruitEmoji}</span>}
             <div className="min-w-0 flex-1">
@@ -712,7 +705,7 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
             <p className={`text-xs font-semibold ${c.referenceApprovedAt ? "text-emerald-300" : "text-amber-200"}`}>{c.referenceApprovedAt ? `✓ Ficha aprobada · versión ${c.referenceVersion || 1}` : c.imageUrl ? "Ficha pendiente de aprobación" : "Falta subir la ficha de Flow"}</p>
             {c.id && <div className="mt-2 flex flex-wrap gap-2 text-xs"><label className="cursor-pointer rounded-lg border border-white/15 px-3 py-1.5">{c.imageUrl ? "Nueva versión" : "Subir ficha"}<input type="file" accept="image/*" className="sr-only" onChange={e => uploadMaster(c, e.target.files?.[0])} /></label>{c.imageUrl && <><button type="button" onClick={() => { void update("characters", c.id, { referenceApprovedAt: new Date().toISOString() }); }} className="rounded-lg bg-emerald-400 px-3 py-1.5 font-bold text-slate-950">Aprobar</button><a href={c.imageUrl} download={`${c.name}-ficha-v${c.referenceVersion || 1}.png`} className="rounded-lg border border-white/15 px-3 py-1.5">Descargar copia</a></>}</div>}
           </div>
-          {c.flowPrompt && <details className="prompt-box mt-3"><summary><span>Prompt de ficha para Flow</span></summary><div className="px-3 pb-1"><CopyButton text={c.flowPrompt} /></div><p className="prompt-text">{c.flowPrompt}</p></details>}
+          {c.flowPrompt && <details className="prompt-box mt-3"><summary><span>Prompt de ficha para Flow</span></summary><PromptWorkbench title={`Ficha de ${c.name}`} prompt={c.flowPrompt} context="Identidad visual canónica" /></details>}
         </article>; })}</div>
       </div>}
       {tab === "imagenes" && productionReady && <div>
@@ -730,22 +723,22 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
           <FlowSendButton title={`${seriesTitle || "Serie"} · ${out.title || `Episodio ${part}`}`} scenes={scenes} cast={cast} master={master} />
           <p className="mt-2 text-[11px] text-slate-400">Si Flow corta un lote largo, copia los prompts de escena por separado. No regeneres las fichas maestras de la serie.</p>
         </section>
-        <ol className="space-y-3">{scenes.map((s: any) => <li key={s.n} className="rounded-2xl border border-white/10 bg-[#151C2B] p-4">
+        <ol className="space-y-3">{scenes.filter((s: any) => s.n === activeScene?.n).map((s: any) => <li key={s.n} className="rounded-2xl border border-white/10 bg-[#151C2B] p-4">
           <div className="flex flex-wrap items-center gap-2"><span className="rounded-lg bg-amber-400 px-2 py-0.5 text-xs font-black text-black">{sceneId(s.n)}</span><span className="text-sm font-semibold">{s.title}</span><span className="text-xs text-slate-400">· {s.shot}</span></div>
           <RefChips refs={s.references} />
-          <details className="prompt-box mt-2"><summary><span>Prompt para imagen (Flow)</span></summary><div className="px-3 pb-1"><CopyButton text={s.imagePromptFlow} /></div><p className="prompt-text">{s.imagePromptFlow}</p></details>
+          <details className="prompt-box mt-2"><summary><span>Prompt para imagen (Flow)</span></summary><PromptWorkbench title={`Imagen · Escena ${s.n}`} prompt={s.imagePromptFlow || ""} context={(s.references || []).join(" · ")} /></details>
         </li>)}</ol>
       </div>}
       {tab === "animacion" && productionReady && <div>
         <div className="mb-3 rounded-xl border border-white/10 bg-[#151C2B] p-3 text-xs text-slate-300">{scenes.length ? "Fase 3: usa cada imagen aprobada como primer fotograma y pega su prompt en Pavo IA / Seedance. " : ""}{out.dolaIsAdaptation ? `La versión Dola dura ${dolaDuration} s y conserva el inicio y el cierre. Escenas: ${(out.dolaSceneNumbers || []).join(", ")}.` : `La versión Dola cubre el episodio completo de ${fullDuration} s.`}</div>
         {fromAI && <label className="mb-3 flex items-start gap-2 rounded-xl border border-white/10 bg-white/[.03] p-3 text-xs text-slate-200"><input type="checkbox" className="mt-0.5" checked={reviewed} onChange={event => setReviewed(event.target.checked)} />He revisado el guion, los personajes y la duración antes de abrir Dola.</label>}
-        <details className="prompt-box"><summary><span>Prompt Dola {dolaDuration} s{out.dolaIsAdaptation ? " · adaptación" : ""}</span></summary><div className="flex flex-wrap gap-2 px-3 pb-1"><CopyButton text={out.dolaPrompt || ""} />{fromAI && reviewed && <DolaButton text={out.dolaPrompt || ""} />}</div><p className="prompt-text">{out.dolaPrompt}</p></details>
+        <details className="prompt-box"><summary><span>Prompt Dola {dolaDuration} s{out.dolaIsAdaptation ? " · adaptación" : ""}</span></summary><PromptWorkbench title={`Dola · ${dolaDuration} segundos`} prompt={out.dolaPrompt || ""} />{fromAI && reviewed && <div className="p-3"><DolaButton text={out.dolaPrompt || ""} label="Copiar original y abrir Dola" /></div>}</details>
         {scenes.length ? <>
           <div className="my-3 flex flex-wrap gap-2"><CopyButton text={lote.animaciones} label="Copiar todas las animaciones" /><CopyButton text={lote.dialogos} label="Diálogos en limpio" /></div>
-          <ol className="space-y-3">{scenes.map((s: any) => <li key={s.n} className="rounded-2xl border border-white/10 bg-[#151C2B] p-4">
+          <ol className="space-y-3">{scenes.filter((s: any) => s.n === activeScene?.n).map((s: any) => <li key={s.n} className="rounded-2xl border border-white/10 bg-[#151C2B] p-4">
             <div className="flex flex-wrap items-center gap-2"><span className="rounded-lg bg-amber-400 px-2 py-0.5 text-xs font-black text-black">{String(s.n).padStart(2, "0")}</span><span className="text-sm font-semibold">{s.title}</span><span className="text-xs text-slate-400">· primer fotograma: imagen {sceneId(s.n)}</span></div>
             <RefChips refs={s.references} />
-            <details className="prompt-box mt-2"><summary><span>Prompt para animación (Pavo IA / Seedance)</span></summary><div className="px-3 pb-1"><CopyButton text={s.animationPrompt} /></div><p className="prompt-text whitespace-pre-line">{s.animationPrompt}</p></details>
+            <details className="prompt-box mt-2"><summary><span>Prompt para animación (Pavo IA / Seedance)</span></summary><PromptWorkbench title={`Animación · Escena ${s.n}`} prompt={s.animationPrompt || ""} context="Revisa diálogo, cámara y continuidad antes de generar." /></details>
           </li>)}</ol>
         </> : (out.prompts || []).map((p: string, i: number) => <details key={i} className="prompt-box mt-2"><summary><span>Bloque {i + 1} · {i * sec}-{(i + 1) * sec}s</span></summary><div className="px-3 pb-1"><CopyButton text={p} /></div><p className="prompt-text whitespace-pre-line">{p}</p></details>)}
       </div>}
@@ -776,7 +769,9 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
       {tab === "mesa" && productionReady && <SceneDesk key={episodeId} onDownloaded={onFinish} publish={pack} cover={{ serie: seriesTitle, frase: (out.cover?.lines || out.guionJson?.gancho || []).slice(0, 2), parte: part }} music={{ series: seriesTitle, logline: out.seriesBible?.logline, episodeTitle: out.title, summary: out.summary, closing: cliffhangerOf(out) }} recap={recap} episodeId={episodeId} scenes={scenes} guion={out.guionJson || {}} title={`${seriesTitle || "serie"} ${part}`} referencesReady={referencesReady} referenceSignature={referenceSignature} style={episodeStyle} part={part} />}
       {(tab === "imagenes" || tab === "animacion" || tab === "mesa") && !productionReady && <p className="rounded-xl border border-amber-400/25 bg-amber-400/10 p-4 text-sm text-amber-100">Revisa los personajes canónicos y la versión de sus fichas maestras antes de continuar.</p>}
     </fieldset>
-  </>;
+    {(tab === "imagenes" || tab === "animacion") && <aside className="episode-context-inspector"><header className="stage-panel-header"><span className="studio-eyebrow">INSPECTOR DE PRODUCCIÓN</span><span aria-hidden="true">⌘</span></header><div className="stage-inspector-body"><p className="studio-eyebrow cinematic-gold">ESCENA {activeScene?.n || "—"}</p><h3>{activeScene?.title || "Dirección visual"}</h3><p className="stage-inspector-intro">{activeScene?.setting || activeScene?.goal || out.summary}</p><dl><div><dt>Proyecto</dt><dd>{seriesTitle || out.title}</dd></div><div><dt>Duración del episodio</dt><dd>{fullDuration} s</dd></div><div><dt>Estado de continuidad</dt><dd>{productionReady ? "Fichas aprobadas y vigentes" : "Revisión de fichas pendiente"}</dd></div>{activeScene?.shot && <div><dt>Plano</dt><dd>{activeScene.shot}</dd></div>}</dl><p className="studio-eyebrow">REFERENCIAS DEL ELENCO</p><div className="inspector-reference-row">{master.filter(Boolean).map((c: any) => <button key={c.id || c.name} type="button" onClick={() => setTab("elenco")}>{c.imageUrl ? <img src={c.imageUrl} alt={`Referencia de ${c.name}`} /> : <span aria-hidden="true">◎</span>}<small>{c.name}</small></button>)}</div><button type="button" className="studio-secondary-action w-full" onClick={() => setTab("guion")}>Volver al guion ↗</button><p className="stage-inspector-help">Los prompts se preparan aquí. Las imágenes y los clips se generan en el proveedor que elijas.</p></div></aside>}
+    </div>
+  </section>;
 }
 
 // Tarjeta de serie del inicio: toda la tarjeta abre la serie.

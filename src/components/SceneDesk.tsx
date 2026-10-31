@@ -1,6 +1,8 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { useData } from "@/lib/DataContext";
+import PromptWorkbench from "./PromptWorkbench";
+import ReferencePreview from "./ReferencePreview";
 import CopyButton from "./CopyButton";
 import MontajePanel from "./MontajePanel";
 import type { Scene } from "@/lib/types";
@@ -26,6 +28,8 @@ const kindOf = (f: File): Kind | null => f.type.startsWith("video/") || /\.(mp4|
 
 export default function SceneDesk({ episodeId, scenes, guion, title, referencesReady, referenceSignature, style, part, onDownloaded, publish, music, cover, recap }: { recap?: string; music?: Record<string, any>; cover?: { serie?: string; frase?: string[]; parte?: number }; episodeId: string; scenes: Scene[]; guion: any; title: string; referencesReady: boolean; referenceSignature: string; style?: string; part?: number; onDownloaded?: () => void; publish?: { platform: string; text: string; hashtags: string; extra?: string }[] }) {
   const { data, insert, update, remove } = useData();
+  const [selectedScene, setSelectedScene] = useState<number>(scenes[0]?.n || 1);
+  const activeScene = scenes.find(s => s.n === selectedScene) || scenes[0];
   const [images, setImages] = useState<AssetMap>({});
   const [clips, setClips] = useState<AssetMap>({});
   const [reasons, setReasons] = useState<Record<number, string>>({});
@@ -137,7 +141,9 @@ export default function SceneDesk({ episodeId, scenes, guion, title, referencesR
   const ordered = scenes.map(s => clips[s.n]).filter((f): f is File => !!f);
   const ready = referencesReady && approved === scenes.length && ordered.length === scenes.length;
 
-  return <div className="space-y-4">
+  return <div className="review-studio space-y-4">
+    <header className="review-studio-heading"><div><p className="studio-eyebrow cinematic-gold">SALA DE REVISIÓN / MONTAJE</p><h3>Cada plano cuenta.</h3><p>Revisa la continuidad, aprueba las tomas y prepara tu entrega.</p></div><div className="review-stats"><span><strong>{approved}/{scenes.length}</strong> aprobadas</span><span><strong>{ordered.length}/{scenes.length}</strong> clips en sesión</span></div></header>
+    <details className="review-import"><summary><span>Archivos del episodio</span><span>{Object.keys(images).length} imágenes · {ordered.length} clips</span><strong>Subir y organizar ＋</strong></summary>
     <div className="rounded-2xl border border-white/10 bg-[#151C2B] p-4">
       <div className="flex flex-wrap items-center gap-3"><div><h3 className="font-bold text-white">Mesa de escenas</h3><p className="mt-1 text-xs text-slate-300">{approved}/{scenes.length} aprobadas · {ordered.length}/{scenes.length} clips en esta sesión</p></div><span className="ml-auto rounded-full bg-white/10 px-3 py-1 text-xs text-slate-200">s01 → s{String(scenes.length).padStart(2, "0")}</span></div>
       <label onDragOver={e => { e.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={e => { e.preventDefault(); setDragging(false); assignAll(e.dataTransfer.files); }}
@@ -165,17 +171,22 @@ export default function SceneDesk({ episodeId, scenes, guion, title, referencesR
       <p className="mt-2 text-xs text-slate-400">La revisión se guarda en tu cuenta; los archivos de vídeo se mantienen en esta sesión y tendrás que subirlos de nuevo si cierras la página.</p>
       {!referencesReady && <p className="mt-2 text-xs font-semibold text-amber-200">Aprueba primero todas las fichas maestras del elenco.</p>}
       {message && <p role="status" className="mt-2 text-xs text-amber-200">{message}</p>}
-    </div>
-    <ol className="space-y-2">{scenes.map(scene => {
+    </div></details>
+    <nav className="review-strip" aria-label="Escenas para revisión">{scenes.map(scene => {
+      const approvedHere = !dirtyClips.includes(scene.n) && checks.some(c => c.clipIndex === scene.n - 1 && c.approved && c.referenceSignature === referenceSignature);
+      return <button type="button" key={scene.n} aria-pressed={activeScene?.n === scene.n} onClick={() => setSelectedScene(scene.n)}><span className="review-strip-picture">{imageUrls[scene.n] ? <img src={imageUrls[scene.n]} alt="" /> : <span>{String(scene.n).padStart(2, "0")}</span>}<small>{clips[scene.n] ? "Clip cargado" : "Sin clip"}</small></span><strong>{String(scene.n).padStart(2, "0")} · {scene.title || scene.speaker}</strong><span className={approvedHere ? "review-state-approved" : "review-state-pending"}>{approvedHere ? "✓ Aprobada" : "Pendiente de revisión"}</span></button>;
+    })}</nav>
+    <ol className="review-active-list">{scenes.filter(scene => scene.n === activeScene?.n).map(scene => {
       const check = checks.find(c => c.clipIndex === scene.n - 1);
       const sceneApproved = !!check?.approved && check.referenceSignature === referenceSignature && !dirtyClips.includes(scene.n);
-      return <li key={scene.n} className="rounded-2xl border border-white/10 bg-[#151C2B] p-3 sm:p-4">
-        <div className="flex flex-wrap gap-3 sm:flex-nowrap">
-          <div className="flex h-24 w-20 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-black/30 text-xs text-slate-400">{imageUrls[scene.n] ? <img src={imageUrls[scene.n]} alt={`Imagen de escena ${scene.n}`} className="h-full w-full object-cover" /> : `s${String(scene.n).padStart(2, "0")}`}</div>
-          <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><b className="text-sm text-white">{String(scene.n).padStart(2, "0")} · {scene.title || scene.setting}</b><span className={`rounded-full px-2 py-0.5 text-[11px] ${sceneApproved ? "bg-emerald-400/15 text-emerald-300" : check?.notes && !dirtyClips.includes(scene.n) ? "bg-rose-400/15 text-rose-200" : "bg-white/10 text-slate-300"}`}>{sceneApproved ? "Aprobado" : check?.referenceSignature && check.referenceSignature !== referenceSignature ? "Revisar con ficha nueva" : check?.notes && !dirtyClips.includes(scene.n) ? "Rehacer" : "Pendiente"}</span></div>
+      return <li key={scene.n} className="review-scene rounded-2xl border border-white/10 bg-[#151C2B] p-3 sm:p-4">
+        <div className="review-scene-layout">
+          <div className="review-reference"><p className="studio-eyebrow">IMAGEN DE ESTA ESCENA</p>{imageUrls[scene.n] ? <ReferencePreview src={imageUrls[scene.n]} title={`Escena ${scene.n}`} landscape /> : <p className="stage-inspector-help">Sube una imagen de referencia para revisarla junto al clip.</p>}</div>
+          <div className="review-scene-information"><div className="flex flex-wrap items-center gap-2"><b className="text-sm text-white">{String(scene.n).padStart(2, "0")} · {scene.title || scene.setting}</b><span className={`rounded-full px-2 py-0.5 text-[11px] ${sceneApproved ? "bg-emerald-400/15 text-emerald-300" : check?.notes && !dirtyClips.includes(scene.n) ? "bg-rose-400/15 text-rose-200" : "bg-white/10 text-slate-300"}`}>{sceneApproved ? "Aprobado" : check?.referenceSignature && check.referenceSignature !== referenceSignature ? "Revisar con ficha nueva" : check?.notes && !dirtyClips.includes(scene.n) ? "Rehacer" : "Pendiente"}</span></div>
             <p className="mt-1 text-xs text-slate-300">{scene.speaker}: «{scene.line}»</p>
             <div className="mt-2 flex flex-wrap gap-2"><CopyButton text={scene.animationPrompt} label="Copiar prompt" /><CopyButton text={scene.imagePromptFlow} label="Copiar imagen" /></div>
             <p className="mt-2 text-[11px] text-slate-400">Referencias: {(scene.references || []).join(", ") || "—"}</p>
+            <details className="review-prompt-details"><summary>Dirección y prompts de esta escena</summary><PromptWorkbench title={`Imagen · Escena ${scene.n}`} prompt={scene.imagePromptFlow || ""} /><PromptWorkbench title={`Animación · Escena ${scene.n}`} prompt={scene.animationPrompt || ""} /></details>
             <div className="mt-1 flex flex-wrap gap-3 text-[11px]">
               {images[scene.n] && <button type="button" onClick={() => dropFile(scene.n, "image")} className="text-slate-400 hover:text-red-300">Quitar imagen</button>}
               {clips[scene.n] && <button type="button" onClick={() => dropFile(scene.n, "clip")} className="text-slate-400 hover:text-red-300">Quitar clip</button>}
@@ -186,14 +197,14 @@ export default function SceneDesk({ episodeId, scenes, guion, title, referencesR
               {check && <button type="button" onClick={() => { void deleteReview(scene.n); }} className="text-slate-400 hover:text-red-300">Borrar revisión</button>}
             </div>
           </div>
-          <div className="min-w-0 w-full sm:w-52">{clipUrls[scene.n] ? <video src={clipUrls[scene.n]} controls preload="metadata" className="w-full rounded-lg bg-black" /> : <p className="rounded-lg border border-dashed border-white/15 p-3 text-xs text-slate-400">Falta clip s{String(scene.n).padStart(2, "0")}</p>}
+          <div className="review-media">{clipUrls[scene.n] ? <video src={clipUrls[scene.n]} controls preload="metadata" className="w-full rounded-lg bg-black" /> : <div className="review-player-empty"><span aria-hidden="true">▷</span><strong>El próximo plano está por llegar.</strong><p>Sube el clip s{String(scene.n).padStart(2, "0")} para reproducirlo y revisar su continuidad.</p></div>}
             <div className="mt-2 flex gap-2"><button type="button" disabled={busy === scene.n || !referencesReady || !clips[scene.n]} onClick={() => mark(scene.n, true)} className="rounded-lg bg-emerald-400 px-2 py-1.5 text-xs font-bold text-slate-950 disabled:opacity-40">✓ Aprobado</button><button type="button" disabled={busy === scene.n} onClick={() => mark(scene.n, false)} className="rounded-lg border border-white/15 px-2 py-1.5 text-xs text-slate-100">↻ Rehacer</button></div>
             <input aria-label={`Motivo para rehacer escena ${scene.n}`} value={reasons[scene.n] ?? (check?.approved ? "" : check?.notes || "")} onChange={e => setReasons(prev => ({ ...prev, [scene.n]: e.target.value }))} placeholder="Motivo: cambió la cara…" className="mt-2 w-full text-xs" />
           </div>
         </div>
       </li>;
     })}</ol>
-    <section className="rounded-2xl border border-amber-400/20 bg-amber-400/[.06] p-4"><h3 className="font-bold">Montar vídeo final</h3><p className="mt-1 text-xs text-slate-300">Se habilita con fichas maestras y todas las escenas aprobadas, y con todos los clips s01… cargados en orden.</p>
+    <section className="review-delivery rounded-2xl border border-amber-400/20 bg-amber-400/[.06] p-4"><p className="studio-eyebrow cinematic-gold">ENTREGA / ÚLTIMA REVISIÓN</p><h3 className="mt-2 font-bold">Montar vídeo final</h3><p className="mt-1 text-xs text-slate-300">Se habilita con fichas maestras y todas las escenas aprobadas, y con todos los clips s01… cargados en orden.</p>
       {ready ? <div className="mt-3"><MontajePanel guion={guion} title={title} filesOverride={ordered} style={style} part={part} musicCues={scenes.map(s => s.music || "")} seconds={Math.round(scenes.length * 4.5) + 3} music={music} cover={cover} recap={recap} onDownloaded={onDownloaded} publish={publish} /></div> : <p className="mt-3 text-sm text-amber-200">Pendiente: {referencesReady ? "" : "fichas maestras; "}{scenes.length - approved} escenas por aprobar; {scenes.length - ordered.length} clips por subir.</p>}
     </section>
   </div>;
