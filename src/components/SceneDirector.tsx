@@ -5,7 +5,10 @@
 // (clipChecks) y archivos guardados en este navegador (archivosTrabajo). Nada se marca hecho sin registro.
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as RKE } from "react";
 import { cargarArchivos } from "@/lib/archivosTrabajo";
-import { duplicarEscena, editarEscena, moverEscenaCorta, type Mapa } from "@/lib/ordenEscenas";
+import type { Mapa } from "@/lib/ordenEscenas";
+import { crearCola } from "./studio/cola";
+import { opDuplicarCorta, opEditarCorta, opMoverCorta } from "./studio/operaciones";
+import { despuesDePintar, useOperaciones } from "./studio/useOperaciones";
 import { sceneRole } from "@/lib/production";
 import CopyButton from "./CopyButton";
 import { Divisor, useAnchos } from "./studio/Divisores";
@@ -13,29 +16,34 @@ import { Divisor, useAnchos } from "./studio/Divisores";
 type Vista = "director" | "storyboard" | "secuencia" | "guion";
 type Pestaña = "guion" | "personajes" | "ambiente" | "camara" | "prompt" | "audio" | "produccion";
 type IrA = "elenco" | "imagenes" | "animacion" | "mesa";
-export type Cambio = { mapa?: Mapa; etiqueta: string };
+export type Cambio = { mapa?: Mapa; anterior?: any };
 type Props = {
   out: any; episodeId?: string; usuario: string; cast: any[]; master: any[]; checks: any[]; referenceSignature: string;
   finished: boolean; productionReady: boolean; promptsOutdated: boolean; refreshing: boolean;
   active: number; onSelect: (n: number) => void;
-  onCambiar: (siguiente: any, c: Cambio) => Promise<void>;
+  /** Guarda el episodio (rehace prompts, historial, revisiones y archivos) y devuelve lo guardado. */
+  onCambiar: (siguiente: any, c: Cambio) => Promise<any>;
   onRefreshPrompts: () => void; onIrA: (t: IrA) => void;
 };
 const pad = (n: number) => String(n).padStart(2, "0");
-const invertir = (m: Mapa): Mapa => Object.fromEntries(Object.entries(m).map(([a, b]) => [b, Number(a)]));
 
 export default function SceneDirector(p: Props) {
   const scenes: any[] = Array.isArray(p.out?.scenes) ? p.out.scenes : [];
   const [vista, setVista] = useState<Vista>("director");
   const [pestaña, setPestaña] = useState<Pestaña>("guion");
-  const [guardado, setGuardado] = useState<{ estado: "" | "guardando" | "guardado" | "error"; texto: string }>({ estado: "", texto: "" });
   const [concentracion, setConcentracion] = useState(false);
   const [menu, setMenu] = useState<number | null>(null);
   const [arrastre, setArrastre] = useState<{ de: number; sobre: number | null } | null>(null);
-  // Deshacer / rehacer de esta sesión (cada paso se guarda de verdad; el historial del episodio guarda las versiones).
-  const deshacerRef = useRef<{ out: any; mapa?: Mapa; etiqueta: string }[]>([]);
-  const rehacerRef = useRef<{ out: any; mapa?: Mapa; etiqueta: string }[]>([]);
-  const [, forzar] = useState(0);
+  // Operaciones en cola sobre el último episodio guardado; deshacer/rehacer por operación (no por copia completa).
+  const propsRef = useRef(p); propsRef.current = p;
+  const cola = useMemo(() => crearCola<any, Mapa>(async (valor, mapa, anterior) => {
+    const guardado = await propsRef.current.onCambiar(valor, { mapa, anterior });
+    await despuesDePintar();   // que las revisiones renumeradas lleguen antes de la operación siguiente
+    return guardado;
+  }), []);
+  cola.sincronizar(p.out);
+  const ops = useOperaciones<any>(cola.aplicar);
+  const guardado = ops.estado;
   const escena = scenes.find(s => s.n === p.active) || scenes[0];
   const editable = !p.finished && !!p.episodeId;
   const paneles = useAnchos("director-corto");
@@ -64,25 +72,10 @@ export default function SceneDirector(p: Props) {
     return { s: "pendiente", t: "Sin clip" };
   }, [p.checks, p.referenceSignature, medios.clip]);
 
-  async function cambiar(siguiente: any, c: Cambio, desdeHistorial?: "deshacer" | "rehacer") {
-    setGuardado({ estado: "guardando", texto: `Guardando: ${c.etiqueta}…` });
-    try {
-      const anterior = { out: p.out, mapa: c.mapa ? invertir(c.mapa) : undefined, etiqueta: c.etiqueta };
-      await p.onCambiar(siguiente, c);
-      if (desdeHistorial === "deshacer") rehacerRef.current.push({ out: p.out, mapa: c.mapa ? invertir(c.mapa) : undefined, etiqueta: c.etiqueta });
-      else { deshacerRef.current.push(anterior); if (!desdeHistorial) rehacerRef.current = []; }
-      deshacerRef.current = deshacerRef.current.slice(-20); forzar(x => x + 1);
-      setGuardado({ estado: "guardado", texto: `Guardado · ${c.etiqueta}` });
-    } catch (e: any) { setGuardado({ estado: "error", texto: `No se guardó (${e?.message || e}). Nada cambió.` }); }
-  }
-  const deshacer = () => { const d = deshacerRef.current.pop(); if (d) void cambiar(d.out, { mapa: d.mapa, etiqueta: `deshacer ${d.etiqueta}` }, "deshacer"); };
-  const rehacer = () => { const r = rehacerRef.current.pop(); if (r) void cambiar(r.out, { mapa: r.mapa, etiqueta: `rehacer ${r.etiqueta}` }, "rehacer"); };
-  const mover = (n: number, a: number) => { const r = moverEscenaCorta(p.out, n, a); if (r) { void cambiar(r.out, { mapa: r.mapa, etiqueta: `escena ${n} → posición ${a}` }); p.onSelect(a); } };
-  const duplicar = (n: number) => { const r = duplicarEscena(p.out, n); if (r) { void cambiar(r.out, { mapa: r.mapa, etiqueta: `duplicar escena ${n}` }); p.onSelect(r.nueva); } };
-  const editar = (n: number, campo: string, valor: any) => {
-    const s = scenes.find(x => x.n === n); if (!s || String(s[campo] ?? "") === String(valor ?? "")) return;
-    void cambiar(editarEscena(p.out, n, { [campo]: valor }), { etiqueta: `${campo} de la escena ${n}` });
-  };
+  const deshacer = ops.deshacer, rehacer = ops.rehacer;
+  const mover = (n: number, a: number) => { p.onSelect(a); void ops.ejecutar(opMoverCorta(n, a)); };
+  const duplicar = (n: number) => { void ops.ejecutar(opDuplicarCorta(n)).then(h => { if (h) p.onSelect(n + 1); }); };
+  const editar = (n: number, campo: string, valor: any) => { void ops.ejecutar(opEditarCorta(n, campo, valor)); };
 
   // Atajos: Ctrl/Cmd+Z deshacer, Ctrl/Cmd+Shift+Z rehacer (fuera de los campos de texto).
   useEffect(() => {
@@ -91,8 +84,7 @@ export default function SceneDirector(p: Props) {
       e.preventDefault(); if (e.shiftKey) rehacer(); else deshacer();
     };
     window.addEventListener("keydown", k); return () => window.removeEventListener("keydown", k);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [p.out]);
+  }, [deshacer, rehacer]);
   useEffect(() => { if (menu === null) return; const cerrar = () => setMenu(null); const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setMenu(null); };
     window.addEventListener("click", cerrar); window.addEventListener("keydown", esc); return () => { window.removeEventListener("click", cerrar); window.removeEventListener("keydown", esc); }; }, [menu]);
 
@@ -168,16 +160,16 @@ export default function SceneDirector(p: Props) {
       <span className="text-xs text-slate-400">{scenes.length} escenas · {Math.floor(total / 60)}:{pad(total % 60)} de clips</span>
       <span className="ml-auto flex flex-wrap items-center gap-2">
         <span className="sd-save" role="status" aria-live="polite" data-estado={guardado.estado}>{guardado.texto || (editable ? "Los cambios se guardan al salir de cada campo" : p.finished ? "Episodio terminado: solo lectura" : "")}</span>
-        {editable && <><button type="button" className="sd-iconbtn" disabled={!deshacerRef.current.length || guardado.estado === "guardando"} onClick={deshacer} title="Deshacer (Ctrl+Z)" aria-label="Deshacer">↶</button>
-          <button type="button" className="sd-iconbtn" disabled={!rehacerRef.current.length || guardado.estado === "guardando"} onClick={rehacer} title="Rehacer (Ctrl+Shift+Z)" aria-label="Rehacer">↷</button></>}
+        {editable && <><button type="button" className="sd-iconbtn" disabled={!ops.puedeDeshacer} onClick={deshacer} title="Deshacer (Ctrl+Z)" aria-label="Deshacer">↶</button>
+          <button type="button" className="sd-iconbtn" disabled={!ops.puedeRehacer} onClick={rehacer} title="Rehacer (Ctrl+Shift+Z)" aria-label="Rehacer">↷</button></>}
         {vista === "guion" && <button type="button" className="sd-iconbtn" aria-pressed={concentracion} onClick={() => setConcentracion(!concentracion)}>{concentracion ? "Salir de concentración" : "Modo concentración"}</button>}
       </span>
     </div>
 
-    {vista === "director" && <div className="sd-workspace" style={paneles.estilo}>
+    {vista === "director" && <div className="sd-workspace" style={paneles.estilo} ref={paneles.ref}>
       <nav className="sd-panel" aria-label="Navegador de escenas"><div className="sd-panel-head">Escenas<span className="ml-auto normal-case tracking-normal">{aprobadas}/{scenes.length} aprobadas</span></div>
         <div className="sd-nav-list" role="list">{scenes.map(s => tarjeta(s))}</div></nav>
-      <Divisor lado="izq" valor={paneles.anchos.izq} onCambio={v => paneles.cambiar("izq", v)} etiqueta="Ancho del navegador de escenas" />
+      <Divisor lado="izq" valor={paneles.anchos.izq} max={paneles.anchos.maxIzq} onCambio={v => paneles.cambiar("izq", v)} etiqueta="Ancho del navegador de escenas" />
 
       <div className="sd-panel sd-canvas" aria-label={`Escena ${escena.n}`}>
         <div className="sd-frame">
@@ -206,7 +198,7 @@ export default function SceneDirector(p: Props) {
         </div>
       </div>
 
-      <Divisor lado="der" valor={paneles.anchos.der} onCambio={v => paneles.cambiar("der", v)} etiqueta="Ancho del inspector" />
+      <Divisor lado="der" valor={paneles.anchos.der} max={paneles.anchos.maxDer} onCambio={v => paneles.cambiar("der", v)} etiqueta="Ancho del inspector" />
       <aside className="sd-panel sd-inspector" aria-label="Inspector de la escena">
         <div className="sd-tabs" role="tablist" aria-label="Detalles de la escena">{([["guion", "Guion"], ["personajes", "Personajes"], ["ambiente", "Ambiente"], ["camara", "Cámara"], ["prompt", "Prompt"], ["audio", "Audio"], ["produccion", "Producción"]] as const).map(([k, l]) =>
           <button key={k} type="button" role="tab" aria-selected={pestaña === k} onClick={() => setPestaña(k)}>{l}</button>)}</div>

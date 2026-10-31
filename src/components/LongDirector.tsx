@@ -3,17 +3,18 @@
 // Navegador por actos y secuencias · lienzo con el storyboard real de las tomas · inspector (escena, guion,
 // escenario, canon, tomas) · pipeline con datos reales. Respeta los candados y guarda con el `guardar`
 // existente del proyecto (sin cambios de persistencia).
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent as RKE, type ReactNode } from "react";
-import { allScenes, escenarioTexto, isProtected, mapNode, snapshot, type Outline, type OutlineScene } from "@/lib/outline";
+import { useEffect, useMemo, useState, type KeyboardEvent as RKE, type ReactNode } from "react";
+import { allScenes, escenarioTexto, isProtected, type Outline, type OutlineScene } from "@/lib/outline";
 import { duracionClip, ESTADO_LABEL, perfilActivo, type Toma } from "@/lib/tomas";
-import { moverEscenaLarga } from "./studio/outlineOrder";
+import { opCandadoLarga, opDesplazarLarga, opEditarLarga } from "./studio/operaciones";
+import { useOperaciones, type Aplicar } from "./studio/useOperaciones";
 import { Divisor, useAnchos } from "./studio/Divisores";
 
 type Vista = "director" | "secuencia" | "guion";
 type Pestaña = "escena" | "guion" | "escenario" | "canon" | "tomas";
 export type IrALargo = "estructura" | "tomas" | "escenarios" | "canon" | "plan" | "montaje";
 type Props = {
-  outline: Outline; guardar: (o: Outline) => Promise<void>; busy: boolean; avisos: Map<string, string[]>;
+  outline: Outline; /** Cola de guardado del proyecto (la misma que usa el editor de guion). */ aplicar: Aplicar<Outline>; busy: boolean; avisos: Map<string, string[]>;
   onRegenerar: (id: string, kind: "act" | "sequence" | "scene") => void;
   onEscribirGuion: (sc: OutlineScene) => void;
   renderGuion: (sc: OutlineScene) => ReactNode;
@@ -28,38 +29,16 @@ export default function LongDirector(p: Props) {
   const [activa, setActiva] = useState<string>(escenas[0]?.id || "");
   const [vista, setVista] = useState<Vista>("director");
   const [pestaña, setPestaña] = useState<Pestaña>("escena");
-  const [guardado, setGuardado] = useState<{ estado: "" | "guardando" | "guardado" | "error"; texto: string }>({ estado: "", texto: "" });
-  const deshacerRef = useRef<{ o: Outline; etiqueta: string }[]>([]);
-  const rehacerRef = useRef<{ o: Outline; etiqueta: string }[]>([]);
-  const [, forzar] = useState(0);
+  const ops = useOperaciones<Outline>(p.aplicar);
+  const guardado = ops.estado;
   const paneles = useAnchos("director-largo", { izq: 290, der: 360 });
   const sc = escenas.find(s => s.id === activa) || escenas[0];
   const p0 = perfilActivo(o);
 
-  async function guardarCon(siguiente: Outline, etiqueta: string, desde?: "deshacer" | "rehacer") {
-    setGuardado({ estado: "guardando", texto: `Guardando: ${etiqueta}…` });
-    try {
-      await p.guardar(siguiente);
-      if (desde === "deshacer") rehacerRef.current.push({ o, etiqueta });
-      else { deshacerRef.current = [...deshacerRef.current, { o, etiqueta }].slice(-20); if (!desde) rehacerRef.current = []; }
-      forzar(x => x + 1);
-      setGuardado({ estado: "guardado", texto: `Guardado · ${etiqueta}` });
-    } catch (e: any) { setGuardado({ estado: "error", texto: `No se guardó (${e?.message || e}).` }); }
-  }
-  const deshacer = () => { const d = deshacerRef.current.pop(); if (d) void guardarCon(d.o, `deshacer ${d.etiqueta}`, "deshacer"); };
-  const rehacer = () => { const r = rehacerRef.current.pop(); if (r) void guardarCon(r.o, `rehacer ${r.etiqueta}`, "rehacer"); };
-  const editar = (id: string, campo: string, valor: any) => {
-    const n = escenas.find(x => x.id === id) as any; if (!n || String(n[campo] ?? "") === String(valor ?? "")) return;
-    void guardarCon(mapNode(o, id, x => ({ ...x, [campo]: valor })), `${campo} de «${n.heading}»`);
-  };
-  const mover = (id: string, delta: number) => {
-    const seq = o.acts.flatMap(a => a.sequences).find(q => q.scenes.some(s => s.id === id)); if (!seq) return;
-    const i = seq.scenes.findIndex(s => s.id === id);
-    const r = moverEscenaLarga(o, id, i + delta);
-    if (!r.movida) { if (r.motivo) setGuardado({ estado: "error", texto: r.motivo }); return; }
-    void guardarCon(snapshot(r.outline, `Antes de mover «${seq.scenes[i].heading}»`), "mover escena");
-  };
-  const candado = (id: string, locked: boolean) => void guardarCon(mapNode(o, id, x => ({ ...x, locked: !locked })), locked ? "desbloquear" : "bloquear");
+  const deshacer = ops.deshacer, rehacer = ops.rehacer;
+  const editar = (id: string, campo: string, valor: any) => { void ops.ejecutar(opEditarLarga(id, campo, valor)); };
+  const mover = (id: string, delta: number) => { void ops.ejecutar(opDesplazarLarga(id, delta)); };
+  const candado = (id: string, locked: boolean) => { void ops.ejecutar(opCandadoLarga(id, !locked)); };
 
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
@@ -67,8 +46,7 @@ export default function LongDirector(p: Props) {
       e.preventDefault(); if (e.shiftKey) rehacer(); else deshacer();
     };
     window.addEventListener("keydown", k); return () => window.removeEventListener("keydown", k);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [o]);
+  }, [deshacer, rehacer]);
 
   const tecla = (e: RKE, s: OutlineScene) => {
     const i = escenas.findIndex(x => x.id === s.id);
@@ -118,12 +96,12 @@ export default function LongDirector(p: Props) {
       <span className="text-xs text-slate-400">{o.acts.length} actos · {escenas.length} escenas · {mmss(escenas.reduce((a, s) => a + (s.minutes || 0), 0))} de {o.targetMinutes} min</span>
       <span className="ml-auto flex flex-wrap items-center gap-2">
         <span className="sd-save" role="status" aria-live="polite" data-estado={guardado.estado}>{guardado.texto || "Los cambios se guardan al salir de cada campo"}</span>
-        <button type="button" className="sd-iconbtn" disabled={!deshacerRef.current.length || guardado.estado === "guardando"} onClick={deshacer} aria-label="Deshacer" title="Deshacer (Ctrl+Z)">↶</button>
-        <button type="button" className="sd-iconbtn" disabled={!rehacerRef.current.length || guardado.estado === "guardando"} onClick={rehacer} aria-label="Rehacer" title="Rehacer (Ctrl+Shift+Z)">↷</button>
+        <button type="button" className="sd-iconbtn" disabled={!ops.puedeDeshacer} onClick={deshacer} aria-label="Deshacer" title="Deshacer (Ctrl+Z)">↶</button>
+        <button type="button" className="sd-iconbtn" disabled={!ops.puedeRehacer} onClick={rehacer} aria-label="Rehacer" title="Rehacer (Ctrl+Shift+Z)">↷</button>
       </span>
     </div>
 
-    {vista === "director" && <div className="sd-workspace" style={paneles.estilo}>
+    {vista === "director" && <div className="sd-workspace" style={paneles.estilo} ref={paneles.ref}>
       <nav className="sd-panel" aria-label="Actos, secuencias y escenas"><div className="sd-panel-head">Actos y escenas</div>
         <div className="sd-nav-list ld-tree">{o.acts.map((a, ai) => <div key={a.id} className="ld-act" role="group" aria-label={`Acto ${ai + 1}: ${a.title}`}>
           <p className="ld-act-head"><span>Acto {ai + 1}</span><b>{a.title}</b>{a.locked && <span aria-label="bloqueado">🔒</span>}</p>
@@ -136,7 +114,7 @@ export default function LongDirector(p: Props) {
                   <span className="sd-meta"><span>{mmss(s.minutes)}</span><span className="sd-status" data-s={st.s}>{st.t}</span>{s.locked && <span aria-hidden="true">🔒</span>}</span></span>
               </button></div>; })}</div></div>)}
         </div>)}</div></nav>
-      <Divisor lado="izq" valor={paneles.anchos.izq} onCambio={v => paneles.cambiar("izq", v)} etiqueta="Ancho del navegador de actos y escenas" />
+      <Divisor lado="izq" valor={paneles.anchos.izq} max={paneles.anchos.maxIzq} onCambio={v => paneles.cambiar("izq", v)} etiqueta="Ancho del navegador de actos y escenas" />
 
       <div className="sd-panel sd-canvas" aria-label={sc.heading}>
         <div className="sd-frame">
@@ -163,7 +141,7 @@ export default function LongDirector(p: Props) {
           <button type="button" className="sd-iconbtn" disabled={prot} onClick={() => mover(sc.id, 1)} aria-label="Mover la escena después en su secuencia">↓</button>
         </div>
       </div>
-      <Divisor lado="der" valor={paneles.anchos.der} onCambio={v => paneles.cambiar("der", v)} etiqueta="Ancho del inspector" />
+      <Divisor lado="der" valor={paneles.anchos.der} max={paneles.anchos.maxDer} onCambio={v => paneles.cambiar("der", v)} etiqueta="Ancho del inspector" />
 
       <aside className="sd-panel sd-inspector" aria-label="Inspector de la escena">
         <div className="sd-tabs" role="tablist" aria-label="Detalles de la escena">{([["escena", "Escena"], ["guion", "Guion"], ["escenario", "Escenario"], ["canon", "Canon"], ["tomas", "Tomas"]] as const).map(([k, l]) =>

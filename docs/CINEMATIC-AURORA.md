@@ -165,3 +165,31 @@ Aurora ya no introduce violeta ni naranja. Equivalencias:
 
 - Arrastrar escenas largas entre secuencias distintas (hoy solo se mueven dentro de su secuencia).
 - Animaciones al reordenar (las tarjetas se recolocan sin interpolar la posición).
+
+## Correcciones de integridad (tras la revisión de código)
+
+1. **Deshacer ya no borra cambios posteriores.** Antes guardaba copias completas del proyecto o del episodio y las restauraba enteras, así que borraba lo guardado después por otro camino (p. ej. el editor de guion). Ahora cada operación (`studio/operaciones.ts`) se aplica sobre el estado actual y devuelve su inversa, que solo deshace lo que ella cambió:
+   - un campo editado;
+   - un movimiento (la escena vuelve a su posición original);
+   - una copia (deshacer «duplicar» quita solo la copia).
+2. **Ediciones seguidas que no se pisan.** `studio/cola.ts` aplica cada operación sobre el último estado guardado y espera a que termine la anterior. Mientras hay operaciones en curso, las props viejas de un render no reemplazan ese estado.
+   - **Proyecto largo:** la cola es de `StoryArchitect` y la comparten el director, el editor de guion, la pestaña Estructura y los demás paneles. Regenerar con IA, escribir guiones pendientes, la revisión de canon y volver a una versión se aplican también sobre el estado actual: lo editado mientras la IA respondía no se pierde.
+   - **Episodio corto:** el director usa su propia cola. Entre operaciones espera a que React pinte, para que la renumeración de revisiones use los datos al día.
+3. **Divisores.** Se calculan con el ancho real del espacio (`ResizeObserver`) y el del otro panel. El lienzo conserva siempre al menos 380 px (`MIN_CENTRO`), también cuando la ventana se estrecha después.
+4. **«Reducidos» lo apaga todo:** animaciones, transiciones, elevaciones al pasar el cursor, spotlight y entradas de paneles, desplegables, avisos e inspector. Lo mismo ocurre con `prefers-reduced-motion`. Solo queda el indicador de una generación en curso, que informa de un estado real.
+
+**Pruebas:**
+- `tests/directores.test.ts` (14 comprobaciones):
+  - cola con guardado lento de 80 ms y dos ediciones seguidas;
+  - editar un detalle → guardar el guion por otro camino → deshacer;
+  - deshacer un movimiento que tuvo cambios posteriores;
+  - candados;
+  - duplicar y deshacer;
+  - mínimo del lienzo con 1100, 1300 y 1600 px.
+- e2e 9 (4 flujos):
+  - dos ediciones disparadas en el mismo instante en el director largo y en el corto;
+  - editar → guion → deshacer.
+- **Estos 4 flujos fallan con el commit anterior `b46e801`** y pasan con el nuevo: reproducen los dos problemas.
+- En el navegador:
+  - con los dos divisores al máximo, el lienzo queda en 407 px a 1680 de ventana y en 383 px tras estrechar;
+  - en «Reducidos», el inspector, las tarjetas, las vistas, los desplegables y los botones quedan sin animación ni transición.

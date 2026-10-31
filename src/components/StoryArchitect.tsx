@@ -7,6 +7,9 @@ import { useData } from "@/lib/DataContext";
 import { CanonPanel, EscenariosPanel } from "@/components/CanonPanels";
 import { PlanPanel, TomasPanel } from "@/components/ProduccionPanels";
 import LongDirector, { type IrALargo } from "@/components/LongDirector";
+import { crearCola } from "@/components/studio/cola";
+import { despuesDePintar } from "@/components/studio/useOperaciones";
+import type { Mapa } from "@/lib/ordenEscenas";
 import { EvaluacionPanel, MontajeLargo, PublicacionPanel } from "@/components/DistribucionPanels";
 import { STYLES, type StyleKey } from "@/lib/knowledge";
 import { bibliaTexto } from "@/lib/personajes";
@@ -46,6 +49,14 @@ export default function StoryArchitect({ series, style, cast, characters = [], d
     if (saved) for (const a of canonAvisos(saved)) if (a.sceneId) m.set(a.sceneId, [...(m.get(a.sceneId) || []), a.texto]);
     return m;
   }, [saved]);
+  // Una sola cola de guardado para el proyecto: director, editor de guion y paneles guardan uno detrás de
+  // otro, y las operaciones del director y del guion se calculan sobre el último proyecto guardado.
+  const guardarRef = useRef(guardar); guardarRef.current = guardar;
+  const colaRef = useRef<ReturnType<typeof crearCola<Outline, Mapa>> | null>(null);
+  if (!colaRef.current) colaRef.current = crearCola<Outline, Mapa>(async v => { await guardarRef.current(v); await despuesDePintar(); return v; });
+  if (saved) colaRef.current.sincronizar(saved);
+  const aplicar = colaRef.current.aplicar;
+  const guardarEnCola = (o: Outline) => aplicar(() => ({ valor: o })).then(() => {});
   if (!series) return null;
   // Proyecto base para poder cargar fuentes y escenarios antes de crear la estructura.
   const base: Outline = saved || { seriesId: series.id, structure: 3, targetMinutes: 20, acts: [] };
@@ -83,18 +94,19 @@ export default function StoryArchitect({ series, style, cast, characters = [], d
     if (wish === null) return;
     const node = findNode(saved, id)?.node;
     const d = await ia({ action: "regenerar", kind, node, outline: saved, wish });
-    await guardar(replaceNode(snapshot(saved, `Antes de regenerar «${node?.title || node?.heading}»`), id, d.node));
+    // Sobre el proyecto actual (pudo cambiar mientras la IA respondía); si mientras tanto se bloqueó, no se aplica.
+    await aplicar(base => (isProtected(base, id) ? null : { valor: replaceNode(snapshot(base, `Antes de regenerar «${node?.title || node?.heading}»`), id, d.node) }));
   });
   const revisarIA = () => run("Revisando las escenas contra las fuentes…", async () => {
     if (!saved?.acts.length) throw new Error("Primero crea la estructura.");
     if (!(saved.canon?.fuentes || []).some(f => f.texto)) throw new Error("Registra al menos una fuente con su texto (en un pasaje bíblico, pulsa «Traer el texto»).");
     const d = await ia({ action: "revisar", outline: saved });
     const canon = saved.canon || { nivel: "fundamentada" as const, fuentes: [], afirmaciones: [] };
-    await guardar({ ...saved, canon: { ...canon, revision: d } });
+    await aplicar(base => ({ valor: { ...base, canon: { ...(base.canon || canon), revision: d } } }));
     setMsg(d.avisos?.length ? `La revisión encontró ${d.avisos.length} posible(s) contradicción(es): aparecen en cada escena.` : "Revisión hecha: ninguna escena contradice las fuentes registradas.");
   });
-  const toggleLock = (id: string) => saved && guardar(mapNode(saved, id, n => ({ ...n, locked: !n.locked })));
-  const editar = (id: string, campo: string, valor: any) => saved && guardar(mapNode(saved, id, n => ({ ...n, [campo]: valor })));
+  const toggleLock = (id: string) => saved && aplicar(base => ({ valor: mapNode(base, id, n => ({ ...n, locked: !n.locked })) }));
+  const editar = (id: string, campo: string, valor: any) => saved && aplicar(base => ({ valor: mapNode(base, id, n => ({ ...n, [campo]: valor })) }));
 
   async function escribirGuion(sc: OutlineScene, wish = "") {
     if (!saved) return;
@@ -113,8 +125,8 @@ export default function StoryArchitect({ series, style, cast, characters = [], d
       setBusy(`Escribiendo guiones… (${++n}) ${sc.heading}`);
       const els = await escribirGuion(sc);
       if (!els) continue;
-      o = saveScript(o, sc.id, els, "guion escrito por la IA");
-      await guardar(o);
+      // Sobre el proyecto actual: no pisa lo editado mientras la IA escribía (ni guiones escritos a mano entretanto).
+      o = (await aplicar(base => { const act = allScenes(base).find(x => x.id === sc.id); return !act || act.script?.length || isProtected(base, sc.id) ? null : { valor: saveScript(base, sc.id, els, "guion escrito por la IA") }; })) || o;
     }
     setMsg(parar.current ? `Pausado: ${n} guion(es) escritos. Pulsa otra vez para seguir donde quedó.` : `Listo: ${n} guion(es) escritos.`);
   });
@@ -148,21 +160,21 @@ export default function StoryArchitect({ series, style, cast, characters = [], d
         {([...(saved?.acts.length ? [["director", "Director"]] as const : []), ["estructura", "Estructura"], ["canon", `Fuentes y canon${saved?.canon?.fuentes?.length ? ` (${saved.canon.fuentes.length})` : ""}`], ["escenarios", `Escenarios${saved?.escenarios?.length ? ` (${saved.escenarios.length})` : ""}`], ["tomas", "Tomas y storyboard"], ["plan", "Plan y costos"], ["montaje", "Montaje"], ["publicar", "Publicación"], ["evaluar", "Evaluación"]] as const).map(([id, label]) =>
           <button key={id} type="button" role="tab" aria-selected={pestaña === id} onClick={() => { pestañaElegida.current = true; setPestaña(id); }} className={`rounded-lg px-3 py-1.5 ${pestaña === id ? "bg-teal-700 font-semibold text-white" : "text-slate-300"}`}>{label}</button>)}
       </div>
-      {pestaña === "canon" && <CanonPanel outline={base} guardar={guardar} revisarIA={revisarIA} busy={!!busy} />}
-      {pestaña === "escenarios" && <EscenariosPanel outline={base} guardar={guardar} busy={!!busy} />}
-      {pestaña === "director" && saved?.acts.length ? <LongDirector outline={saved} guardar={guardar} busy={!!busy} avisos={avisosPorEscena}
+      {pestaña === "canon" && <CanonPanel outline={base} guardar={guardarEnCola} revisarIA={revisarIA} busy={!!busy} />}
+      {pestaña === "escenarios" && <EscenariosPanel outline={base} guardar={guardarEnCola} busy={!!busy} />}
+      {pestaña === "director" && saved?.acts.length ? <LongDirector outline={saved} aplicar={aplicar} busy={!!busy} avisos={avisosPorEscena}
         onRegenerar={(id, kind) => regenerar(id, kind)}
-        onEscribirGuion={sc => run("Escribiendo el guion…", async () => { const els = await escribirGuion(sc); if (els) await guardar(saveScript(saved, sc.id, els, "guion escrito por la IA")); })}
+        onEscribirGuion={sc => run("Escribiendo el guion…", async () => { const els = await escribirGuion(sc); if (els) await aplicar(base => ({ valor: saveScript(base, sc.id, els, "guion escrito por la IA") })); })}
         renderGuion={sc => <GuionEditor key={sc.id} escena={sc} protegido={isProtected(saved, sc.id)} busy={!!busy}
-          onGuardar={(els, label) => guardar(saveScript(saved, sc.id, els, label))}
-          onAprobar={v => guardar(mapNode(saved, sc.id, n => ({ ...n, scriptApproved: v, locked: v ? true : n.locked })))}
-          onIA={wish => run("Escribiendo el guion…", async () => { const els = await escribirGuion(sc, wish); if (els) await guardar(saveScript(saved, sc.id, els, wish ? `IA: ${wish}` : "guion escrito por la IA")); })} />}
+          onGuardar={(els, label) => { void aplicar(base => ({ valor: saveScript(base, sc.id, els, label) })); }}
+          onAprobar={v => { void aplicar(base => ({ valor: mapNode(base, sc.id, n => ({ ...n, scriptApproved: v, locked: v ? true : n.locked })) })); }}
+          onIA={wish => run("Escribiendo el guion…", async () => { const els = await escribirGuion(sc, wish); if (els) await aplicar(base => ({ valor: saveScript(base, sc.id, els, wish ? `IA: ${wish}` : "guion escrito por la IA") })); })} />}
         onIrA={(dest: IrALargo, sceneId?: string) => { if (dest === "tomas") setEscenaTomas(sceneId); setPestaña(dest); }} /> : null}
-      {pestaña === "tomas" && <TomasPanel key={escenaTomas || "tomas"} escenaInicial={escenaTomas} outline={base} guardar={guardar} ia={ia} run={run} busy={!!busy} style={style as StyleKey} characters={characters} />}
-      {pestaña === "plan" && <PlanPanel outline={base} guardar={guardar} busy={!!busy} />}
-      {pestaña === "montaje" && <MontajeLargo outline={base} guardar={guardar} busy={!!busy} series={series} style={style} characters={characters} />}
-      {pestaña === "publicar" && <PublicacionPanel outline={base} guardar={guardar} busy={!!busy} series={series} ia={ia} run={run} />}
-      {pestaña === "evaluar" && <EvaluacionPanel outline={base} guardar={guardar} busy={!!busy} series={series} ia={ia} run={run} />}
+      {pestaña === "tomas" && <TomasPanel key={escenaTomas || "tomas"} escenaInicial={escenaTomas} outline={base} guardar={guardarEnCola} ia={ia} run={run} busy={!!busy} style={style as StyleKey} characters={characters} />}
+      {pestaña === "plan" && <PlanPanel outline={base} guardar={guardarEnCola} busy={!!busy} />}
+      {pestaña === "montaje" && <MontajeLargo outline={base} guardar={guardarEnCola} busy={!!busy} series={series} style={style} characters={characters} />}
+      {pestaña === "publicar" && <PublicacionPanel outline={base} guardar={guardarEnCola} busy={!!busy} series={series} ia={ia} run={run} />}
+      {pestaña === "evaluar" && <EvaluacionPanel outline={base} guardar={guardarEnCola} busy={!!busy} series={series} ia={ia} run={run} />}
 
       {pestaña === "estructura" && !saved?.acts.length && <div className="grid gap-3 sm:grid-cols-3">
         <label className="text-xs text-slate-300">Estructura<select value={estructura} onChange={e => setEstructura(Number(e.target.value) as 3 | 5)} className="mt-1"><option value={3}>3 actos</option><option value={5}>5 actos</option></select></label>
@@ -186,7 +198,7 @@ export default function StoryArchitect({ series, style, cast, characters = [], d
         </div>
         {verHistorial && <ul className="space-y-1 rounded-xl border border-white/10 p-3 text-xs">{(saved.history || []).map(h => <li key={h.at} className="flex flex-wrap items-center gap-2">
           <span className="text-slate-400">{new Date(h.at).toLocaleString("es-DO")}</span><span className="text-slate-200">{h.label}</span>
-          <button type="button" onClick={() => { if (confirm("¿Volver a esta versión? La actual se guarda en el historial.")) void guardar(restore(saved, h.at)); }} className="text-sky-300 underline">Volver a esta versión</button></li>)}
+          <button type="button" onClick={() => { if (confirm("¿Volver a esta versión? La actual se guarda en el historial.")) void aplicar(base => ({ valor: restore(base, h.at) })); }} className="text-sky-300 underline">Volver a esta versión</button></li>)}
           {!saved.history?.length && <li className="text-slate-500">Aún no hay versiones anteriores: se guardan solas antes de cada regeneración.</li>}</ul>}
 
         {saved.acts.map((act, ai) => <div key={act.id} className="rounded-xl border border-white/10">
@@ -222,9 +234,9 @@ export default function StoryArchitect({ series, style, cast, characters = [], d
                   <span><b className="text-slate-300">Consecuencia:</b> <Editable valor={sc.consequence} disabled={prot} onSave={v => editar(sc.id, "consequence", v)} /></span>
                 </div>
                 {abierta === sc.id && <GuionEditor escena={sc} protegido={prot} busy={!!busy}
-                  onGuardar={(els, label) => guardar(saveScript(saved, sc.id, els, label))}
-                  onAprobar={v => guardar(mapNode(saved, sc.id, n => ({ ...n, scriptApproved: v, locked: v ? true : n.locked })))}
-                  onIA={wish => run("Escribiendo el guion…", async () => { const els = await escribirGuion(sc, wish); if (els) await guardar(saveScript(saved, sc.id, els, wish ? `IA: ${wish}` : "guion escrito por la IA")); })} />}
+                  onGuardar={(els, label) => { void aplicar(base => ({ valor: saveScript(base, sc.id, els, label) })); }}
+                  onAprobar={v => { void aplicar(base => ({ valor: mapNode(base, sc.id, n => ({ ...n, scriptApproved: v, locked: v ? true : n.locked })) })); }}
+                  onIA={wish => run("Escribiendo el guion…", async () => { const els = await escribirGuion(sc, wish); if (els) await aplicar(base => ({ valor: saveScript(base, sc.id, els, wish ? `IA: ${wish}` : "guion escrito por la IA") })); })} />}
               </li>;
             })}</ol>
           </div>)}</div>

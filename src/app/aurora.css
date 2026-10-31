@@ -266,3 +266,18 @@ html[data-efectos="reducidos"] .creation-energy::before, html[data-efectos="redu
   .sd-board > * { animation-delay: calc(var(--i, 0) * 18ms); }
 }
 html[data-efectos="reducidos"] [role="tablist"] ~ *, html[data-efectos="reducidos"] .episode-content > *, html[data-efectos="reducidos"] .sd > * { animation: none; }
+
+/* ============================================================================
+   «Reducidos» (y prefers-reduced-motion): sin animaciones, transiciones ni elevaciones decorativas en
+   ningún lugar. Solo se conserva el indicador de generación en curso, que comunica un estado real.
+   ========================================================================== */
+html[data-efectos="reducidos"] *:not(.generation-indicator),
+html[data-efectos="reducidos"] *::before, html[data-efectos="reducidos"] *::after { animation: none !important; transition: none !important; }
+html[data-efectos="reducidos"] :is(.sd-card, .mission-stat, .choice-card, .series-tab, .film-project, .aurora-field, button, a, [role="button"]):is(:hover, :focus, :focus-visible, :focus-within, :active) { transform: none !important; }
+html[data-efectos="reducidos"] [data-spotlight]::after { display: none !important; }
+html[data-efectos="reducidos"] .aurora-border::after { opacity: .35 !important; }
+@media (prefers-reduced-motion: reduce) {
+  *:not(.generation-indicator), *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+  :is(.sd-card, .mission-stat, .choice-card, .series-tab, .film-project, .aurora-field, button, a, [role="button"]):is(:hover, :focus, :focus-visible, :focus-within, :active) { transform: none !important; }
+  [data-spotlight]::after { display: none !important; }
+}

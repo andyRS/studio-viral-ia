@@ -172,6 +172,58 @@ const ir = async (page, espacio, modulo) => {
       await page.locator("#ld-e3").click(); await page.getByRole("button", { name: /Abrir tomas/ }).click(); await page.waitForTimeout(600);
       ok(await page.getByRole("tab", { name: "Tomas y storyboard", selected: true }).count() === 1, "«Abrir tomas» lleva a Tomas y storyboard con esa escena");
       await ctx.close(); }
+
+    // 9. Integridad de los directores: dos ediciones en el mismo instante no se pisan, y deshacer un detalle
+    //    no borra el guion guardado después por el editor de guion.
+    { const { ctx, page } = await abrir(b, () => {
+        const S = (k, v) => localStorage.setItem("estudio-viral:" + k, JSON.stringify(v));
+        const esc = (id, h) => ({ id, heading: h, summary: "original", objective: "obj original", obstacle: "b", consequence: "c", tension: 5, minutes: 2 });
+        S("series", [{ id: "s1", title: "Serie Integridad", description: "x", format: "largo", style: "epica" }]);
+        S("storyOutlines", [{ id: "o1", seriesId: "s1", structure: 3, targetMinutes: 20, acts: [{ id: "a1", title: "Acto I", goal: "", sequences: [{ id: "q1", title: "Sec", goal: "", scenes: [esc("e1", "EXT. RÍO"), esc("e2", "INT. CASA")] }] }] }]);
+        S("episodes", [{ id: "ep1", seriesId: "s9", title: "Ep corto", status: "Guion", createdAt: new Date().toISOString(), versions: [],
+          output: { title: "Ep corto", mode: "llm", cast: [{ name: "A" }, { name: "B" }], seriesBible: { style: "frutinovela" }, scenes: [1, 2].map(n => ({ n, title: "T" + n, speaker: "A", line: "L" + n, emotion: "calma", imagePromptFlow: "x" })), guionJson: { clips: [[["A", "L1"]], [["A", "L2"]]] } } }]);
+        S("series", [{ id: "s1", title: "Serie Integridad", description: "x", format: "largo", style: "epica" }, { id: "s9", title: "Serie Corta", description: "y" }]);
+      });
+      await ir(page, "Creative Studio", "Generador");
+      const serie = page.getByRole("button", { name: /Serie Integridad/ }).first(); if (await serie.count()) { await serie.click(); await page.waitForTimeout(700); }
+      const mesa = page.getByRole("button", { name: /Mesa de dirección/ }).first(); if (await mesa.count() && (await mesa.getAttribute("aria-expanded")) === "false") { await mesa.click(); await page.waitForTimeout(600); }
+      await page.locator("#ld-e1").click(); await page.waitForTimeout(200);
+      // Dos ediciones disparadas en el mismo instante (antes de que React repinte).
+      await page.evaluate(() => {
+        const a = document.getElementById("ld-summary-e1"), c = document.getElementById("ld-objective-e1");
+        a.value = "resumen rápido"; c.value = "objetivo rápido";
+        a.dispatchEvent(new FocusEvent("focusout", { bubbles: true })); c.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+      });
+      await page.waitForTimeout(1200);
+      let o = await page.evaluate(() => JSON.parse(localStorage.getItem("estudio-viral:storyOutlines"))[0]);
+      let sc = o.acts[0].sequences[0].scenes[0];
+      ok(sc.summary === "resumen rápido" && sc.objective === "objetivo rápido", "dos ediciones simultáneas del director largo se guardan las dos");
+      // Editar un detalle → escribir el guion en el editor de guion → deshacer el detalle.
+      await page.locator("#ld-consequence-e1").fill("consecuencia editada"); await page.locator("#ld-summary-e1").click(); await page.waitForTimeout(700);
+      await page.getByRole("tab", { name: "Guion" }).click(); await page.waitForTimeout(200);
+      await page.getByRole("button", { name: "+ Línea" }).click();
+      await page.getByLabel("Contenido de la línea 1").fill("Daniel se arrodilla.");
+      await page.getByRole("button", { name: "Guardar cambios" }).click(); await page.waitForTimeout(800);
+      await page.getByRole("button", { name: "Deshacer" }).click(); await page.waitForTimeout(900);
+      o = await page.evaluate(() => JSON.parse(localStorage.getItem("estudio-viral:storyOutlines"))[0]);
+      sc = o.acts[0].sequences[0].scenes[0];
+      ok(sc.consequence === "c", "deshacer revierte el detalle editado en el director");
+      ok(sc.script?.[0]?.text === "Daniel se arrodilla." && sc.summary === "resumen rápido", "deshacer no borra el guion guardado después ni otros cambios");
+      // Director corto: dos ediciones simultáneas.
+      await page.reload(); await page.waitForTimeout(1200);
+      await ir(page, "Creative Studio", "Generador");
+      await page.getByRole("button", { name: /Abrir episodio/ }).first().click(); await page.waitForTimeout(1200);
+      if (await page.locator("#sd-line-1").count()) {
+        await page.evaluate(() => {
+          const a = document.getElementById("sd-line-1"), c = document.getElementById("sd-emotion-1");
+          a.value = "frase rápida"; c.value = "emoción rápida";
+          a.dispatchEvent(new FocusEvent("focusout", { bubbles: true })); c.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+        });
+        await page.waitForTimeout(1500);
+        const ep = await page.evaluate(() => JSON.parse(localStorage.getItem("estudio-viral:episodes")).find(e => e.id === "ep1"));
+        ok(ep.output.scenes[0].line === "frase rápida" && ep.output.scenes[0].emotion === "emoción rápida", "dos ediciones simultáneas del director corto se guardan las dos");
+      } else ok(false, "no se abrió el episodio corto");
+      await ctx.close(); }
   } finally {
     await b.close();
     if (srv) try { process.kill(-srv.pid); } catch {}

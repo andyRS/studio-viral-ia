@@ -504,7 +504,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
         onUnlock={async () => { if (result.episodeId && window.confirm("¿Desbloquear este episodio para volver a editarlo?")) await update("episodes", result.episodeId, { status: "Guion" }); }}
         backLabel={data.series.find((s: any) => s.id === result.seriesId)?.title}
         onBack={() => { if (result.seriesId && data.series.some((s: any) => s.id === result.seriesId)) openSeries(result.seriesId); else setView("inicio"); }} onNext={() => { setSeriesId(result.seriesId); setView("continuar"); }}
-        onCambiar={async (siguiente: any, c: { mapa?: Record<number, number>; etiqueta: string }) => {
+        onCambiar={async (siguiente: any, c: { mapa?: Record<number, number>; anterior?: any }) => {
           // Cambio del director de escenas (editar, mover, duplicar, deshacer): prompts rehechos sin IA, la
           // versión anterior al historial del episodio y, si cambian números de escena, revisiones y archivos.
           if (!result.episodeId) throw new Error("El episodio aún no está guardado");
@@ -512,12 +512,13 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
           const st = (result.episode?.seriesBible?.style || firstBible?.style || (result.episode?.cast?.some((x: any) => x.fruit) ? "frutinovela" : "cine90")) as StyleKey;
           const output = refreshPrompts(siguiente, st);
           const ep = data.episodes.find((e: any) => e.id === result.episodeId) as any;
-          await update("episodes", result.episodeId, { output, versions: [...(Array.isArray(ep?.versions) ? ep.versions : []), result.episode].slice(-10) });
+          await update("episodes", result.episodeId, { output, versions: [...(Array.isArray(ep?.versions) ? ep.versions : []), c.anterior || result.episode].slice(-10) });
           if (c.mapa) {
             for (const r of remapRevisiones(data.clipChecks.filter((x: any) => x.episodeId === result.episodeId), c.mapa)) await update("clipChecks", r.id, { clipIndex: r.a });
             await renumerarArchivos(userId || "local", result.episodeId, c.mapa).catch(() => {});
           }
-          setResult({ ...result, episode: output });
+          setResult(r => (r ? { ...r, episode: output } : r));
+          return output;
         }}
         onMoveScene={async (desde: number, hasta: number) => {
           const r = moverEscenaCorta(result.episode, desde, hasta); if (!r || !result.episodeId) return;
