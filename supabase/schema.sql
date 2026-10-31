@@ -42,3 +42,19 @@ create table if not exists public.account_profiles (
 alter table public.account_profiles enable row level security;
 drop policy if exists "own rows" on public.account_profiles;
 create policy "own rows" on public.account_profiles for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- Índices (ver migrations/20261031_indices.sql)
+create index if not exists episodes_user_created_idx on public.episodes (user_id, created_at, id);
+create index if not exists series_user_created_idx on public.series (user_id, created_at, id);
+create index if not exists characters_user_created_idx on public.characters (user_id, created_at, id);
+create index if not exists accounts_user_created_idx on public.accounts (user_id, created_at, id);
+create index if not exists formulas_user_created_idx on public.formulas (user_id, created_at, id);
+create index if not exists production_cards_user_created_idx on public.production_cards (user_id, created_at, id);
+create index if not exists clip_checks_user_created_idx on public.clip_checks (user_id, created_at, id);
+create index if not exists costs_user_created_idx on public.costs (user_id, created_at, id);
+create index if not exists calendar_entries_user_created_idx on public.calendar_entries (user_id, created_at, id);
+create index if not exists metrics_user_created_idx on public.metrics (user_id, created_at, id);
+create index if not exists viral_analyses_user_created_idx on public.viral_analyses (user_id, created_at, id);
+create index if not exists products_user_created_idx on public.products (user_id, created_at, id);
+create index if not exists product_tests_user_created_idx on public.product_tests (user_id, created_at, id);
+create index if not exists account_profiles_user_created_idx on public.account_profiles (user_id, created_at, id);

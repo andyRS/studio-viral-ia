@@ -77,6 +77,28 @@ function saveLocalCollection(collection: CollectionName, items: any[]) {
   save(LOCAL_KEY_OF[collection], items);
 }
 
+
+// Lectura por partes: una tabla grande (los episodios guardan guion, prompts y elenco) leída de una vez
+// pasaba el límite de tiempo de Supabase («canceling statement due to statement timeout»). Se lee en
+// páginas pequeñas y, si una página se pasa de tiempo, se reintenta hasta 3 veces con espera.
+const PAGE_OF: Record<string, number> = { episodes: 10, viral_analyses: 20 };
+async function fetchAll(supabase: any, table: string, userId: string): Promise<{ rows: any[]; error: any }> {
+  const size = PAGE_OF[table] || 200;
+  const rows: any[] = [];
+  for (let from = 0; ; from += size) {
+    let res: any = null;
+    for (let intento = 0; intento < 3; intento++) {
+      res = await supabase.from(table).select("*").eq("user_id", userId)
+        .order("created_at", { ascending: true }).order("id", { ascending: true }).range(from, from + size - 1);
+      if (!res.error || !/timeout|57014/i.test(`${res.error.code} ${res.error.message}`)) break;
+      await new Promise(r => setTimeout(r, 700 * (intento + 1)));
+    }
+    if (res.error) return { rows, error: res.error };
+    rows.push(...(res.data || []));
+    if (!res.data || res.data.length < size) return { rows, error: null };
+  }
+}
+
 export function DataProvider({ children }: { children: React.ReactNode }) {
   const [mode, setMode] = useState<DataMode>("cargando");
   const [userEmail, setUserEmail] = useState<string | null>(null);
@@ -106,8 +128,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       try {
         const results = await Promise.all(
           COLLECTIONS.map(async (c) => {
-            const { data: rows, error: qError } = await supabase
-              .from(TABLE_OF[c]).select("*").eq("user_id", user.id).order("created_at", { ascending: true });
+            const { rows, error: qError } = await fetchAll(supabase, TABLE_OF[c], user.id);
             if (qError && OPTIONAL_TABLES.includes(c)) {   // migración sin ejecutar: no rompe la carga
               missingRef.current.add(c);
               return [c, load(LOCAL_KEY_OF[c], [])] as const;
@@ -132,7 +153,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         setUserId(user.id); setUserEmail(user.email ?? null); setMode("supabase");
         setData(state as DataState); setError(null);
       } catch (e: any) {
-        setError("Error leyendo Supabase: " + (e?.message || String(e)));
+        const msg = e?.message || String(e);
+        setError(/timeout|57014/i.test(msg)
+          ? "Supabase tardó demasiado en responder (incluso leyendo por partes). Recarga la página en un minuto; si se repite, ejecuta la migración de índices supabase/migrations/20261031_indices.sql en el SQL Editor."
+          : "Error leyendo Supabase: " + msg);
         // No dejar la app vacía: se mantiene el estado anterior/local visible.
       }
     })();
