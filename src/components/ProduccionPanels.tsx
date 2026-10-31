@@ -1,6 +1,7 @@
 "use client";
 // Fase 4 del proyecto largo: tomas y storyboard por escena (con prompts por motor) y plan de producción
 // con las tarifas que pone el usuario. Todo se guarda dentro del proyecto.
+import ReferencePreview from "./ReferencePreview";
 import { useMemo, useState } from "react";
 import { reducir } from "@/components/CanonPanels";
 import { allScenes, isProtected, mapNode, type Outline, type OutlineScene } from "@/lib/outline";
@@ -10,7 +11,7 @@ import {
 } from "@/lib/tomas";
 import type { StyleKey } from "@/lib/knowledge";
 
-const COLOR_ESTADO: Record<Estado, string> = { pendiente: "bg-slate-500", imagen: "bg-sky-500", video: "bg-violet-500", revision: "bg-amber-500", aprobado: "bg-emerald-500", exportado: "bg-teal-300" };
+const COLOR_ESTADO: Record<Estado, string> = { pendiente: "bg-slate-500", imagen: "bg-sky-500", video: "bg-teal-700", revision: "bg-amber-500", aprobado: "bg-emerald-500", exportado: "bg-teal-300" };
 const CAMPOS_TOMA: [keyof Toma, string][] = [["accion", "Acción visible"], ["plano", "Plano"], ["lente", "Lente"], ["movimiento", "Movimiento de cámara"], ["composicion", "Composición"], ["luz", "Iluminación"],
   ["vfx", "Efectos visuales"], ["expresion", "Expresión y cuerpo"], ["sonido", "Ambiente sonoro"], ["musica", "Música sugerida"], ["frameInicial", "Fotograma inicial"], ["frameFinal", "Fotograma final"], ["transicion", "Transición"]];
 const copiar = (t: string) => { void navigator.clipboard?.writeText(t); };
@@ -22,6 +23,7 @@ export function TomasPanel({ outline, guardar, ia, run, busy, style, characters 
   const [sel, setSel] = useState<string>(escenas.find(s => !s.tomas?.length)?.id || escenas[0]?.id || "");
   const [abierta, setAbierta] = useState<string | null>(null);
   const [verPrompts, setVerPrompts] = useState<string | null>(null);
+  const [vista, setVista] = useState<"grid" | "sequence">("grid");
   const sc = escenas.find(s => s.id === sel);
   const perfil = perfilActivo(outline);
   const { formato } = produccionDe(outline);
@@ -59,7 +61,7 @@ export function TomasPanel({ outline, guardar, ia, run, busy, style, characters 
       <span className="text-xs text-slate-400">Motor: <b className="text-slate-200">{perfil.nombre}</b> (clips de {perfil.duraciones.join("/")} s, {formato})</span>
     </div>
     {sc && <div className="flex flex-wrap gap-2">
-      <button type="button" disabled={busy || prot} onClick={() => conIA(sc)} className="rounded-lg bg-violet-500 px-3 py-2 text-xs font-bold text-white disabled:opacity-50">Dividir en tomas con IA</button>
+      <button type="button" disabled={busy || prot} onClick={() => conIA(sc)} className="rounded-lg bg-teal-700 px-3 py-2 text-xs font-bold text-white disabled:opacity-50">Dividir en tomas con IA</button>
       <button type="button" disabled={busy || prot} onClick={() => sinIA(sc)} className="rounded-lg border border-white/15 px-3 py-2 text-xs text-slate-200 disabled:opacity-50">Dividir sin IA (por el guion)</button>
       <button type="button" disabled={busy || prot} onClick={() => setTomas([...tomas, { ...dividirEscena({ ...sc, script: [{ type: "accion", text: "Nueva toma" }] }, perfil)[0] }])} className="rounded-lg border border-white/15 px-3 py-2 text-xs text-slate-200 disabled:opacity-50">+ Toma</button>
       {!!tomas.length && <button type="button" onClick={() => copiar(todosLosPrompts())} className="rounded-lg border border-white/15 px-3 py-2 text-xs text-slate-200">Copiar todos los prompts de la escena</button>}
@@ -68,6 +70,7 @@ export function TomasPanel({ outline, guardar, ia, run, busy, style, characters 
     </div>}
 
     {!!tomas.length && <>
+      <div className="storyboard-toolbar"><div><p className="studio-eyebrow cinematic-gold">STORYBOARD / DIRECCIÓN VISUAL</p><p className="mt-1 text-xs text-slate-400">Amplía una referencia o abre una toma para editar sus prompts.</p></div><div className="flex gap-1" role="group" aria-label="Vista del storyboard"><button type="button" aria-pressed={vista === "grid"} className="studio-secondary-action" onClick={() => setVista("grid")}>Cuadrícula</button><button type="button" aria-pressed={vista === "sequence"} className="studio-secondary-action" onClick={() => setVista("sequence")}>Secuencia</button></div></div>
       {/* Línea de tiempo: cada bloque es una toma, ancho según la duración del clip */}
       <div>
         <div className="flex h-7 overflow-hidden rounded-lg border border-white/10" aria-label="Línea de tiempo de la escena">
@@ -77,17 +80,17 @@ export function TomasPanel({ outline, guardar, ia, run, busy, style, characters 
         <p className="mt-1 text-[11px] text-slate-400">{tomas.length} tomas · {total} s de clips · la escena estaba prevista en {Math.round(sc!.minutes * 60)} s</p>
       </div>
 
-      <ol className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{tomas.map((t, i) => {
+      <ol className={vista === "grid" ? "grid gap-3 sm:grid-cols-2 lg:grid-cols-3" : "storyboard-sequence"}>{tomas.map((t, i) => {
         const pr = promptsDeToma(t, perfil, ctx);
         return <li key={t.id} className={`rounded-xl border bg-white/[.02] p-2 text-xs ${t.locked ? "border-emerald-400/30" : pr.avisos.length ? "border-rose-400/40" : "border-white/10"}`}>
           <div className="relative grid aspect-video place-items-center overflow-hidden rounded-lg bg-black/40">
-            {t.imagen ? <img src={t.imagen} alt={`Storyboard de la toma ${i + 1}`} className="h-full w-full object-cover" /> : <span className="px-2 text-center text-slate-500">{t.plano || "Sin imagen"}</span>}
+            {t.imagen ? <ReferencePreview src={t.imagen} title={`Toma ${i + 1} · ${t.plano || "Storyboard"}`} landscape /> : <span className="px-2 text-center text-slate-500">{t.plano || "Sin imagen"}</span>}
             <label className="absolute bottom-1 right-1 cursor-pointer rounded bg-black/70 px-1.5 py-0.5 text-[10px] text-slate-200">{t.imagen ? "Cambiar" : "Subir imagen"}
               <input type="file" accept="image/*" className="sr-only" onChange={async ev => { const f = ev.target.files?.[0]; if (f) await setToma(t.id, { imagen: await reducir(f), estado: t.estado === "pendiente" ? "imagen" : t.estado }); ev.target.value = ""; }} /></label>
             <span className="absolute left-1 top-1 rounded bg-black/70 px-1.5 text-[10px] font-bold text-white">{i + 1} · {pr.clip} s</span>
           </div>
           <p className="mt-1 line-clamp-3 text-slate-200">{t.accion}</p>
-          {t.dialogo && <p className="mt-0.5 text-violet-200"><b>{t.dialogo.speaker}:</b> «{t.dialogo.text}»</p>}
+          {t.dialogo && <p className="mt-0.5 text-teal-200"><b>{t.dialogo.speaker}:</b> «{t.dialogo.text}»</p>}
           <p className="mt-0.5 text-slate-500">{[t.plano, t.lente, t.movimiento].filter(Boolean).join(" · ")}</p>
           {pr.avisos.map(a => <p key={a} className="mt-0.5 text-rose-200">⚠ {a}</p>)}
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
@@ -97,7 +100,7 @@ export function TomasPanel({ outline, guardar, ia, run, busy, style, characters 
             <button type="button" onClick={() => setToma(t.id, { locked: !t.locked })} title={t.locked ? "Desbloquear" : "Bloquear: no se reemplaza al volver a dividir"} className={t.locked ? "text-emerald-300" : "text-slate-400"}>{t.locked ? "🔒" : "🔓"}</button>
             {t.duracion > maxSeg(perfil) && !t.locked && <button type="button" onClick={() => { const [a, b] = partirToma(t); void setTomas(tomas.flatMap(x => x.id === t.id ? [a, b] : [x])); }} className="text-rose-200 underline">Partir en dos</button>}
             <span className="ml-auto flex gap-2">
-              <button type="button" onClick={() => setVerPrompts(verPrompts === t.id ? null : t.id)} className="font-semibold text-violet-200">Prompts</button>
+              <button type="button" onClick={() => setVerPrompts(verPrompts === t.id ? null : t.id)} className="font-semibold text-teal-200">Prompts</button>
               <button type="button" onClick={() => setAbierta(abierta === t.id ? null : t.id)} className="text-sky-300">Editar</button>
             </span>
           </div>

@@ -80,7 +80,7 @@ export function CanonPanel({ outline, guardar, revisarIA, busy }: { outline: Out
         <label className="text-xs text-slate-300 sm:col-span-2">Texto de la fuente<textarea value={f.texto || ""} onChange={e => setF({ ...f, texto: e.target.value })} rows={3} className="mt-1" placeholder={f.tipo === "biblia" ? "Pulsa «Traer el texto» (Reina-Valera 1909) o pégalo" : "Pega el fragmento que respalda la historia"} /></label>
         <button type="button" disabled={busy || (f.tipo === "biblia" ? !(validacion.length && validacion.every(v => v.ok)) : !f.titulo.trim())}
           onClick={() => { void set({ fuentes: [...canon.fuentes, { ...f, id: newId("f"), titulo: f.titulo || f.ref || "" }] }); setF({ id: "", tipo: f.tipo, titulo: "", ref: "" }); }}
-          className="rounded-lg bg-violet-500 px-3 py-2 text-xs font-bold text-white disabled:opacity-40 sm:col-span-2">Añadir fuente</button>
+          className="rounded-lg bg-teal-700 px-3 py-2 text-xs font-bold text-white disabled:opacity-40 sm:col-span-2">Añadir fuente</button>
       </div>
     </div>
 
@@ -96,7 +96,7 @@ export function CanonPanel({ outline, guardar, revisarIA, busy }: { outline: Out
         <div className="flex flex-wrap gap-2 text-xs">{(Object.keys(CATEGORIAS) as Categoria[]).map(k => <button key={k} type="button" aria-pressed={a.categoria === k} onClick={() => setA({ ...a, categoria: k })} className={`rounded-full border px-2 py-1 ${a.categoria === k ? COLOR_CAT[k] + " bg-white/5" : "border-white/10 text-slate-400"}`}>{CATEGORIAS[k]}</button>)}</div>
         {canon.fuentes.length > 0 && <div className="flex flex-wrap gap-2 text-xs">{canon.fuentes.map(x => <label key={x.id} className="flex items-center gap-1 text-slate-300"><input type="checkbox" className="w-auto" checked={a.fuentes.includes(x.id)} onChange={e => setA({ ...a, fuentes: e.target.checked ? [...a.fuentes, x.id] : a.fuentes.filter(id => id !== x.id) })} />{x.ref || x.titulo}</label>)}</div>}
         <input value={a.incertidumbre || ""} onChange={e => setA({ ...a, incertidumbre: e.target.value })} placeholder="Incertidumbre o controversia (opcional)" />
-        <button type="button" disabled={busy || !a.texto.trim()} onClick={() => { void set({ afirmaciones: [...canon.afirmaciones, { ...a, id: newId("af") }] }); setA({ id: "", texto: "", categoria: a.categoria, fuentes: [] }); }} className="rounded-lg bg-violet-500 px-3 py-2 text-xs font-bold text-white disabled:opacity-40">Añadir afirmación</button>
+        <button type="button" disabled={busy || !a.texto.trim()} onClick={() => { void set({ afirmaciones: [...canon.afirmaciones, { ...a, id: newId("af") }] }); setA({ id: "", texto: "", categoria: a.categoria, fuentes: [] }); }} className="rounded-lg bg-teal-700 px-3 py-2 text-xs font-bold text-white disabled:opacity-40">Añadir afirmación</button>
       </div>
     </div>
 
@@ -130,7 +130,7 @@ export function EscenariosPanel({ outline, guardar, busy }: { outline: Outline; 
   const [nombre, setNombre] = useState("");
   return <div className="space-y-3 text-sm">
     <div className="flex flex-wrap gap-2">
-      <button type="button" disabled={busy || !allScenes(outline).length} onClick={() => guardar(detectarEscenarios(outline))} className="rounded-lg bg-violet-500 px-3 py-2 text-xs font-bold text-white disabled:opacity-40">Detectar los escenarios de las escenas</button>
+      <button type="button" disabled={busy || !allScenes(outline).length} onClick={() => guardar(detectarEscenarios(outline))} className="rounded-lg bg-teal-700 px-3 py-2 text-xs font-bold text-white disabled:opacity-40">Detectar los escenarios de las escenas</button>
       <span className="flex gap-1"><input value={nombre} onChange={e => setNombre(e.target.value)} placeholder="Nuevo escenario" className="w-48 text-xs" />
         <button type="button" disabled={!nombre.trim()} onClick={() => { void guardar({ ...outline, escenarios: [...lista, nuevoEscenario(nombre.trim())] }); setNombre(""); }} className="rounded border border-white/15 px-2 text-xs disabled:opacity-40">Añadir</button></span>
     </div>

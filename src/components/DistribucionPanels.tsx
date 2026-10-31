@@ -100,7 +100,7 @@ export function PublicacionPanel({ outline, guardar, busy, series, ia, run }: Co
     setMsg(`${n} publicaciones añadidas al calendario de Publish & Grow.`);
   };
   return <div className="space-y-3 text-xs">
-    <button type="button" disabled={busy || !outline.acts.length} onClick={generar} className="rounded-lg bg-violet-500 px-3 py-2 font-bold text-white disabled:opacity-50">{d ? "Volver a proponer (IA)" : "Proponer títulos, descripción, miniaturas y clips (IA)"}</button>
+    <button type="button" disabled={busy || !outline.acts.length} onClick={generar} className="rounded-lg bg-teal-700 px-3 py-2 font-bold text-white disabled:opacity-50">{d ? "Volver a proponer (IA)" : "Proponer títulos, descripción, miniaturas y clips (IA)"}</button>
     {perfilCuenta ? <p className="text-slate-400">Respeta las reglas de @{perfilCuenta.handle} (sin «comenta», «dale like» ni «comparte» si la cuenta lo prohíbe).</p> : <p className="text-amber-200">La serie no tiene cuenta con perfil: las propuestas serán genéricas. Ánclala a un canal con perfil en Publish & Grow → Cuentas.</p>}
     {d && <>
       <Bloque titulo="Títulos para YouTube y Facebook">{d.titulos.map((t, i) => <div key={i} className="flex items-center gap-2"><span className="flex-1 text-slate-200">{t} <span className="text-slate-500">({t.length})</span></span><CopyButton text={t} label="Copiar" /></div>)}</Bloque>
@@ -153,7 +153,7 @@ export function EvaluacionPanel({ outline, guardar, busy, series, ia, run }: Con
   const sinGuion = allScenes(outline).filter(s => !s.script?.length).length;
   return <div className="space-y-3 text-xs">
     <div className="flex flex-wrap items-center gap-2">
-      <button type="button" disabled={busy || !outline.acts.length} onClick={evaluar} className="rounded-lg bg-violet-500 px-3 py-2 font-bold text-white disabled:opacity-50">{e ? "Volver a evaluar (IA)" : "Evaluar el guion (IA)"}</button>
+      <button type="button" disabled={busy || !outline.acts.length} onClick={evaluar} className="rounded-lg bg-teal-700 px-3 py-2 font-bold text-white disabled:opacity-50">{e ? "Volver a evaluar (IA)" : "Evaluar el guion (IA)"}</button>
       {sinGuion > 0 && <span className="text-amber-200">{sinGuion} escena(s) sin guion: la evaluación será más pobre.</span>}
     </div>
     <p className="text-slate-400">Puntuaciones de <b>revisión creativa</b> (0-100) para saber qué mejorar. <b>No son una predicción</b> de vistas ni de rendimiento.</p>

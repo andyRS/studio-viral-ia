@@ -114,10 +114,10 @@ export default function DolaStudioModule() {
   const dolaPanel = (
     <div className="flex h-full min-h-[70vh] flex-col overflow-hidden rounded-xl border border-white/10 bg-black">
       <div className="flex items-center gap-2 border-b border-white/10 bg-[#0d1220] px-3 py-2 text-xs">
-        <span className="h-2.5 w-2.5 rounded-full bg-violet-400" />
+        <span className="h-2.5 w-2.5 rounded-full bg-teal-400" />
         <span className="flex-1 truncate text-slate-400">dola.com/chat</span>
         <button onClick={() => setFrameKey(k => k + 1)} className="rounded-md px-2 py-1 text-slate-300 hover:bg-white/10">Recargar</button>
-        <a href={DOLA_URL} target="_blank" rel="noopener" className="rounded-md px-2 py-1 font-semibold text-violet-300 hover:bg-white/10">Abrir en pestaña</a>
+        <a href={DOLA_URL} target="_blank" rel="noopener" className="rounded-md px-2 py-1 font-semibold text-teal-300 hover:bg-white/10">Abrir en pestaña</a>
       </div>
       <iframe key={frameKey} src={DOLA_URL} title="Dola" className="w-full flex-1 bg-white"
         allow="clipboard-read; clipboard-write; microphone; fullscreen; autoplay"

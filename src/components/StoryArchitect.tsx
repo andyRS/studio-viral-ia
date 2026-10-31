@@ -2,6 +2,7 @@
 // Proyecto largo (Facebook / YouTube, 15-25 min): estructura por actos → secuencias → escenas, candados,
 // regeneración parcial que respeta lo bloqueado, análisis de ritmo, versiones y editor de guion con historial.
 import { useMemo, useRef, useState } from "react";
+import GenerationStatus from "./GenerationStatus";
 import { useData } from "@/lib/DataContext";
 import { CanonPanel, EscenariosPanel } from "@/components/CanonPanels";
 import { PlanPanel, TomasPanel } from "@/components/ProduccionPanels";
@@ -114,21 +115,27 @@ export default function StoryArchitect({ series, style, cast, characters = [], d
 
   return <section className="rounded-2xl border border-white/10 bg-[#121826]">
     <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} className="flex w-full items-center gap-3 p-4 text-left">
-      <span className="grid h-9 w-9 place-items-center rounded-lg bg-violet-500/20 text-violet-200">🎬</span>
-      <span className="min-w-0 flex-1"><b className="block">Proyecto largo · actos y escenas</b>
+      <span className="grid h-9 w-9 place-items-center rounded-lg bg-teal-700/20 text-teal-200">🎬</span>
+      <span className="min-w-0 flex-1"><b className="block">Mesa de dirección · actos y escenas</b>
         <span className="text-xs text-slate-400">{saved && r ? `${saved.acts.length} actos · ${r.escenas} escenas · ${mmss(r.total)} de ${saved.targetMinutes} min · ${r.conGuion} con guion · ${r.aprobadas} aprobadas` : "Para Facebook y YouTube (15-25 min): estructura por actos, guion por escena, candados y versiones."}</span></span>
       <span className="text-slate-400">{open ? "▲" : "▼"}</span>
     </button>
     {open && <div className="space-y-4 border-t border-white/10 p-4">
       {isLocalOnly("storyOutlines") && <p className="rounded-lg border border-amber-400/25 bg-amber-400/[.06] p-2 text-xs text-amber-100">Se guarda en este navegador hasta que ejecutes la migración supabase/migrations/20261102_story_outlines.sql.</p>}
-      {busy && <p role="status" className="text-sm text-sky-200">{busy} {busy.startsWith("Escribiendo") && <button type="button" onClick={() => { parar.current = true; }} className="ml-2 rounded border border-white/20 px-2 py-0.5 text-xs">Parar</button>}</p>}
+      {busy && <GenerationStatus label={busy}>{busy.startsWith("Escribiendo") && <button type="button" onClick={() => { parar.current = true; }} className="studio-secondary-action mt-2">Pausar después de esta escena</button>}</GenerationStatus>}
       {msg && <p role="status" className="rounded-lg bg-white/5 p-2 text-sm text-slate-200">{msg}</p>}
 
       {!series.style && <label className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-400/25 bg-amber-400/[.06] p-2 text-xs text-amber-100">Estilo visual del proyecto (la serie aún no lo tiene guardado):
         <select value={style} onChange={e => { void update("series", series.id, { style: e.target.value }); }} className="w-auto py-1 text-xs">{Object.entries(STYLES).map(([k, v]) => <option key={k} value={k}>{(v as any).label}</option>)}</select></label>}
+      {saved && r && <nav className="production-journey" aria-label="Etapas guardadas del proyecto">
+        <button type="button" data-complete={!!saved.acts.length} onClick={() => setPestaña("estructura")}><b>01 · Arquitectura</b><small>{saved.acts.length} actos · {r.escenas} escenas</small></button>
+        <button type="button" data-complete={r.escenas > 0 && r.conGuion === r.escenas} onClick={() => setPestaña("estructura")}><b>02 · Escritura</b><small>{r.conGuion}/{r.escenas} escenas con guion</small></button>
+        <button type="button" onClick={() => setPestaña("tomas")}><b>03 · Storyboard</b><small>{allScenes(saved).reduce((n, sc) => n + (sc.tomas?.length || 0), 0)} tomas guardadas</small></button>
+        <button type="button" onClick={() => setPestaña("montaje")}><b>04 · Montaje</b><small>Abrir mesa de producción</small></button>
+      </nav>}
       <div role="tablist" className="flex flex-wrap gap-1 rounded-xl bg-white/5 p-1 text-xs">
         {([["estructura", "Estructura"], ["canon", `Fuentes y canon${saved?.canon?.fuentes?.length ? ` (${saved.canon.fuentes.length})` : ""}`], ["escenarios", `Escenarios${saved?.escenarios?.length ? ` (${saved.escenarios.length})` : ""}`], ["tomas", "Tomas y storyboard"], ["plan", "Plan y costos"], ["montaje", "Montaje"], ["publicar", "Publicación"], ["evaluar", "Evaluación"]] as const).map(([id, label]) =>
-          <button key={id} type="button" role="tab" aria-selected={pestaña === id} onClick={() => setPestaña(id)} className={`rounded-lg px-3 py-1.5 ${pestaña === id ? "bg-violet-500 font-semibold text-white" : "text-slate-300"}`}>{label}</button>)}
+          <button key={id} type="button" role="tab" aria-selected={pestaña === id} onClick={() => setPestaña(id)} className={`rounded-lg px-3 py-1.5 ${pestaña === id ? "bg-teal-700 font-semibold text-white" : "text-slate-300"}`}>{label}</button>)}
       </div>
       {pestaña === "canon" && <CanonPanel outline={base} guardar={guardar} revisarIA={revisarIA} busy={!!busy} />}
       {pestaña === "escenarios" && <EscenariosPanel outline={base} guardar={guardar} busy={!!busy} />}
@@ -142,20 +149,20 @@ export default function StoryArchitect({ series, style, cast, characters = [], d
         <label className="text-xs text-slate-300">Estructura<select value={estructura} onChange={e => setEstructura(Number(e.target.value) as 3 | 5)} className="mt-1"><option value={3}>3 actos</option><option value={5}>5 actos</option></select></label>
         <label className="text-xs text-slate-300">Duración del episodio<select value={minutos} onChange={e => setMinutos(Number(e.target.value))} className="mt-1">{[10, 15, 20, 25, 30].map(m => <option key={m} value={m}>{m} min</option>)}</select></label>
         <label className="text-xs text-slate-300 sm:col-span-3">Notas para la IA (opcional)<textarea value={notas} onChange={e => setNotas(e.target.value)} rows={2} className="mt-1" placeholder="Ej.: fuente principal Daniel 10; anticipar el conflicto con el príncipe de Grecia…" /></label>
-        <button type="button" disabled={!!busy} onClick={crear} className="rounded-xl bg-violet-500 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50 sm:col-span-3">Crear la estructura con IA</button>
+        <button type="button" disabled={!!busy} onClick={crear} className="rounded-xl bg-teal-700 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50 sm:col-span-3">Crear la estructura con IA</button>
       </div>}
 
       {pestaña === "estructura" && saved && r && <>
         {/* Ritmo: duración por acto frente a lo habitual, curva de tensión y avisos */}
         <div className="rounded-xl border border-white/10 p-3">
           <p className="text-xs font-semibold text-slate-300">Ritmo · {mmss(r.total)} de {saved.targetMinutes} min</p>
-          <div className="mt-2 flex h-3 overflow-hidden rounded-full bg-white/5" aria-label="Duración por acto">{r.acts.map((a, i) => <div key={a.id} title={`${a.title}: ${a.pct} % (habitual ~${a.ideal} %)`} style={{ width: `${a.pct}%` }} className={["bg-sky-500", "bg-violet-500", "bg-amber-500", "bg-rose-500", "bg-emerald-500"][i % 5]} />)}</div>
+          <div className="mt-2 flex h-3 overflow-hidden rounded-full bg-white/5" aria-label="Duración por acto">{r.acts.map((a, i) => <div key={a.id} title={`${a.title}: ${a.pct} % (habitual ~${a.ideal} %)`} style={{ width: `${a.pct}%` }} className={["bg-sky-500", "bg-teal-700", "bg-amber-500", "bg-rose-500", "bg-emerald-500"][i % 5]} />)}</div>
           <div className="mt-1 flex flex-wrap gap-3 text-[11px] text-slate-400">{r.acts.map(a => <span key={a.id}>{a.title}: {a.pct} % <span className={Math.abs(a.desvio) > 10 ? "text-amber-300" : "text-slate-500"}>(~{a.ideal} %)</span></span>)}</div>
-          <div className="mt-2 flex h-10 items-end gap-0.5" aria-label="Curva de tensión">{r.tension.map((t, i) => <div key={i} title={`Escena ${i + 1}: tensión ${t}`} style={{ height: `${t * 10}%` }} className="flex-1 rounded-t bg-gradient-to-t from-violet-500/40 to-rose-400/80" />)}</div>
+          <div className="mt-2 flex h-10 items-end gap-0.5" aria-label="Curva de tensión">{r.tension.map((t, i) => <div key={i} title={`Escena ${i + 1}: tensión ${t}`} style={{ height: `${t * 10}%` }} className="flex-1 rounded-t bg-gradient-to-t from-teal-500/40 to-rose-400/80" />)}</div>
           {r.avisos.length > 0 && <ul className="mt-2 list-disc space-y-0.5 pl-4 text-xs text-amber-200">{r.avisos.map((a, i) => <li key={i}>{a}</li>)}</ul>}
         </div>
         <div className="flex flex-wrap gap-2">
-          <button type="button" disabled={!!busy} onClick={escribirPendientes} className="rounded-lg bg-violet-500 px-3 py-2 text-xs font-bold text-white disabled:opacity-50">Escribir los guiones pendientes ({r.escenas - r.conGuion})</button>
+          <button type="button" disabled={!!busy} onClick={escribirPendientes} className="rounded-lg bg-teal-700 px-3 py-2 text-xs font-bold text-white disabled:opacity-50">Escribir los guiones pendientes ({r.escenas - r.conGuion})</button>
           <button type="button" onClick={() => setVerHistorial(!verHistorial)} className="rounded-lg border border-white/15 px-3 py-2 text-xs text-slate-200">Versiones del proyecto ({saved.history?.length || 0})</button>
         </div>
         {verHistorial && <ul className="space-y-1 rounded-xl border border-white/10 p-3 text-xs">{(saved.history || []).map(h => <li key={h.at} className="flex flex-wrap items-center gap-2">
@@ -181,7 +188,7 @@ export default function StoryArchitect({ series, style, cast, characters = [], d
                   <span className="ml-auto flex gap-2">
                     <button type="button" onClick={() => toggleLock(sc.id)} disabled={!!busy} className={sc.locked ? "text-emerald-300" : "text-slate-400"} title={sc.locked ? "Desbloquear" : "Bloquear: la IA no la cambiará"}>{sc.locked ? "🔒" : "🔓"}</button>
                     <button type="button" onClick={() => regenerar(sc.id, "scene")} disabled={!!busy || prot} className="text-sky-300 disabled:opacity-40">Regenerar</button>
-                    <button type="button" onClick={() => setAbierta(abierta === sc.id ? null : sc.id)} className="font-semibold text-violet-200">{sc.script?.length ? `Guion (${scriptSeconds(sc.script)} s)` : "Escribir guion"}</button>
+                    <button type="button" onClick={() => setAbierta(abierta === sc.id ? null : sc.id)} className="font-semibold text-teal-200">{sc.script?.length ? `Guion (${scriptSeconds(sc.script)} s)` : "Escribir guion"}</button>
                   </span>
                 </div>
                 <Editable valor={sc.summary} disabled={prot} onSave={v => editar(sc.id, "summary", v)} className="mt-1 text-slate-300" />
@@ -210,7 +217,7 @@ export default function StoryArchitect({ series, style, cast, characters = [], d
 
 function Cabecera({ titulo, meta, locked, busy, onLock, onRegen, onTitulo, etiqueta, pequeño }: { titulo: string; meta: string; locked: boolean; busy: boolean; onLock: () => void; onRegen: () => void; onTitulo: (v: string) => void; etiqueta: string; pequeño?: boolean }) {
   return <div className={`flex flex-wrap items-center gap-2 ${pequeño ? "p-2" : "p-3"}`}>
-    <span className="text-[10px] font-semibold uppercase tracking-wider text-violet-300">{etiqueta}</span>
+    <span className="text-[10px] font-semibold uppercase tracking-wider text-teal-300">{etiqueta}</span>
     <Editable valor={titulo} disabled={locked} onSave={onTitulo} className={pequeño ? "text-sm font-semibold" : "text-base font-bold"} />
     {meta && <span className="text-xs text-slate-400">· {meta}</span>}
     <span className="ml-auto flex gap-2 text-xs">
@@ -237,8 +244,8 @@ function GuionEditor({ escena, protegido, busy, onGuardar, onAprobar, onIA }: { 
   const mover = (i: number, d: number) => setEls(l => { const n = [...l]; const j = i + d; if (j < 0 || j >= n.length) return l; [n[i], n[j]] = [n[j], n[i]]; return n; });
   const hist = escena.scriptHistory || [];
   const diff = comparar !== null && hist[comparar] ? diffLines(hist[comparar].elements.map(lineOf), (escena.script || []).map(lineOf)) : null;
-  return <div className="mt-2 space-y-2 rounded-lg border border-violet-400/25 bg-violet-400/[.04] p-2">
-    <p className="font-mono text-[11px] text-violet-200">{escena.heading} · {scriptSeconds(els)} s estimados{bloqueado ? " · bloqueado" : ""}</p>
+  return <div className="mt-2 space-y-2 rounded-lg border border-teal-400/25 bg-teal-400/[.04] p-2">
+    <p className="font-mono text-[11px] text-teal-200">{escena.heading} · {scriptSeconds(els)} s estimados{bloqueado ? " · bloqueado" : ""}</p>
     {els.map((e, i) => <div key={i} className="flex flex-wrap items-start gap-1">
       <select value={e.type} disabled={bloqueado} onChange={ev => set(i, { type: ev.target.value as ScriptElement["type"] })} className="w-auto text-[11px]">{TIPOS.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}</select>
       {(e.type === "dialogo" || e.type === "off") && <input value={e.speaker || ""} disabled={bloqueado} onChange={ev => set(i, { speaker: ev.target.value })} placeholder="Personaje" className="w-32 text-[11px]" />}
@@ -248,7 +255,7 @@ function GuionEditor({ escena, protegido, busy, onGuardar, onAprobar, onIA }: { 
     {!els.length && <p className="text-xs text-slate-400">Sin guion todavía: escríbelo a mano o con la IA.</p>}
     <div className="flex flex-wrap gap-2 text-xs">
       {!bloqueado && <button type="button" onClick={() => setEls(l => [...l, { type: "accion", text: "" }])} className="rounded border border-white/15 px-2 py-1">+ Línea</button>}
-      {!bloqueado && cambiado && <button type="button" onClick={() => onGuardar(els.filter(e => e.text.trim()), "edición manual")} className="rounded bg-violet-500 px-2 py-1 font-bold text-white">Guardar cambios</button>}
+      {!bloqueado && cambiado && <button type="button" onClick={() => onGuardar(els.filter(e => e.text.trim()), "edición manual")} className="rounded bg-teal-700 px-2 py-1 font-bold text-white">Guardar cambios</button>}
       {!bloqueado && <button type="button" disabled={busy} onClick={() => onIA(window.prompt("¿Qué quieres de la IA? (opcional: más tensión, menos explicación…)") || "")} className="rounded border border-sky-400/40 px-2 py-1 text-sky-200 disabled:opacity-50">{escena.script?.length ? "Reescribir con IA" : "Escribir con IA"}</button>}
       {!!escena.script?.length && <button type="button" onClick={() => onAprobar(!escena.scriptApproved)} className={`rounded px-2 py-1 ${escena.scriptApproved ? "border border-white/15 text-slate-300" : "bg-emerald-500 font-bold text-black"}`}>{escena.scriptApproved ? "Quitar aprobación" : "Aprobar y bloquear"}</button>}
     </div>

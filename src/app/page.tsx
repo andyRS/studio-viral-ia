@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import MissionControl from "@/components/MissionControl";
 import { DataProvider, SessionBar, useData } from "@/lib/DataContext";
 import AccountsModule from "@/components/AccountsModule";
 import { growthStage } from "@/lib/profiles";
@@ -69,13 +70,13 @@ const normalize = (value: string) => value.toLocaleLowerCase("es").normalize("NF
 const formatNumber = (value: number) => new Intl.NumberFormat("es-DO").format(value);
 type SearchResult = { key: string; id: string; kind: string; title: string; detail: string; module: string; preferredTab?: "mesa" };
 
-function ModuleView({ id, focus, onOpenEpisode }: { id: string; focus: SearchResult | null; onOpenEpisode: (episodeId: string) => void }) {
+function ModuleView({ id, focus, onOpenEpisode, onNavigate, onCreate, onEpisode }: { id: string; focus: SearchResult | null; onOpenEpisode: (episodeId: string) => void; onNavigate: (id: string) => void; onCreate: (idea?: string) => void; onEpisode: (id: string) => void }) {
   switch (id) {
-    case "inicio": return <HomeModule />;
+    case "inicio": return <><MissionControl onCreate={onCreate} onEpisode={onEpisode} onNavigate={onNavigate} /><div className="mt-6"><AccountGoals /></div></>;
     case "cuentas": return <AccountsModule />;
     case "personajes": return <CharactersModule focusCharacterId={focus?.kind === "Personaje" ? focus.id : undefined} />;
     case "formulas": return <FormulasModule />;
-    case "generador": return <GeneratorModule focusEpisodeId={focus?.kind === "Episodio" ? focus.id : undefined} focusTab={focus?.preferredTab} />;
+    case "generador": return <GeneratorModule onNavigate={onNavigate} startNew={focus?.kind === "Crear"} initialIdea={focus?.kind === "Crear" ? focus.detail : undefined} focusEpisodeId={focus?.kind === "Episodio" ? focus.id : undefined} focusTab={focus?.preferredTab} />;
     case "produccion": return <ProductionModule onOpenEpisode={onOpenEpisode} />;
     case "calendario": return <CalendarModule focusEntryId={focus?.kind === "Publicación programada" ? focus.id : undefined} />;
     case "metricas": return <MetricsModule focusMetricId={focus?.kind === "Publicación medida" ? focus.id : undefined} />;
@@ -120,62 +121,9 @@ function AccountGoals() {
   })}</div>;
 }
 
-function HomeModule() {
-  const { data } = useData();
-  const latest = [...data.episodes].sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))).slice(0, 4);
-  const pending = data.productionCards.filter(c => c.stage !== "Publicado");
-  const today = new Date();
-  const todayKey = [today.getFullYear(), String(today.getMonth() + 1).padStart(2, "0"), String(today.getDate()).padStart(2, "0")].join("-");
-  const scheduled = data.calendarEntries.filter(e => e.date >= todayKey).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 4);
-  const totalViews = data.metrics.reduce((sum, item) => sum + (Number(item.views) || 0), 0);
-  const facts = [
-    { label: "Series", value: formatNumber(data.series.length), caption: "Guardadas" },
-    { label: "Episodios", value: formatNumber(data.episodes.length), caption: "En la biblioteca" },
-    { label: "En producción", value: formatNumber(pending.length), caption: "Tarjetas pendientes" },
-    { label: "Visualizaciones", value: data.metrics.length ? formatNumber(totalViews) : "—", caption: data.metrics.length ? "De publicaciones medidas" : "Sin métricas cargadas" },
-  ];
-  return <section className="space-y-6" aria-labelledby="home-title">
-    <div className="studio-hero">
-      <div className="relative z-10 max-w-2xl">
-        <p className="studio-eyebrow text-[#ffbf65]">CENTRO DEL ESTUDIO</p>
-        <h1 id="home-title" className="mt-3 text-3xl font-extrabold tracking-tight text-white sm:text-4xl">Tu estudio, en contexto.</h1>
-        <p className="mt-3 max-w-xl text-sm leading-6 text-[#b7c3d5]">Revisa lo que estás produciendo, las próximas publicaciones y el rendimiento disponible antes de dar el siguiente paso.</p>
-      </div>
-      <span className="studio-hero-orbit" aria-hidden="true" />
-    </div>
-    <AccountGoals />
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-      {facts.map(f => <div key={f.label} className="studio-panel p-4 sm:p-5">
-        <p className="studio-eyebrow">{f.label}</p>
-        <p className="mt-3 text-3xl font-extrabold tracking-tight text-white">{f.value}</p>
-        <p className="mt-1 text-xs text-[#aab8cc]">{f.caption}</p>
-      </div>)}
-    </div>
-    <div className="grid gap-4 xl:grid-cols-2">
-      <div className="studio-panel p-5">
-        <div className="flex items-start justify-between gap-3">
-          <div><p className="studio-eyebrow">CREATIVE STUDIO</p><h2 className="mt-1 text-lg font-bold text-white">Episodios recientes</h2></div>
-          <span className="text-xs text-[#aab8cc]">{data.episodes.length} en total</span>
-        </div>
-        {latest.length ? <ul className="mt-4 divide-y divide-white/[.08]">{latest.map(ep => <li key={ep.id} className="flex items-center justify-between gap-3 py-3">
-          <div className="min-w-0"><p className="truncate text-sm font-semibold text-white">{ep.title}</p><p className="text-xs text-[#aab8cc]">{ep.status || "Sin estado"}{ep.createdAt ? " · " + ep.createdAt.slice(0, 10) : ""}</p></div>
-          <span className="shrink-0 rounded-full border border-white/10 px-2 py-1 text-[11px] text-[#d4deed]">{ep.duration ? ep.duration + " s" : "Episodio"}</span>
-        </li>)}</ul> : <p className="mt-4 rounded-xl border border-dashed border-white/10 p-4 text-sm text-[#aab8cc]">Todavía no hay episodios guardados.</p>}
-      </div>
-      <div className="studio-panel p-5">
-        <div><p className="studio-eyebrow">PUBLISH & GROW</p><h2 className="mt-1 text-lg font-bold text-white">Próximas publicaciones</h2></div>
-        {scheduled.length ? <ul className="mt-4 divide-y divide-white/[.08]">{scheduled.map(entry => <li key={entry.id} className="flex items-center justify-between gap-3 py-3">
-          <div className="min-w-0"><p className="truncate text-sm font-semibold text-white">{entry.title}</p><p className="text-xs text-[#aab8cc]">{entry.platform || "Plataforma sin asignar"}</p></div>
-          <span className="shrink-0 text-xs text-[#d4deed]">{entry.date}</span>
-        </li>)}</ul> : <p className="mt-4 rounded-xl border border-dashed border-white/10 p-4 text-sm text-[#aab8cc]">No hay publicaciones próximas en el calendario.</p>}
-      </div>
-    </div>
-  </section>;
-}
-
 function nextAction(id: string): { label: string; module: string } | null {
   if (id === "inicio") return { label: "Crear episodio", module: "generador" };
-  if (id === "generador") return { label: "Nueva producción", module: "produccion" };
+  if (id === "generador") return { label: "Nueva historia", module: "generador" };
   if (["dola", "personajes", "formulas", "produccion", "herramientas"].includes(id)) return { label: "Crear episodio", module: "generador" };
   if (id === "metricas") return { label: "Analizar viral", module: "virales" };
   if (id === "virales") return { label: "Ver métricas", module: "metricas" };
@@ -192,6 +140,8 @@ function DashboardInner() {
   const [selectedResult, setSelectedResult] = useState<SearchResult | null>(null);
   const [focusVersion, setFocusVersion] = useState(0);
   const searchRef = useRef<HTMLInputElement>(null);
+  const searchWrapRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { const close = (e: PointerEvent) => { if (!searchWrapRef.current?.contains(e.target as Node)) setSearchOpen(false); }; document.addEventListener("pointerdown", close); return () => document.removeEventListener("pointerdown", close); }, []);
   const sheetTriggerRef = useRef<HTMLButtonElement>(null);
   const sheetPanelRef = useRef<HTMLDivElement>(null);
   const { data, error } = useData();
@@ -260,7 +210,8 @@ function DashboardInner() {
   ], [data.characters, data.episodes, data.calendarEntries, data.metrics, data.series]);
   const results = useMemo(() => {
     const q = normalize(query);
-    return q ? index.filter(item => normalize(item.title + " " + item.detail + " " + item.kind).includes(q)).slice(0, 8) : [];
+    const actions: SearchResult[] = [{ key: "new-story", id: "nueva", kind: "Crear", title: "Crear una historia", detail: "Abrir el espacio de creación", module: "generador" }, ...Object.values(MODULES).map(m => ({ key: "module-" + m.id, id: m.id, kind: "Navegar", title: m.label, detail: m.desc, module: m.id }))];
+    return [...actions, ...index].filter(item => !q || normalize(item.title + " " + item.detail + " " + item.kind).includes(q)).slice(0, 8);
   }, [index, query]);
 
   const go = (id: string) => {
@@ -270,13 +221,16 @@ function DashboardInner() {
     setSearchOpen(false);
     setQuery("");
     setSelectedResult(null);
-    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
+    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
   };
   const chooseResult = (result: SearchResult) => {
+    if (result.key === "new-story" && result.detail === "Abrir el espacio de creación") result = { ...result, detail: "" };
     go(result.module);
     setSelectedResult(result);
     setFocusVersion(version => version + 1);
   };
+  const createStory = (idea = "") => chooseResult({ key: "new-story", id: "nueva", kind: "Crear", title: "Nueva historia", detail: idea, module: "generador" });
+  const openEpisode = (id: string) => { const ep = data.episodes.find(e => e.id === id); if (ep) chooseResult({ key: "episode-" + id, id, kind: "Episodio", title: ep.title, detail: ep.status || "Episodio", module: "generador" }); };
   const openProductionEpisode = (episodeId: string) => {
     const episode = data.episodes.find(item => item.id === episodeId);
     if (episode) chooseResult({ key: `scene-${episode.id}`, id: episode.id, kind: "Episodio", title: episode.title, detail: "Mesa de escenas", module: "generador", preferredTab: "mesa" });
@@ -287,7 +241,8 @@ function DashboardInner() {
   const action = nextAction(active);
   const activeModules = workspace?.modules || [];
 
-  return <div className="studio-shell min-h-screen md:flex">
+  return <div className="studio-shell studio-editor-shell min-h-screen md:flex">
+    <a href="#main-content" className="studio-skip-link">Saltar al contenido</a>
     <AutoMetaSync />
     <aside className="studio-sidebar hidden md:flex md:w-[264px] xl:w-[280px] shrink-0 flex-col sticky top-0 h-screen" aria-label="Navegación principal">
       <div className="px-5 pb-5 pt-6"><Brand onClick={() => go("inicio")} /></div>
@@ -323,27 +278,27 @@ function DashboardInner() {
           <p className="studio-eyebrow">{workspace?.title || "ESPACIO INDEPENDIENTE"}</p>
           <p className="truncate text-sm font-semibold text-white">{current.label}</p>
         </div>
-        <div className="studio-search-wrap">
+        <div ref={searchWrapRef} className="studio-search-wrap" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setSearchOpen(false); }}>
           <form role="search" onSubmit={event => { event.preventDefault(); if (results[0]) chooseResult(results[0]); }} className="studio-search-form">
             <span className="text-[#98a9bf]">{ICONS.buscar}</span>
             <label htmlFor="studio-global-search" className="sr-only">Buscar personajes, episodios y publicaciones</label>
-            <input id="studio-global-search" ref={searchRef} type="search" value={query} onChange={event => { setQuery(event.target.value); setSearchOpen(true); }} onFocus={() => setSearchOpen(true)} placeholder="Buscar personajes, episodios, publicaciones…" autoComplete="off" aria-controls="studio-search-results" aria-expanded={searchOpen && !!query} />
+            <input id="studio-global-search" ref={searchRef} type="search" value={query} onChange={event => { setQuery(event.target.value); setSearchOpen(true); }} onFocus={() => setSearchOpen(true)} placeholder="Buscar personajes, episodios, publicaciones…" autoComplete="off" aria-controls="studio-search-results" aria-expanded={searchOpen} />
             <kbd className="studio-shortcut hidden xl:inline-flex">Ctrl K</kbd>
           </form>
-          {searchOpen && query.trim() && <div id="studio-search-results" className="studio-search-results" aria-label="Resultados de búsqueda">
-            <p className="studio-eyebrow px-3 pb-2">RESULTADOS EN TU ESTUDIO</p>
+          {searchOpen && <div id="studio-search-results" className="studio-search-results" aria-label="Resultados de búsqueda">
+            <p className="studio-eyebrow px-3 pb-2">{query.trim() ? "RESULTADOS EN TU ESTUDIO" : "ACCIONES Y ESPACIOS"}</p>
             {results.length ? <ul className="space-y-1">{results.map(result => <li key={result.key}><button type="button" onClick={() => chooseResult(result)} className="studio-search-result">
               <span className="min-w-0 flex-1 text-left"><span className="block truncate text-sm font-semibold text-white">{result.title}</span><span className="block truncate text-xs text-[#a9b8cc]">{result.detail}</span></span>
               <span className="shrink-0 rounded-full border border-white/10 px-2 py-1 text-[10px] text-[#cbd7e7]">{result.kind}</span>
             </button></li>)}</ul> : <p className="px-3 py-3 text-sm text-[#b6c3d5]">Sin resultados en tus datos guardados.</p>}
           </div>}
         </div>
-        {action && <button onClick={() => go(action.module)} className="studio-primary-action"><span>{action.label}</span>{ICONS.flecha}</button>}
+        {action && <button onClick={() => action.module === "generador" ? createStory() : go(action.module)} className="studio-primary-action"><span>{action.label}</span>{ICONS.flecha}</button>}
       </header>
 
       <main id="main-content" className="px-4 pb-28 pt-6 sm:px-6 md:pb-12 md:pt-8 xl:px-10">
         <div className={"mx-auto w-full " + (active === "dola" ? "max-w-[1600px]" : "max-w-[1380px]")}>
-          <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+          <div className={"mb-6 flex flex-wrap items-start justify-between gap-4 " + (active === "inicio" ? "home-context-heading" : "")}>
             <div className="flex min-w-0 items-center gap-3">
               <div className="studio-heading-icon">{ICONS[workspaceId] || ICONS.dropshipping}</div>
               <div className="min-w-0">
@@ -356,12 +311,12 @@ function DashboardInner() {
           {activeModules.length > 0 && <nav className="studio-mobile-subnav md:hidden" aria-label={"Módulos de " + workspace?.title}>
             {activeModules.map(id => <button key={id} onClick={() => go(id)} aria-current={active === id ? "page" : undefined} className={active === id ? "is-active" : ""}>{MODULES[id].label}</button>)}
           </nav>}
-          {selectedResult && <div role="status" className="mb-5 flex items-start gap-3 rounded-xl border border-[#598BFF]/30 bg-[#598BFF]/10 p-3 text-sm">
+          {selectedResult && selectedResult.kind !== "Crear" && <div role="status" className="mb-5 flex items-start gap-3 rounded-xl border border-[#598BFF]/30 bg-[#598BFF]/10 p-3 text-sm">
             <span className="min-w-0 flex-1"><strong className="block text-white">{selectedResult.title}</strong><span className="text-[#c3d0e2]">{selectedResult.kind} · {selectedResult.detail}</span></span>
             <button onClick={() => setSelectedResult(null)} aria-label="Cerrar resultado de búsqueda" className="rounded-md px-2 text-[#c3d0e2] hover:text-white">✕</button>
           </div>}
           {error && <p className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">{error}</p>}
-          <div key={`${active}-${focusVersion}`} className="module-enter"><ModuleView id={active} focus={selectedResult} onOpenEpisode={openProductionEpisode} /></div>
+          <div key={`${active}-${focusVersion}`} className="module-enter"><ModuleView id={active} focus={selectedResult} onOpenEpisode={openProductionEpisode} onNavigate={go} onCreate={createStory} onEpisode={openEpisode} /></div>
         </div>
       </main>
     </div>

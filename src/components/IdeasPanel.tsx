@@ -47,7 +47,7 @@ export default function IdeasPanel({ style, online, existing, onUse, busy: creat
 
   const chip = (on: boolean) => `rounded-full border px-3 py-1.5 text-xs ${on ? "border-amber-400/60 bg-amber-400/10 text-amber-100" : "border-white/10 bg-white/[.03] text-slate-300"}`;
 
-  return <section className="rounded-2xl border border-violet-400/25 bg-violet-500/[.06] p-4" aria-label="Ideas con IA">
+  return <section className="rounded-2xl border border-teal-400/25 bg-teal-700/[.06] p-4" aria-label="Ideas con IA">
     <div className="flex flex-wrap items-center gap-2">
       <h3 className="font-bold text-white">✨ Ideas con IA</h3>
       <span className="text-xs text-slate-400">Pide, ajusta y vuelve a pedir: cada tanda es nueva.</span>
@@ -70,7 +70,7 @@ export default function IdeasPanel({ style, online, existing, onUse, busy: creat
         : <div key={k} className="space-y-2">
           {t.text && <p className="text-xs text-slate-300">{t.text}</p>}
           <div className="grid gap-2 md:grid-cols-2">{(t.ideas || []).map((i, n) => <article key={n} className={`rounded-xl border p-3 ${used === i.idea ? "border-emerald-400/60 bg-emerald-400/[.06]" : "border-white/10 bg-[#121826]"}`}>
-            <div className="flex flex-wrap items-center gap-2"><b className="text-sm text-white">{i.title}</b>{i.mechanism && <span className="rounded-full bg-violet-400/15 px-2 py-0.5 text-[10px] text-violet-200">{i.mechanism}</span>}{i.biblicalBase && <span className="rounded-full bg-sky-400/15 px-2 py-0.5 text-[10px] text-sky-200">📖 {i.biblicalBase}</span>}</div>
+            <div className="flex flex-wrap items-center gap-2"><b className="text-sm text-white">{i.title}</b>{i.mechanism && <span className="rounded-full bg-teal-400/15 px-2 py-0.5 text-[10px] text-teal-200">{i.mechanism}</span>}{i.biblicalBase && <span className="rounded-full bg-sky-400/15 px-2 py-0.5 text-[10px] text-sky-200">📖 {i.biblicalBase}</span>}</div>
             <p className="mt-1 text-sm text-slate-200">{i.idea}</p>
             {i.hook.length > 0 && <p className="mt-2 text-sm font-bold text-amber-200">«{i.hook.join(" / ")}»</p>}
             <dl className="mt-1 space-y-0.5 text-xs text-slate-400">
@@ -91,7 +91,7 @@ export default function IdeasPanel({ style, online, existing, onUse, busy: creat
       <input value={direction} onChange={e => setDirection(e.target.value)} disabled={busy}
         placeholder={turns.length ? "Ajusta: «más modernas», «con Navidad», «otra con la suegra»…" : "¿Qué buscas? (opcional): «madre negada», «algo con un pastor»…"}
         className="min-w-0 flex-1 py-2 text-sm" aria-label="Qué ideas quieres" />
-      <button type="submit" disabled={busy || (bibleOn && !character.trim())} className="rounded-lg bg-violet-500 px-4 py-2 text-sm font-bold text-white disabled:opacity-50">{busy ? "Pensando…" : turns.length ? "Más ideas" : "Generar ideas"}</button>
+      <button type="submit" disabled={busy || (bibleOn && !character.trim())} className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-bold text-white disabled:opacity-50">{busy ? "Pensando…" : turns.length ? "Más ideas" : "Generar ideas"}</button>
     </form>
     {bibleOn && !character.trim() && <p className="mt-1 text-xs text-amber-200">Escribe el personaje bíblico.</p>}
   </section>;

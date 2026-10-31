@@ -18,5 +18,5 @@ export function DolaButton({ text }: { text: string }) {
     try { await navigator.clipboard.writeText(text); } catch {}
     window.open("https://www.dola.com/chat", "_blank", "noopener");
   }
-  return <button type="button" onClick={go} className="rounded-lg border border-violet-400/40 bg-violet-500/15 px-3 py-1 text-xs font-medium text-violet-200 hover:bg-violet-500/25">Copiar y abrir Dola</button>;
+  return <button type="button" onClick={go} className="rounded-lg border border-teal-400/40 bg-teal-700/15 px-3 py-1 text-xs font-medium text-teal-200 hover:bg-teal-700/25">Copiar y abrir Dola</button>;
 }

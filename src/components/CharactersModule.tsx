@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import ReferencePreview from "./ReferencePreview";
 import { normBible, type CharacterBible } from "@/lib/personajes";
 import { useData } from "@/lib/DataContext";
 import { useDeleteSeries } from "@/lib/useDelete";
@@ -78,7 +79,7 @@ export default function CharactersModule({ focusCharacterId }: { focusCharacterI
           <div className="flex justify-between"><b>{c.name}</b><span style={{ background: c.subtitleColor }} className="h-4 w-4 rounded-full inline-block"/></div>
           <p className="text-xs text-slate-300 mt-2"><b>ES:</b> {c.visualES}<br/><b>EN:</b> {c.visualEN}<br/><b>Ropa:</b> {c.clothing}<br/><b>Habla:</b> {c.speechStyle}<br/><b>Subtítulo:</b> {c.subtitleColor}</p>
           <ul className="text-xs text-amber-200 mt-2">{(c.pronunciations || []).map((p: string, i: number) => <li key={i}>• {p}</li>)}</ul>
-          {c.imageUrl && <img src={c.imageUrl} alt={"Referencia visual de " + c.name} className="mt-3 aspect-[9/16] max-h-64 rounded-lg border border-white/10 object-contain bg-black/30"/>}
+          {c.imageUrl && <ReferencePreview src={c.imageUrl} title={c.name} previous={c.referenceHistory?.at(-1)?.imageUrl} previousLabel={`Ficha aprobada v${c.referenceHistory?.at(-1)?.version || 1}`} />}
           <p className="mt-2 text-xs font-semibold text-amber-200">{c.referenceApprovedAt ? `✓ Ficha maestra aprobada · v${c.referenceVersion || 1}` : c.imageUrl ? `Ficha v${c.referenceVersion || 1} pendiente de aprobación` : "Sin ficha visual aprobada"}</p>
           {c.imageUrl && <div className="mt-2 flex flex-wrap gap-2">
             <button type="button" onClick={() => { void update("characters", c.id, { referenceApprovedAt: new Date().toISOString() }); }} className="rounded-lg bg-emerald-400 px-3 py-1.5 text-xs font-bold text-slate-950">{c.referenceApprovedAt ? "Reafirmar aprobación" : "Aprobar ficha maestra"}</button>
@@ -166,7 +167,7 @@ function BibliaPersonaje({ c, guardar }: { c: any; guardar: (b: CharacterBible) 
   const completos = CAMPOS_BIBLIA.filter(([k]) => String(b[k] || "").trim()).length + (b.vestuario?.length ? 1 : 0);
   return <div className="mt-3 rounded-lg border border-white/10">
     <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} className="flex w-full items-center gap-2 p-2 text-left text-xs">
-      <b className="text-violet-200">Biblia del personaje</b><span className="text-slate-400">{completos}/6 {b.candado ? "· 🔒 identidad bloqueada" : ""}</span><span className="ml-auto text-slate-500">{open ? "▲" : "▼"}</span>
+      <b className="text-teal-200">Biblia del personaje</b><span className="text-slate-400">{completos}/6 {b.candado ? "· 🔒 identidad bloqueada" : ""}</span><span className="ml-auto text-slate-500">{open ? "▲" : "▼"}</span>
     </button>
     {open && <div className="space-y-2 border-t border-white/10 p-2 text-xs">
       {CAMPOS_BIBLIA.map(([k, label, ph]) => <label key={k} className="block text-slate-300">{label}

@@ -14,7 +14,7 @@ const PLATFORMS = ["Instagram", "Facebook", "TikTok", "YouTube Shorts"];
 const REFERENCE_KEY = "peliculasquenoexisten";
 
 const PLATFORM_STYLE: Record<string, { short: string; badge: string; bg: string }> = {
-  Instagram: { short: "IG", badge: "bg-gradient-to-r from-fuchsia-500 to-orange-400 text-white", bg: "from-fuchsia-700 via-purple-800 to-orange-600" },
+  Instagram: { short: "IG", badge: "bg-gradient-to-r from-fuchsia-500 to-orange-400 text-white", bg: "from-fuchsia-700 via-teal-800 to-orange-600" },
   Facebook: { short: "FB", badge: "bg-blue-600 text-white", bg: "from-blue-700 via-blue-900 to-slate-900" },
   TikTok: { short: "TT", badge: "bg-black text-cyan-300 ring-1 ring-cyan-400/50", bg: "from-slate-900 via-cyan-900 to-pink-900" },
   "YouTube Shorts": { short: "YT", badge: "bg-red-600 text-white", bg: "from-red-700 via-red-900 to-slate-900" },

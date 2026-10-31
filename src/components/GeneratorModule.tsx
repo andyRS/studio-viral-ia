@@ -1,5 +1,8 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
+import CreativeDesk from "./CreativeDesk";
+import ReferencePreview from "./ReferencePreview";
+import GenerationStatus from "./GenerationStatus";
 import CopyButton, { DownloadJson, DolaButton } from "./CopyButton";
 import PlatformAdaptations from "./PlatformAdaptations";
 import AiAuthNotice from "./AiAuthNotice";
@@ -90,7 +93,7 @@ const IDEAS: Record<StyleKey, string[]> = {
   ],
 };
 
-export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpisodeId?: string; focusTab?: "mesa" } = {}) {
+export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = false, initialIdea = "", onNavigate }: { focusEpisodeId?: string; focusTab?: "mesa"; startNew?: boolean; initialIdea?: string; onNavigate?: (id: string) => void } = {}) {
   const { data, insert, remove, update, mode } = useData();
   const deleteSeries = useDeleteSeries();
   // Ganchos ocultados del banco (se guardan en este navegador).
@@ -99,7 +102,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
   const saveHidden = (list: string[]) => { setHiddenHooks(list); try { localStorage.setItem("estudio-viral:hiddenHooks", JSON.stringify(list)); } catch {} };
   const hookKey = (h: string) => h.toLowerCase().replace(/\s+/g, " ").trim();
   const focusedEpisodeRef = useRef<string | null>(null);
-  const [view, setView] = useState<View>("inicio");
+  const [view, setView] = useState<View>(startNew ? "nueva" : "inicio");
   const [loading, setLoading] = useState(false);
   const [authError, setAuthError] = useState(false);
   const [notice, setNotice] = useState("");
@@ -108,7 +111,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
   const [openTab, setOpenTab] = useState<EpisodeTab | undefined>(undefined);
 
   // Historia nueva
-  const [idea, setIdea] = useState("");
+  const [idea, setIdea] = useState(initialIdea);
   const [style, setStyleRaw] = useState<StyleKey>("frutinovela");
   // El estilo es obligatorio: hay que elegirlo antes de crear (no vale el valor por defecto).
   const [styleChosen, setStyleChosen] = useState(false);
@@ -294,19 +297,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
   return (
     <section>
       {view === "inicio" && <>
-        <h2 className="text-xl font-bold">¿Qué quieres crear hoy?</h2>
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
-          <button onClick={() => setView("nueva")} className="choice-card group">
-            <span className="choice-icon bg-gradient-to-br from-amber-400 to-orange-600 text-black">✦</span>
-            <span className="text-lg font-bold">Crear historia nueva</span>
-            <span className="text-sm text-slate-400">Parte de tu idea para crear la serie, los personajes fijos y el episodio 1.</span>
-          </button>
-          <button onClick={() => openSeries(seriesList[0]?.id || "")} disabled={!seriesList.length} className="choice-card group">
-            <span className="choice-icon bg-violet-500/20 text-violet-200">▶</span>
-            <span className="text-lg font-bold">Continuar una serie</span>
-            <span className="text-sm text-slate-400">{seriesList.length ? `Abre cualquiera de tus ${seriesList.length} series, entra en sus episodios o crea el siguiente.` : "Aún no tienes series. Crea la primera."}</span>
-          </button>
-        </div>
+        <CreativeDesk onNavigate={onNavigate} onCreate={premise => { if (premise) setIdea(premise); setView("nueva"); }} onEpisode={id => { const ep = data.episodes.find(e => e.id === id); if (ep) openEpisode(ep.seriesId, ep, ep.output?.partNumber || 1); }} />
         {!!bank.length && <>
           <h3 className="mt-8 text-sm font-semibold uppercase tracking-wider text-slate-400">🎣 Banco de ganchos</h3>
           <div className="mt-3 overflow-x-auto rounded-xl bg-[#121826]"><table className="w-full text-sm"><thead><tr className="text-left text-xs text-slate-400"><th className="p-2">Gancho</th><th className="p-2">Episodio</th><th className="p-2">Vistas</th><th className="p-2">Plataformas</th><th className="p-2"></th></tr></thead>
@@ -319,8 +310,9 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
 
       {view === "nueva" && <>
         <Back />
-        <h2 className="text-xl font-bold">Historia nueva</h2>
-        <div className="mt-4 space-y-4">
+        <div className="creation-workspace mt-3"><p className="studio-eyebrow cinematic-gold">PREPRODUCCIÓN / NUEVA HISTORIA</p><h2 className="mt-2 text-3xl font-semibold tracking-tight">Dale forma a tu próxima historia.</h2><p className="mt-2 text-sm text-slate-400">Elige su identidad, escribe la premisa y prepara el primer episodio.</p>
+        <div className="creation-brief-layout">
+        <div className="creation-fields space-y-5">
           <CanalPicker accounts={data.accounts} accountId={accountId} onAccount={setAccountId} formato={formato} onFormato={setFormato} largoPosible={largoPosible} clipIds={clipIds} onClipIds={setClipIds} />
           <fieldset>
             <legend className="field-label">Estilo <span className="normal-case tracking-normal text-amber-300">· obligatorio{styleChosen ? "" : ": elige uno"}</span></legend>
@@ -352,6 +344,12 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
           <HookPicker online={mode === "supabase"} chosen={chosenHook} onChoose={setChosenHook} body={() => ({ idea, style, learnings, bank: bankTop, accountProfile: profileFor(account?.id) })} />
           <button disabled={loading} onClick={() => { void createStory(); }} className="w-full rounded bg-amber-500 px-5 py-3 text-base font-bold sm:w-auto">{loading ? "Creando la serie…" : "Crear serie y episodio 1"}</button>
         </div>
+        <aside className="production-brief" aria-label="Resumen de producción">
+          <div className="brief-cover"><span className="studio-eyebrow cinematic-gold">CUADERNO / NUEVA PRODUCCIÓN</span><span className="brief-cover-symbol" aria-hidden="true">✦</span><h3>{styleChosen ? STYLES[style].label : "Una historia por descubrir."}</h3><p>{idea.trim() || "Tu premisa aparecerá aquí mientras le das forma."}</p></div>
+          <dl><div><dt>Canal</dt><dd>{data.accounts.find(a => a.id === accountId)?.name || "Por elegir"}</dd></div><div><dt>Proyecto</dt><dd>{formato === "largo" ? "Serie de formato largo" : "Serie de clips cortos"}</dd></div><div><dt>Duración por clip</dt><dd>{duration} segundos</dd></div><div><dt>Escenas por clip</dt><dd>{sceneCountFor(duration)}</dd></div></dl>
+          <div className="brief-readiness"><p className="studio-eyebrow">ANTES DEL PRIMER PLANO</p><p data-ready={!!accountId}><span aria-hidden="true">{accountId ? "✓" : "○"}</span> Canal seleccionado</p><p data-ready={styleChosen}><span aria-hidden="true">{styleChosen ? "✓" : "○"}</span> Identidad visual definida</p><p data-ready={!!idea.trim() || kind === "replica" && !!replica.trim()}><span aria-hidden="true">{idea.trim() || kind === "replica" && replica.trim() ? "✓" : "○"}</span> Premisa escrita</p></div>
+          <p className="brief-mode">{mode === "supabase" ? "La creación usará el servicio de IA configurado." : "Modo local: se creará un borrador con plantilla, sin IA."}</p>
+        </aside></div></div>
       </>}
 
       {view === "continuar" && <>
@@ -488,6 +486,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
           setNotice("Revisa la idea y crea una versión nueva con Gemini. El borrador anterior se conserva hasta que decidas eliminarlo.");
         }} />}
 
+      {loading && <GenerationStatus label={mode === "supabase" ? "Creando y guardando tu historia" : "Preparando tu borrador local"} detail={mode !== "supabase" ? "Se prepara una plantilla sin IA y se guarda en este navegador." : undefined} />}
       {authError && <div className="mt-4"><AiAuthNotice /></div>}
       {notice && <p role="status" className="mt-4 rounded-xl border border-amber-400/20 bg-amber-400/10 p-3 text-sm text-amber-100">{notice}</p>}
       {view === "inicio" && !!data.episodes.length && <EpisodeArchive episodes={data.episodes} series={data.series} onOpen={openEpisode} onDelete={(id: string) => remove("episodes", id)} />}
@@ -630,6 +629,12 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
     {promptsOutdated && !finished && <div className="mt-3 flex flex-wrap items-center gap-3 rounded-xl border border-sky-400/30 bg-sky-400/10 p-3 text-xs text-sky-100"><span className="flex-1 min-w-[220px]">Hay reglas nuevas para los prompts (ritmo viral: hablan desde el primer segundo, sin pausas y sin música dentro del clip). Este episodio tiene los prompts de una versión anterior.</span><button type="button" onClick={refresh} disabled={refreshing} className="rounded-lg bg-sky-400 px-3 py-1.5 font-bold text-slate-950 hover:bg-sky-300 disabled:opacity-50">{refreshing ? "Actualizando…" : "Actualizar prompts"}</button></div>}
     {scenes.length > 0 && cast.length >= 2 && !referencesReady && <div className="mt-3 rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 text-xs text-amber-100">Faltan fichas maestras aprobadas: {missingMasters.join(", ")}. Súbelas y apruébalas en «1 · Personajes canónicos» antes de producir.</div>}
     {scenes.length > 0 && cast.length >= 2 && referencesReady && !snapshotValid && <div className="mt-3 rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 text-xs text-amber-100">La ficha maestra cambió desde que se creó este guion, o el episodio es anterior al control de versiones. Regenera el episodio para alinear prompts y personajes.</div>}
+    {scenes.length > 0 && cast.length >= 2 && <nav className="production-journey" aria-label="Estado guardado de la producción">
+      <button type="button" data-complete={!!episodeId} aria-current={tab === "guion" ? "step" : undefined} onClick={() => setTab("guion")}><b>01 · Guion</b><small>{isTemplate || isAIDraft ? "Borrador guardado" : "Guion disponible"}</small></button>
+      <button type="button" data-complete={referencesReady} aria-current={tab === "elenco" ? "step" : undefined} onClick={() => setTab("elenco")}><b>02 · Personajes</b><small>{master.filter(c => c?.imageUrl && c?.referenceApprovedAt).length}/{cast.length} fichas aprobadas</small></button>
+      <button type="button" disabled={!productionReady} aria-current={tab === "imagenes" || tab === "animacion" ? "step" : undefined} onClick={() => setTab("imagenes")}><b>03 · Dirección visual</b><small>{productionReady ? "Prompts disponibles" : "Requiere fichas vigentes"}</small></button>
+      <button type="button" disabled={!productionReady} data-complete={finished} aria-current={tab === "mesa" ? "step" : undefined} onClick={() => setTab("mesa")}><b>04 · Mesa y montaje</b><small>{finished ? "Vídeo descargado" : "Revisión y montaje"}</small></button>
+    </nav>}
     <div className="tabs mt-5">{tabs.map(([k, l]) => <button key={k} onClick={() => setTab(k)} disabled={(k === "imagenes" || k === "animacion" || k === "mesa") && !productionReady} className={`${tab === k ? "tab-active" : ""} disabled:cursor-not-allowed disabled:opacity-40`}>{l}</button>)}</div>
     {lockedTab && <p className="mt-4 rounded-xl border border-emerald-400/25 bg-emerald-400/[.06] p-3 text-xs text-emerald-100">🔒 Episodio terminado: esta sección queda de solo lectura. Pulsa «Desbloquear para editar» arriba si necesitas cambiar algo.</p>}
     <fieldset disabled={lockedTab} className={`mt-4 min-w-0 ${lockedTab ? "opacity-70" : ""}`}>
@@ -676,7 +681,7 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
             {!!(c.pronunciations || []).length && <Field label="Pronunciación" value={c.pronunciations.join("; ")} />}
           </dl>
           <div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3">
-            {c.imageUrl && <img src={c.imageUrl} alt={`Ficha maestra de ${c.name}`} className="mb-2 aspect-[9/16] max-h-56 w-full rounded-lg object-contain" />}
+            {c.imageUrl && <ReferencePreview src={c.imageUrl} title={c.name} previous={c.referenceHistory?.at(-1)?.imageUrl} previousLabel={`Ficha aprobada v${c.referenceHistory?.at(-1)?.version || 1}`} />}
             <p className={`text-xs font-semibold ${c.referenceApprovedAt ? "text-emerald-300" : "text-amber-200"}`}>{c.referenceApprovedAt ? `✓ Ficha aprobada · versión ${c.referenceVersion || 1}` : c.imageUrl ? "Ficha pendiente de aprobación" : "Falta subir la ficha de Flow"}</p>
             {c.id && <div className="mt-2 flex flex-wrap gap-2 text-xs"><label className="cursor-pointer rounded-lg border border-white/15 px-3 py-1.5">{c.imageUrl ? "Nueva versión" : "Subir ficha"}<input type="file" accept="image/*" className="sr-only" onChange={e => uploadMaster(c, e.target.files?.[0])} /></label>{c.imageUrl && <><button type="button" onClick={() => { void update("characters", c.id, { referenceApprovedAt: new Date().toISOString() }); }} className="rounded-lg bg-emerald-400 px-3 py-1.5 font-bold text-slate-950">Aprobar</button><a href={c.imageUrl} download={`${c.name}-ficha-v${c.referenceVersion || 1}.png`} className="rounded-lg border border-white/15 px-3 py-1.5">Descargar copia</a></>}</div>}
           </div>
@@ -920,7 +925,7 @@ function EpisodeSheet({ ficha, bible, score, cast, scenes, seconds }: { ficha: a
     </div>}
     {!!steps.length && <div className="p-5">
       <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Arco de la historia</p>
-      <ol className="mt-3 grid gap-3 md:grid-cols-5">{steps.map(([k, label, color], i) => <li key={k} className={`relative rounded-xl border bg-white/[.03] p-3 ${k === "closing" ? "border-violet-400/50 bg-violet-400/[.07]" : "border-white/10"}`} style={{ borderTopColor: color, borderTopWidth: 3 }}>
+      <ol className="mt-3 grid gap-3 md:grid-cols-5">{steps.map(([k, label, color], i) => <li key={k} className={`relative rounded-xl border bg-white/[.03] p-3 ${k === "closing" ? "border-teal-400/50 bg-teal-400/[.07]" : "border-white/10"}`} style={{ borderTopColor: color, borderTopWidth: 3 }}>
         <p className="flex items-center gap-2 text-xs font-bold" style={{ color }}><span className="grid h-5 w-5 place-items-center rounded-full text-[10px] text-slate-950" style={{ background: color }}>{i + 1}</span>{label}</p>
         <p className="mt-1.5 text-sm leading-snug text-slate-200">{ficha[k]}</p>
       </li>)}</ol>
