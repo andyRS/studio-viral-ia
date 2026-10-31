@@ -165,10 +165,19 @@ def texto_izq(texto, size, color, x, y, extra=""):
     return f"drawtext=fontfile={FONT_F}:textfile={f}:fontsize={size}:fontcolor={color}:x={x}:y={y}{extra}"
 
 
+def _fin_gancho():
+    """Dónde termina el texto del gancho (mismo cálculo que al dibujarlo): el chat va siempre debajo."""
+    gancho = G.get("gancho") or []
+    if not gancho:
+        return 0
+    size = min([ajustar(line, 66, 46)[0] for line in gancho] or [66])
+    return 205 + sum(len(lineas(line, size)) * int(size * 1.2) + 10 for line in gancho)
+
+
 def chat_capas(de, mensajes, dur):
     """Chat de WhatsApp dibujado sobre el clip (arriba, sin tapar los subtítulos): cabecera verde con el
     contacto y burbujas que aparecen una a una, como en los virales. Legible siempre (no depende de la IA)."""
-    PX, PW, y0 = 70, 860, 430
+    PX, PW, y0 = 70, 860, max(430, _fin_gancho() + 30)   # nunca encima del gancho (aunque ocupe 4 líneas)
     _ = 0   # ancho 860: fuera de la columna de botones de TikTok/Instagram (derecha)   # debajo del gancho de texto (primeros 3 s) y encima de los subtítulos
     de = "".join(c for c in str(de) if ord(c) < 0x2190).strip()
     capas = [f"drawbox=x={PX}:y={y0}:w={PW}:h=118:color=0x075E54@0.97:t=fill",
