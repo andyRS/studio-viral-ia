@@ -21,7 +21,8 @@ const TIPOS: { id: ScriptElement["type"]; label: string }[] = [
 const mmss = (min: number) => `${Math.floor(min)}:${String(Math.round((min % 1) * 60)).padStart(2, "0")}`;
 
 export default function StoryArchitect({ series, style, cast, characters = [], defaultOpen }: { series: any; style: string; cast: string[]; characters?: any[]; defaultOpen?: boolean }) {
-  const { data, insert, update, isLocalOnly } = useData();
+  const { data, insert, update, isLocalOnly, isUnavailable, mode, importables, importarLocal, descartarImportable } = useData();
+  const [, refrescar] = useState(0);
   const saved = (data.storyOutlines || []).find((o: any) => o.seriesId === series?.id) as Outline | undefined;
   const [open, setOpen] = useState(!!defaultOpen);
   const [busy, setBusy] = useState("");
@@ -120,7 +121,12 @@ export default function StoryArchitect({ series, style, cast, characters = [], d
       <span className="text-slate-400">{open ? "▲" : "▼"}</span>
     </button>
     {open && <div className="space-y-4 border-t border-white/10 p-4">
-      {isLocalOnly("storyOutlines") && <p className="rounded-lg border border-amber-400/25 bg-amber-400/[.06] p-2 text-xs text-amber-100">Se guarda en este navegador hasta que ejecutes la migración supabase/migrations/20261102_story_outlines.sql.</p>}
+      {isLocalOnly("storyOutlines") && <p className="rounded-lg border border-amber-400/25 bg-amber-400/[.06] p-2 text-xs text-amber-100">{mode === "supabase" ? "Se guarda en este navegador (solo para tu cuenta) hasta que ejecutes la migración supabase/migrations/20261102_story_outlines.sql." : "Modo sin sesión: se guarda solo en este navegador."}</p>}
+      {isUnavailable("storyOutlines") && <p role="alert" className="rounded-lg border border-rose-400/30 p-2 text-xs text-rose-100">Los proyectos largos no se pudieron leer de Supabase (conexión o tiempo). Recarga la página antes de editar: no se guardará nada aquí mientras tanto.</p>}
+      {!!importables().storyOutlines && <p className="flex flex-wrap items-center gap-2 rounded-lg border border-sky-400/30 p-2 text-xs text-sky-100">
+        Hay {importables().storyOutlines} proyecto(s) largo(s) guardado(s) en este navegador sin cuenta (de antes de iniciar sesión). No se mezclan solos con los tuyos.
+        <button type="button" onClick={async () => { const n = await importarLocal("storyOutlines"); refrescar(x => x + 1); alert(`${n} proyecto(s) importado(s) a tu cuenta.`); }} className="rounded border border-sky-300/40 px-2 py-0.5 font-semibold">Importar a mi cuenta</button>
+        <button type="button" onClick={() => { descartarImportable("storyOutlines"); refrescar(x => x + 1); }} className="text-slate-400 underline">No, gracias</button></p>}
       {busy && <p role="status" className="text-sm text-sky-200">{busy} {busy.startsWith("Escribiendo") && <button type="button" onClick={() => { parar.current = true; }} className="ml-2 rounded border border-white/20 px-2 py-0.5 text-xs">Parar</button>}</p>}
       {msg && <p role="status" className="rounded-lg bg-white/5 p-2 text-sm text-slate-200">{msg}</p>}
 

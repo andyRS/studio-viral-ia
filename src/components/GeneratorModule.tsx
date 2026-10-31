@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { apartar, borrarPendiente, completarCreacion, leerPendiente, type CreacionPendiente } from "@/lib/creacion";
 import CopyButton, { DownloadJson, DolaButton } from "./CopyButton";
 import PlatformAdaptations from "./PlatformAdaptations";
 import AiAuthNotice from "./AiAuthNotice";
@@ -91,7 +92,7 @@ const IDEAS: Record<StyleKey, string[]> = {
 };
 
 export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpisodeId?: string; focusTab?: "mesa" } = {}) {
-  const { data, insert, remove, update, mode } = useData();
+  const { data, insert, remove, update, mode, userId } = useData();
   const deleteSeries = useDeleteSeries();
   // Ganchos ocultados del banco (se guardan en este navegador).
   const [hiddenHooks, setHiddenHooks] = useState<string[]>([]);
@@ -202,6 +203,8 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
     return { data: d, note: d?.notice || (d?.mode === "plantilla-local" ? "Borrador creado con la plantilla local." : "Elenco, escenas y guion creados con la IA. Revísalos antes de producir.") };
   }
 
+  const [pendiente, setPendiente] = useState<CreacionPendiente | null>(null);
+  useEffect(() => { if (mode !== "cargando") setPendiente(leerPendiente(userId)); }, [mode, userId]);
   async function saveEpisode(sid: string, part: number, ep: any, bible?: any) {
     const referenceVersions = Object.fromEntries((ep.cast || []).map((c: any) => [String(c.name).toLowerCase(), data.characters.find(x => x.seriesId === sid && x.name.toLowerCase() === String(c.name).toLowerCase())?.referenceVersion || 1]));
     const output = { ...ep, partNumber: part, seriesBible: bible ?? ep.seriesBible, referenceVersions };
@@ -228,19 +231,38 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
       const body = { idea: idea_, style, duration, account, notes: notes_, learnings, chosenHook, replica: kind_ === "replica" ? replica : "", accountProfile: profileFor(account?.id), usadas };
       const res = await call("/api/series", body, () => templateSeries(body)); if (!res) return;
       const d = res.data;
-      const s = await insert("series", { title: d.series?.title || idea_.slice(0, 60), description: d.series?.logline || idea_, accountId: canal.id, format: formato, clipAccountIds: clipIds, style });
-      // Elenco fijo de la cuenta: si la IA reutiliza a un personaje compartido, se copia su ficha aprobada.
-      const shared = sharedCastOf(account?.id);
-      for (const c of d.characters || []) {
-        const m = shared.find((x: any) => x.name.toLowerCase() === String(c.name).toLowerCase());
-        if (m) { const { id: _id, seriesId: _sid, ...master } = m; await insert("characters", { ...c, ...master, seriesId: s.id }); }
-        else await insert("characters", { ...c, seriesId: s.id });
-      }
-      const bible = { style, logline: d.series?.logline, world: d.series?.world, tone: d.series?.tone };
-      const saved = await saveEpisode(s.id, 1, d.episode, bible);
-      setSeriesId(s.id); setResult({ episode: saved.output, episodeId: saved.episodeId, seriesId: s.id, part: 1 }); setView("resultado"); setNotice(res.note); setChosenHook(null);
+      // Lo generado se aparta antes de guardar: si un guardado falla a mitad, se reanuda sin volver a generar.
+      const p: CreacionPendiente = {
+        id: `${Date.now()}`, at: new Date().toISOString(), titulo: d.series?.title || idea_.slice(0, 60),
+        serie: { title: d.series?.title || idea_.slice(0, 60), description: d.series?.logline || idea_, accountId: canal.id, format: formato, clipAccountIds: clipIds, style },
+        personajes: d.characters || [], episodio: { ep: d.episode, bible: { style, logline: d.series?.logline, world: d.series?.world, tone: d.series?.tone } }, hecho: { personajes: [] },
+      };
+      apartar(p, userId);
+      await terminarCreacion(p, res.note);
     } catch (error: any) { setNotice(`No se pudo guardar la historia: ${error?.message || String(error)}`); }
     finally { setLoading(false); }
+  }
+
+  // Guarda (o termina de guardar) una historia ya generada. Lo hecho queda anotado paso a paso.
+  async function terminarCreacion(p: CreacionPendiente, nota = "") {
+    const shared = sharedCastOf(p.serie.accountId);
+    try {
+      const r = await completarCreacion(p, {
+        insertarSerie: serie => insert("series", serie),
+        // Elenco fijo de la cuenta: si la IA reutiliza a un personaje compartido, se copia su ficha aprobada.
+        insertarPersonaje: (c, sid) => {
+          const m = shared.find((x: any) => x.name.toLowerCase() === String(c.name).toLowerCase());
+          if (m) { const { id: _id, seriesId: _sid, ...master } = m; return insert("characters", { ...c, ...master, seriesId: sid }); }
+          return insert("characters", { ...c, seriesId: sid });
+        },
+        guardarEpisodio: (sid, ep, bible) => saveEpisode(sid, 1, ep, bible),
+      }, q => apartar(q, userId));
+      borrarPendiente(userId); setPendiente(null);
+      setSeriesId(r.seriesId); setResult({ episode: r.output, episodeId: r.episodeId, seriesId: r.seriesId, part: 1 }); setView("resultado"); setNotice(nota); setChosenHook(null);
+    } catch (error: any) {
+      setPendiente(leerPendiente(userId));
+      setNotice(`La historia «${p.titulo}» se generó, pero no se terminó de guardar (${error?.message || String(error)}). Está apartada en este navegador: pulsa «Reintentar guardado» (no se vuelve a generar).`);
+    }
   }
 
   async function continueStory() {
@@ -490,6 +512,11 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
 
       {authError && <div className="mt-4"><AiAuthNotice /></div>}
       {notice && <p role="status" className="mt-4 rounded-xl border border-amber-400/20 bg-amber-400/10 p-3 text-sm text-amber-100">{notice}</p>}
+      {pendiente && !loading && <div role="alert" className="mt-4 flex flex-wrap items-center gap-2 rounded-xl border border-sky-400/30 bg-sky-400/[.06] p-3 text-sm text-sky-100">
+        <span className="min-w-0 flex-1">Historia generada sin terminar de guardar: <b>«{pendiente.titulo}»</b>{pendiente.hecho.seriesId ? ` (serie guardada${pendiente.hecho.personajes.length ? `, ${pendiente.hecho.personajes.length} personaje(s)` : ""}; falta ${pendiente.hecho.episodeId ? "nada" : "el episodio"})` : " (aún no se guardó nada)"}.</span>
+        <button type="button" onClick={async () => { setLoading(true); setNotice(""); try { await terminarCreacion(pendiente); } finally { setLoading(false); } }} className="rounded-lg bg-sky-400 px-3 py-1.5 text-xs font-bold text-slate-950">Reintentar guardado</button>
+        <button type="button" onClick={() => { if (confirm("¿Descartar la historia generada? Se pierde lo que no se guardó.")) { borrarPendiente(userId); setPendiente(null); } }} className="text-xs text-slate-400 underline">Descartar</button>
+      </div>}
       {view === "inicio" && !!data.episodes.length && <EpisodeArchive episodes={data.episodes} series={data.series} onOpen={openEpisode} onDelete={(id: string) => remove("episodes", id)} />}
     </section>
   );
