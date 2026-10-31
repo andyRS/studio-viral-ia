@@ -137,12 +137,12 @@ def ajustar(texto, size, minimo):
 TXT_N = [0]
 
 
-def texto_dt(texto, size, color, y, borde, extra=""):
+def texto_dt(texto, size, color, y, borde, extra="", fuente=None):
     """drawtext de una línea centrada; el texto va en archivo (apóstrofos y dos puntos no rompen el filtro)."""
     TXT_N[0] += 1
     f = f"txt{TXT_N[0]}.txt"
     open(f, "w", encoding="utf-8").write(texto)
-    return (f"drawtext=fontfile={FONT_F}:textfile={f}:fontsize={size}:fontcolor={color}:borderw={borde}:"
+    return (f"drawtext=fontfile={fuente or FONT_F}:textfile={f}:fontsize={size}:fontcolor={color}:borderw={borde}:"
             f"bordercolor=black@0.85:shadowcolor=black@0.6:shadowx=0:shadowy=4:x=(w-text_w)/2:y={y}{extra}")
 
 
@@ -157,7 +157,7 @@ def texto_izq(texto, size, color, x, y, extra=""):
 def chat_capas(de, mensajes, dur):
     """Chat de WhatsApp dibujado sobre el clip (arriba, sin tapar los subtítulos): cabecera verde con el
     contacto y burbujas que aparecen una a una, como en los virales. Legible siempre (no depende de la IA)."""
-    PX, PW, y0 = 70, 940, 430   # debajo del gancho de texto (primeros 3 s) y encima de los subtítulos
+    PX, PW, y0 = 70, 860, 430   # ancho 860: fuera de la columna de botones de TikTok/Instagram (derecha)   # debajo del gancho de texto (primeros 3 s) y encima de los subtítulos
     de = "".join(c for c in str(de) if ord(c) < 0x2190).strip()
     capas = [f"drawbox=x={PX}:y={y0}:w={PW}:h=118:color=0x075E54@0.97:t=fill",
              texto_izq(de or "WhatsApp", 46, "white", PX + 40, y0 + 18),
@@ -251,6 +251,17 @@ try:
     VEL = min(1.25, max(1.0, float(G.get("velocidad") or 1.0)))
 except (TypeError, ValueError):
     VEL = 1.0
+# Acabado profesional (como un editor de Premiere/After Effects), cada parte con su interruptor:
+# sonido (volumen igual por clip, voz limpia, cortes J y -14 LUFS), efectos de sonido, color (igualar clips y
+# look del estilo) y cámara (punch-in, temblor en el golpe y movimiento lento en el Narrador).
+PRO = G.get("pro") if isinstance(G.get("pro"), dict) else {}
+PRO_SONIDO, PRO_SFX = PRO.get("sonido", True) is not False, PRO.get("sfx", True) is not False
+PRO_COLOR, PRO_CAMARA = PRO.get("color", True) is not False, PRO.get("camara", True) is not False
+ESTILO = str(G.get("estilo") or "")
+# Kit de marca de la cuenta: color de acento y fuente de títulos (gancho, tarjetas, versículo).
+KIT = G.get("kit") if isinstance(G.get("kit"), dict) else {}
+ACENTO = "0x" + (re.sub(r"[^0-9A-Fa-f]", "", str(KIT.get("acento") or "FFD23F"))[:6] or "FFD23F")
+FUENTE_TIT = LORA_F if str(KIT.get("titulos") or "").lower() == "lora" else FONT_F
 CARD_S = 1.3
 TARJETAS = {}
 for tj in G.get("tarjetas") or []:
@@ -488,7 +499,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Sub,Poppins,84,&H00FFFFFF,&H00FFFFFF,&H00000000,&H90000000,1,0,0,0,100,100,1,0,1,7,3,2,70,70,470,1
+Style: Sub,Poppins,84,&H00FFFFFF,&H00FFFFFF,&H00000000,&H90000000,1,0,0,0,100,100,1,0,1,7,3,2,130,130,470,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -510,17 +521,132 @@ ass_path = os.path.join(tmp, "subs.ass")
 open(ass_path, "w", encoding="utf-8").writelines(ass)
 progreso(65, f"Subtítulos de colores listos: {len(events)} bloques sin encimarse")
 
+# 3b) Acabado profesional: lo que se calcula antes de montar.
+HABLA0 = [str((G["clips"][ci] or [["", ""]])[0][0]) for ci in range(len(clips))]
+DUR_SRC = [dur(c) for c in clips]
+
+
+def _rms(ci):
+    try:
+        w_ = wave.open(os.path.join(tmp, f"c{ci}.wav"))
+        x_ = np.frombuffer(w_.readframes(w_.getnframes()), np.int16).astype(np.float32) / 32768
+        a_, b_ = recortes[ci]
+        seg = x_[int(a_ * 16000):int(b_ * 16000)]
+        return float(np.sqrt(np.mean(seg ** 2))) if len(seg) else 0.0
+    except Exception:
+        return 0.0
+
+
+RMS = [_rms(ci) for ci in range(len(clips))]
+# Sonido: cada clip de IA sale con un volumen distinto; se iguala la voz de cada uno (-20 dBFS RMS, ±9 dB).
+GANANCIA = [0.0] * len(clips)
+if PRO_SONIDO:
+    for ci in range(len(clips)):
+        if words_per_clip[ci] and RMS[ci] > 1e-4:
+            GANANCIA[ci] = max(-9.0, min(9.0, 20 * math.log10(0.1 / RMS[ci])))
+# Momento fuerte (la revelación): el clip con más energía de voz entre el 30 % y el 85 % del vídeo.
+_fin_aprox = offsets[-1] + (recortes[-1][1] - recortes[-1][0]) / VEL if clips else 0
+FUERTE = None
+_cand = [ci for ci in range(len(clips)) if words_per_clip[ci] and not HABLA0[ci].lower().startswith("narrador")
+         and 0.3 * _fin_aprox <= offsets[ci] <= 0.85 * _fin_aprox]
+if _cand:
+    FUERTE = max(_cand, key=lambda ci: RMS[ci])
+# Cortes J y L (la edición «fluye» sola): en el corte entre dos clips seguidos, la imagen no cambia a la vez que
+# la voz. Corte J: la voz del clip siguiente empieza 0,25 s antes que su imagen (si el clip anterior tiene imagen
+# de sobra al final). Corte L: la imagen nueva entra 0,25 s antes que su voz (si el clip nuevo tiene imagen antes
+# de la primera palabra). LIN > 0 es J, LIN < 0 es L; nunca después de una tarjeta de tiempo.
+J = 0.25
+LIN = [0.0] * len(clips)
+if PRO_SONIDO:
+    for ci in range(1, len(clips)):
+        a_, b_ = recortes[ci]
+        ap, bp = recortes[ci - 1]
+        if ci in TARJETAS or b_ - a_ <= 1.2 or bp - ap <= 1.2 or not words_per_clip[ci]:
+            continue
+        if DUR_SRC[ci - 1] - bp >= J:
+            LIN[ci] = J
+        elif a_ >= J:
+            LIN[ci] = -J
+LOUT = [LIN[ci + 1] if ci + 1 < len(clips) else 0.0 for ci in range(len(clips))]
+# Color: igualar los clips entre sí (cada clip de IA sale con su tono): media RGB de un fotograma del clip,
+# ajustada a la mediana de todos (±12 %).
+GAIN_RGB = [None] * len(clips)
+if PRO_COLOR and len(clips) > 1:
+    medias = []
+    for ci, c in enumerate(clips):
+        try:
+            a_, b_ = recortes[ci]
+            raw = subprocess.run(["ffmpeg", "-v", "error", "-ss", f"{(a_ + b_) / 2:.2f}", "-i", c, "-frames:v", "1", "-vf", "scale=48:84",
+                                  "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], capture_output=True).stdout
+            px = np.frombuffer(raw[: 48 * 84 * 3], np.uint8).reshape(-1, 3).astype(np.float32)
+            medias.append(px.mean(axis=0))
+        except Exception:
+            medias.append(None)
+    validas = [m for m in medias if m is not None and m.mean() > 12]
+    if len(validas) >= 2:
+        obj = np.median(np.stack(validas), axis=0)
+        for ci, m in enumerate(medias):
+            if m is not None and m.mean() > 12:
+                g = np.clip(obj / np.maximum(m, 1), 0.88, 1.12)
+                if np.abs(g - 1).max() > 0.02:
+                    GAIN_RGB[ci] = g
+    progreso(66, f"Color igualado entre clips: {sum(1 for g in GAIN_RGB if g is not None)} de {len(clips)} ajustados")
+# Cámara: punch-in (zoom digital del 112 %) en la palabra fuerte: la última de una frase con «!» o «?», o a mitad
+# de frase cada 3 clips largos. Crea un segundo ángulo con un solo clip, como hacen los editores de redes.
+PUNCH = [None] * len(clips)
+if PRO_CAMARA:
+    for ci in range(len(clips)):
+        ws = words_per_clip[ci]
+        if not ws or HABLA0[ci].lower().startswith("narrador") or ci in PANTALLAS:
+            continue
+        a_, b_ = recortes[ci]
+        v0, v1 = a_ + LIN[ci], b_ + LOUT[ci]
+        to_clip = lambda tl: a_ + (tl - offsets[ci]) * VEL
+        linea = " ".join(txt for _, txt in G["clips"][ci])
+        T = None
+        if re.search(r"[!?¡¿]", linea) and len(ws) >= 3:
+            T = to_clip(ws[-1]["s"])
+        elif ci % 3 == 1 and len(ws) >= 5 and (v1 - v0) >= 3.0:
+            T = to_clip(ws[len(ws) // 2]["s"])
+        if T is not None and v0 + 0.6 <= T <= v1 - 0.5:
+            PUNCH[ci] = T
+LOOKS = {   # look de cada estilo (como una LUT en Premiere), sobre la imagen sin textos
+    "epica": "eq=contrast=1.08:saturation=1.06:gamma=0.98,colorbalance=rs=0.03:bs=-0.04:rm=0.02:bm=-0.02:rh=0.03:bh=-0.03,vignette=PI/4.5,noise=alls=5:allf=t",
+    "biblica": "eq=contrast=1.04:saturation=1.02,vignette=PI/5,noise=alls=3:allf=t",
+    "cine90": "curves=all='0/0.04 0.5/0.52 1/0.96',eq=saturation=0.95,colorbalance=rs=0.04:bs=-0.03,vignette=PI/4.5,noise=alls=7:allf=t",
+    "cristiana": "eq=contrast=1.04:saturation=1.07,vignette=PI/5",
+    "frutinovela": "eq=contrast=1.04:saturation=1.08,vignette=PI/5",
+}
+LOOK = LOOKS.get(ESTILO, "") if PRO_COLOR else ""
+if PRO_SONIDO or PRO_CAMARA:
+    progreso(66, f"Acabado: {sum(1 for x in LIN if x > 0)} cortes J y {sum(1 for x in LIN if x < 0)} cortes L, {sum(1 for x in PUNCH if x is not None)} punch-in"
+             + (f", temblor en el clip {FUERTE + 1}" if PRO_CAMARA and FUERTE is not None else "")
+             + f", voz igualada en {sum(1 for g in GANANCIA if abs(g) > 0.3)} clips")
+
 # 4) unir: «Anteriormente», clips (recortados) con sus tarjetas de tiempo, cierre, gancho y subtítulos
-inputs, fc, cat, n = [], "", "", 0
+inputs, fc, catv, cata, n = [], "", "", "", 0
 ZONAS = []   # marcas borradas: (zona, resolución del clip), para poner el emblema encima
 
 
-def segmento(path, vf_extra=""):
+# Imagen y voz se unen por separado (por los cortes J/L): cada tramo de imagen se ajusta al fotograma exacto
+# que le toca en la línea de tiempo, así el redondeo a fotogramas no se acumula y los labios nunca se desfasan.
+VCUENTA = {"seg": 0.0, "fot": 0}
+
+
+def ajusta(segundos):
+    VCUENTA["seg"] += max(0.0, segundos)
+    meta = round(VCUENTA["seg"] * 24)
+    nf = max(1, meta - VCUENTA["fot"])
+    VCUENTA["fot"] += nf
+    return f",tpad=stop_mode=clone:stop_duration=0.5,trim=end_frame={nf},setpts=PTS-STARTPTS"
+
+
+def segmento(path, vf_extra="", segundos=None):
     """Añade un vídeo ya normalizado (1080x1920, 24 fps, estéreo) a la secuencia."""
-    global fc, cat, n
+    global fc, catv, cata, n
     inputs.extend(["-i", path])
-    fc += f"[{n}:v]setsar=1,fps=24{vf_extra}[v{n}];[{n}:a]aresample=48000,aformat=channel_layouts=stereo[a{n}];"
-    cat += f"[v{n}][a{n}]"
+    fc += f"[{n}:v]setsar=1,fps=24{vf_extra}{ajusta(segundos if segundos is not None else dur(path))}[v{n}];[{n}:a]aresample=48000,aformat=channel_layouts=stereo[a{n}];"
+    catv += f"[v{n}]"; cata += f"[a{n}]"
     n += 1
 
 
@@ -541,12 +667,12 @@ if ANTERIOR:
         sz, ls = ajustar(RESUMEN, 54, 40)
         yy = 290
         for ln in ls[:3]:
-            capas.append(texto_dt(ln, sz, "0xFFD166", yy, 4)); yy += int(sz * 1.25)
+            capas.append(texto_dt(ln, sz, ACENTO, yy, 4)); yy += int(sz * 1.25)
     f_rec += (f"{c_rec}concat=n={len(RECAP_PIEZAS)}:v=1:a=1[rc][a];[rc]" + ",".join(capas)
               + f",fade=t=out:st={max(0, RECAP_S - 0.25):.2f}:d=0.25[v]")
     run(["ffmpeg", "-v", "error", "-y", *ent, "-filter_complex", f_rec,
          "-map", "[v]", "-map", "[a]", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-c:a", "aac", rec])
-    segmento(rec)
+    segmento(rec, segundos=RECAP_S)
 for ci, c in enumerate(clips):
     if ci in TARJETAS:   # salto de tiempo («Horas después...») sobre la escena que viene, difuminada y oscura:
         # una pantalla negra hace que la gente deslice; la imagen siguiente ya adelanta lo que viene.
@@ -560,9 +686,10 @@ for ci, c in enumerate(clips):
             src = ["-f", "lavfi", "-i", f"color=c=black:s=1080x1920:r=24:d={CARD_S}"]
         run(["ffmpeg", "-v", "error", "-y", *src,
              "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", str(CARD_S),
-             "-vf", "scale=1080:1920,setsar=1,fps=24," + texto_dt(TARJETAS[ci], 76, "white", "(h-text_h)/2", 5, ":alpha='min(1,t/0.3)'") + ",format=yuv420p",
+             "-vf", "scale=1080:1920,setsar=1,fps=24," + ("fade=t=in:st=0:d=0.12:color=white," if PRO_CAMARA else "")
+             + texto_dt(TARJETAS[ci], 76, "white", "'(h-text_h)/2+30*pow(max(0,1-t/0.35),3)'", 5, ":alpha='min(1,t/0.3)'", FUENTE_TIT) + ",format=yuv420p",
              "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", card])
-        segmento(card)
+        segmento(card, segundos=CARD_S)
     inputs += ["-i", c]
     dl = ""
     variantes = MARCAS.get(str(G.get("marca", "")).lower())
@@ -585,10 +712,31 @@ for ci, c in enumerate(clips):
     if tel:
         progreso(69, f"Clip {ci + 1}: la voz suena por teléfono")
     # Corte seco y limpio: trim al tramo con voz y micro-fundido de audio (sin «clic» entre clips).
-    fc += (f"[{n}:v]trim=start={a:.3f}:end={b:.3f},setpts=(PTS-STARTPTS)/{VEL:.3f},{dl}scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,fps=24{chat}[v{n}];"
-           f"[{n}:a]atrim=start={a:.3f}:end={b:.3f},asetpts=PTS-STARTPTS,{f'atempo={VEL:.3f},' if VEL > 1 else ''}{tel}aresample=48000,aformat=channel_layouts=stereo,"
+    # La imagen va desplazada por los cortes J (empieza LIN después y acaba LOUT después que su audio).
+    va, vb = a + LIN[ci], b + LOUT[ci]
+    col = ""
+    if GAIN_RGB[ci] is not None:
+        gr, gg, gb = GAIN_RGB[ci]
+        col = f",colorchannelmixer=rr={gr:.3f}:gg={gg:.3f}:bb={gb:.3f}"
+    base = f"setpts=(PTS-STARTPTS)/{VEL:.3f},{dl}scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,fps=24{col}"
+    if PUNCH[ci] is not None:
+        T = PUNCH[ci]
+        fc += (f"[{n}:v]split=2[p{n}a][p{n}b];[p{n}a]trim=start={va:.3f}:end={T:.3f},{base}[q{n}a];"
+               f"[p{n}b]trim=start={T:.3f}:end={vb:.3f},{base},scale=1210:2150,crop=1080:1920:65:'(ih-1920)*0.42',setsar=1[q{n}b];"
+               f"[q{n}a][q{n}b]concat=n=2:v=1:a=0[r{n}];[r{n}]")
+    else:
+        fc += f"[{n}:v]trim=start={va:.3f}:end={vb:.3f},{base},"
+    extra_v = []
+    if PRO_CAMARA and ci == FUERTE:   # temblor de 0,4 s en el golpe de la revelación
+        extra_v.append("scale=1120:1992,crop=1080:1920:'20+if(lt(t,0.4),14*sin(t*80)*(1-t/0.4),0)':'36+if(lt(t,0.4),10*cos(t*95)*(1-t/0.4),0)',setsar=1")
+    if PRO_CAMARA and HABLA0[ci].lower().startswith("narrador"):   # movimiento lento (Ken Burns) en el Narrador
+        nf = max(1, int((vb - va) / VEL * 24))
+        extra_v.append(f"zoompan=z='1+0.06*on/{nf}':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920:fps=24,setsar=1")
+    fc += ",".join(["null"] + extra_v) + f"{chat}{ajusta((vb - va) / VEL)}[v{n}];"
+    gan = f"volume={GANANCIA[ci]:.2f}dB," if abs(GANANCIA[ci]) > 0.3 else ""
+    fc += (f"[{n}:a]atrim=start={a:.3f}:end={b:.3f},asetpts=PTS-STARTPTS,{f'atempo={VEL:.3f},' if VEL > 1 else ''}{tel}{gan}aresample=48000,aformat=channel_layouts=stereo,"
            f"afade=t=in:d=0.03,afade=t=out:st={max(0, (b - a) / VEL - 0.04):.3f}:d=0.04[a{n}];")
-    cat += f"[v{n}][a{n}]"
+    catv += f"[v{n}]"; cata += f"[a{n}]"
     n += 1
 if G.get("cierre"):
     progreso(68, f"Tarjeta final: «{G['cierre']}»" + (f" + «{G['cierre_cta']}»" if G.get("cierre_cta") else ""))
@@ -607,15 +755,15 @@ if G.get("cierre"):
     y = 960 - alto // 2
     capas = ["boxblur=20:2", "eq=brightness=-0.35"]
     for ln in l1:
-        capas.append(texto_dt(ln, s1, "white", y, 6)); y += int(s1 * 1.2)
+        capas.append(texto_dt(ln, s1, "white", y, 6, "", FUENTE_TIT)); y += int(s1 * 1.2)
     y += 40
     for ln in l2:   # p.ej. "Comenta PARTE 2" o "Escribe AMÉN", en amarillo
-        capas.append(texto_dt(ln, s2, "0xFFD23F", y, 5)); y += int(s2 * 1.25)
+        capas.append(texto_dt(ln, s2, ACENTO, y, 5)); y += int(s2 * 1.25)
     vf = ",".join(capas)
     run(["ffmpeg", "-v", "error", "-y", "-loop", "1", "-framerate", "24", "-i", last,
          "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", "3", "-vf", vf + ",format=yuv420p",
          "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", end])
-    segmento(end)
+    segmento(end, segundos=3.0)
 # Marca FrutiEnganchados sobre la zona borrada (la cubre entera con unos píxeles de margen).
 LOGO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "marca", "frutienganchados.png")
 zona = None
@@ -637,7 +785,7 @@ if G.get("logo", True) is not False and os.path.exists(LOGO) and (ZONAS or G.get
         W0, H0 = tam(clips[0])
         zona = a_salida(tuple(int(kv.split("=")[1]) for kv in str(G["delogo"]).split(":")), W0, H0)
 MUSICA = G.get("musica_archivo") if G.get("musica_archivo") and os.path.exists(G["musica_archivo"]) else ""
-fc += f"{cat}concat=n={n}:v=1:a=1[vc][{'voz' if MUSICA else 'a'}];"
+fc += f"{catv}concat=n={n}:v=1:a=0[vc];{cata}concat=n={n}:v=0:a=1[araw];"
 LOGOS = []   # (archivo, x, y, ancho, alto, nombre): uno por versión del vídeo (p. ej. dos páginas con logos distintos)
 if zona:
     zx, zy, zw, zh = zona
@@ -662,18 +810,23 @@ if zona:
         nom = G.get(nombre_clave) or ("propio" if ruta != LOGO else "FrutiEnganchados")
         LOGOS.append((png, int(x), int(y), int(ancho), int(alto), nom))
         progreso(69, f"Logo {nom} sobre la marca de {G.get('marca') or 'agua'} ({int(ancho)}×{int(alto)} px)" + (" · segunda versión" if k_logo else ""))
-fc += "[vc]"
+fc += f"[vc]{LOOK}," if LOOK else "[vc]"
+if LOOK:
+    progreso(69, f"Look de color del estilo {ESTILO}")
 # El gancho sale en los 3 primeros segundos del episodio nuevo (después de «Anteriormente...» si lo hay).
 H0 = RECAP_S
-alpha = f"alpha='if(lt(t,{H0 + 2.6:.2f}),1,max(0,1-(t-{H0 + 2.6:.2f})/0.4))':enable='between(t,{H0:.2f},{H0 + 3:.2f})'"
+alpha = (f"alpha='if(lt(t,{H0 + 0.2:.2f}),max(0,(t-{H0:.2f})/0.2),if(lt(t,{H0 + 2.6:.2f}),1,max(0,1-(t-{H0 + 2.6:.2f})/0.4)))':enable='between(t,{H0:.2f},{H0 + 3:.2f})'"
+         if PRO_CAMARA else f"alpha='if(lt(t,{H0 + 2.6:.2f}),1,max(0,1-(t-{H0 + 2.6:.2f})/0.4))':enable='between(t,{H0:.2f},{H0 + 3:.2f})'")
 y = 205
 gancho = G.get("gancho", [])
 size = min([ajustar(line, 66, 46)[0] for line in gancho] or [66])   # las dos líneas, del mismo tamaño
 for k, line in enumerate(gancho):
-    col = "white" if k == 0 else "0xFFD23F"
+    col = "white" if k == 0 else ACENTO
     ls = lineas(line, size)
     for ln in ls:
-        fc += texto_dt(ln, size, col, y, 5, ":" + alpha) + ","
+        # Entrada suave (ease-out): el texto sube 36 px y aparece en 0,35 s, como en After Effects.
+        yy = f"'{y}+36*pow(max(0,1-(t-{H0:.2f})/0.35),3)'" if PRO_CAMARA else y
+        fc += texto_dt(ln, size, col, yy, 5, ":" + alpha) + ","
         y += int(size * 1.2)
     y += 10
 # Subtítulos y gancho una sola vez; el logo va encima al final, uno por versión (misma codificación).
@@ -686,6 +839,44 @@ if LOGOS:
 else:
     fc += "ass=subs.ass:fontsdir=.[v]"
 total = t + (3 if G.get("cierre") else 0)
+# Sonido profesional: la voz se limpia (graves sobrantes, barro, «s» que silban) y se comprime suave; encima van
+# los efectos (whoosh en los saltos de tiempo, golpe en el gancho y en la revelación, riser antes del giro).
+REVELA = (offsets[FUERTE] + LIN[FUERTE] / VEL) if FUERTE is not None else 0.0
+VOZ_PRO = ("highpass=f=80,equalizer=f=250:t=q:w=1:g=-1.5,equalizer=f=3200:t=q:w=1.2:g=2.5,deesser=i=0.35,"
+           "acompressor=threshold=-20dB:ratio=2.5:attack=8:release=120:makeup=1.5") if PRO_SONIDO else "anull"
+SFX_IDX = None
+efectos = []
+if PRO_SFX:
+    for ci in TARJETAS:
+        efectos.append(("whoosh", max(0, offsets[ci] - CARD_S - 0.3)))
+    if RECAP_S:
+        efectos.append(("whoosh", max(0, RECAP_S - 0.35)))
+    if G.get("gancho"):
+        efectos.append(("golpe_suave", RECAP_S))
+    if REVELA:
+        efectos.append(("riser", max(0, REVELA - 2.0)))
+        efectos.append(("golpe", REVELA))
+if efectos:
+    try:
+        # Efectos sintetizados con ffmpeg (sin archivos ni licencias): {k} se cambia por el número del efecto.
+        SFX_GEN = {
+            "whoosh": "anoisesrc=d=0.7:c=pink:a=0.9,bandpass=f=1300:width_type=o:w=2.2,volume='pow(sin(PI*t/0.7),2)':eval=frame,volume=0.55",
+            "golpe": "sine=f=48:d=1.4[s{k}];anoisesrc=d=1.4:c=brown:a=0.9,lowpass=f=260[n{k}];[s{k}][n{k}]amix=inputs=2:normalize=0,volume='exp(-3.2*t)':eval=frame,volume=0.9",
+            "golpe_suave": "sine=f=55:d=0.9[s{k}];anoisesrc=d=0.9:c=brown:a=0.6,lowpass=f=220[n{k}];[s{k}][n{k}]amix=inputs=2:normalize=0,volume='exp(-4.5*t)':eval=frame,volume=0.45",
+            "riser": "anoisesrc=d=2:c=white:a=0.5,highpass=f=900,lowpass=f=7000,volume='pow(t/2,2.2)':eval=frame,volume=0.4",
+        }
+        f_s = ""
+        for k_s, (tipo, t0) in enumerate(efectos):
+            f_s += SFX_GEN[tipo].replace("{k}", str(k_s)) + f",aformat=channel_layouts=stereo,aresample=48000,adelay={int(t0 * 1000)}:all=1[e{k_s}];"
+        f_s += "".join(f"[e{k}]" for k in range(len(efectos))) + f"amix=inputs={len(efectos)}:normalize=0:duration=longest,apad=whole_dur={total:.2f},atrim=0:{total:.2f}[sx]"
+        run(["ffmpeg", "-v", "error", "-y", "-filter_complex", f_s, "-map", "[sx]", "-c:a", "pcm_s16le", "efectos.wav"])
+        SFX_IDX = True
+        progreso(69, "Efectos de sonido: " + ", ".join(sorted({t for t, _ in efectos})) + (f" · revelación en el clip {FUERTE + 1}" if FUERTE is not None else ""))
+    except Exception as e:   # los efectos nunca impiden montar
+        SFX_IDX = None
+        progreso(69, f"Sin efectos de sonido ({str(e)[:80]})")
+fc += f";[araw]{VOZ_PRO}[vz0]"
+fc += ";[vz0][sfxin]amix=inputs=2:duration=first:normalize=0[voz]" if SFX_IDX else ";[vz0]anull[voz]"
 if MUSICA:
     # Música de fondo (p. ej. de Muse): en bucle hasta el final, entra y sale con fundido y baja
     # sola cuando alguien habla (sidechain con las voces), para que el diálogo se entienda siempre.
@@ -704,19 +895,28 @@ if MUSICA:
            f"loudnorm=I=-24:TP=-3:LRA=11,aresample=48000,volume={gan:.2f},"
            # «extremos»: la música sube en los primeros 4 s y en los últimos 8 s; en medio queda en silencio.
            + (f"volume='max(clip(4.5-t,0,1),clip(t-{max(5.0, total - 8.5):.2f},0,1))':eval=frame," if EXTREMOS else "")
+           # Silencio de tráiler: la música baja casi a cero 0,6 s antes de la revelación.
+           + (f"volume='if(between(t,{REVELA - 0.6:.2f},{REVELA:.2f}),0.12,1)':eval=frame," if REVELA else "")
            + f"afade=t=in:d=0.6,afade=t=out:st={max(0, total - 1.5):.2f}:d=1.5[mus];"
            f"[voz]asplit[voz1][voz2];[mus][voz1]sidechaincompress=threshold=0.08:ratio={1.5 if EXTREMOS else 2.5}:attack=30:release=400[musb];"
-           f"[voz2][musb]amix=inputs=2:duration=first:normalize=0[a]")
+           f"[voz2][musb]amix=inputs=2:duration=first:normalize=0[amx]")
     if EXTREMOS:
         progreso(69, "Música solo al inicio (4 s) y al final con el «Continuará…»; en medio, voces y ambiente")
     else:
         progreso(69, f"Música de fondo a volumen fijo ({'muy suave' if gan < 0.8 else 'media' if gan > 1.2 else 'suave'}), baja un poco cuando hablan")
+if not MUSICA:
+    fc += ";[voz]anull[amx]"
+# Volumen final de redes: -14 LUFS integrados y picos por debajo de -1,5 dBTP (TikTok, Instagram, Facebook).
+fc += ";[amx]loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000[a]" if PRO_SONIDO else ";[amx]anull[a]"
 VCODEC = (["-c:v", "h264_nvenc", "-preset", "p5", "-rc", "vbr", "-cq", "19", "-b:v", "0"]
           if os.environ.get("VIDEO_ENCODER") == "h264_nvenc"
           else ["-c:v", "libx264", "-crf", "17", "-preset", os.environ.get("X264_PRESET", "medium")])
 mmss = lambda x: f"{int(x // 60)}:{int(x % 60):02d}"
 for png, *_ in LOGOS:
     inputs += ["-i", png]   # imagen fija: overlay la repite hasta el final
+if SFX_IDX:   # pista de efectos: va la última, después de los logos
+    fc = fc.replace("[sfxin]", f"[{len([x for x in inputs if x == '-i'])}:a]")
+    inputs += ["-i", "efectos.wav"]
 progreso(70, f"Codificando el vídeo final 1080x1920 ({mmss(total)}) con {'la GPU (NVENC)' if VCODEC[1] == 'h264_nvenc' else 'x264'}")
 # Dos versiones (dos logos): una sola pasada que escribe <salida>.mp4 y <salida>_2.mp4.
 salidas = [("[v]", "[a]", out_mp4)]
@@ -790,9 +990,12 @@ try:
     det = subprocess.run(["ffmpeg", "-hide_banner", "-i", out_mp4, "-af", "silencedetect=noise=-38dB:d=0.9",
                           "-vf", "blackdetect=d=0.4:pix_th=0.08", "-f", "null", "-"], capture_output=True, text=True).stderr
     fin_util = total - (3 if G.get("cierre") else 0)
+    # Las tarjetas de tiempo («Horas después...») son mudas y oscuras a propósito: no cuentan como fallo.
+    tarjetas_t = [(offsets[ci] - CARD_S - 0.3, offsets[ci] + 0.3) for ci in TARJETAS]
+    en_tarjeta = lambda a0, b0: any(a0 < tb and b0 > ta for ta, tb in tarjetas_t)
     silencios = [(float(a), float(b)) for a, b in re.findall(r"silence_start: ([\d.]+)[\s\S]*?silence_end: ([\d.]+)", det)
-                 if float(a) < fin_util - 0.5]
-    negros = [float(a) for a in re.findall(r"black_start:([\d.]+)", det) if float(a) < fin_util - 0.5]
+                 if float(a) < fin_util - 0.5 and not en_tarjeta(float(a), float(b))]
+    negros = [float(a) for a, b in re.findall(r"black_start:([\d.]+) black_end:([\d.]+)", det) if float(a) < fin_util - 0.5 and not en_tarjeta(float(a), float(b))]
     if silencios:
         nota -= min(25, 5 * len(silencios))
         avisos.append({"tipo": "pausas", "texto": f"{len(silencios)} silencio(s) de más de 0,9 s: " + ", ".join(f"{mmss(a)} ({b - a:.1f} s)" for a, b in silencios[:6]),
@@ -862,6 +1065,26 @@ try:
     if total > 90:
         avisos.append({"tipo": "duracion", "texto": f"Dura {mmss(total)}: largo para TikTok y Shorts.",
                        "arreglo": "Usa las versiones por red: TikTok en partes y Shorts de menos de 60 s."})
+    # Volumen final medido (EBU R128): lo que piden TikTok, Instagram y Facebook (-14 LUFS, picos < -1 dBTP).
+    try:
+        er = subprocess.run(["ffmpeg", "-hide_banner", "-i", out_mp4, "-af", "ebur128=peak=true", "-f", "null", "-"], capture_output=True, text=True).stderr
+        lufs = float(re.findall(r"I:\s+(-?[\d.]+) LUFS", er)[-1])
+        pico = float(re.findall(r"Peak:\s+(-?[\d.]+) dBFS", er)[-1])
+        if -15.5 <= lufs <= -12.5 and pico <= -1.0:
+            bien.append(f"Volumen de redes: {lufs:.1f} LUFS, picos a {pico:.1f} dB (sin distorsión).")
+        else:
+            nota -= 5
+            avisos.append({"tipo": "volumen", "texto": f"Volumen final {lufs:.1f} LUFS con picos a {pico:.1f} dB (las redes piden -14 LUFS y picos bajo -1 dB).",
+                           "arreglo": "Activa «Sonido profesional» en el montaje."})
+    except Exception:
+        pass
+    if PRO_SONIDO and any(LIN):
+        bien.append(f"Edición con {sum(1 for x in LIN if x)} cortes J/L: la voz y la imagen no cambian a la vez.")
+    if PRO_SFX and efectos:
+        bien.append("Efectos de sonido en saltos de tiempo, gancho y revelación.")
+    if PRO_COLOR and (LOOK or any(g is not None for g in GAIN_RGB)):
+        bien.append("Color igualado entre clips" + (f" y look «{ESTILO}»" if LOOK else "") + ".")
+    bien.append("Textos dentro de las zonas seguras de TikTok e Instagram.")
     revision = {"nota": max(0, nota), "duracion": round(total, 1), "avisos": avisos, "bien": bien}
     json.dump(revision, open(os.path.splitext(out_mp4)[0] + "_revision.json", "w", encoding="utf-8"), ensure_ascii=False)
     progreso(99, f"Revisión automática: {revision['nota']}/100" + (f" · {len(avisos)} cosa(s) por mejorar" if avisos else " · todo bien"))
