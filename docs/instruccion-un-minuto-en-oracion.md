@@ -32,3 +32,18 @@ Ficha (título, versículo, mensaje, personajes con color), guion de escenas, pr
 
 ## 9. Control de calidad
 La revisión automática del montaje comprueba: llamadas a interacción en pantalla o en el diálogo, versículo en la tarjeta final, duración ≥ 60 s para Facebook, pausas, ritmo, orden de clips y voz en cada clip.
+
+---
+
+# PISTA B · Épica bíblica (ángeles, cielo, libros apócrifos)
+
+En la app: estilo **«Épica bíblica (ángeles, cielo, relatos antiguos)»** (`epica`). Comparte con la Pista A el versículo en la tarjeta final, el mensaje del Narrador, las reglas pentecostales y la prohibición de llamadas a interacción.
+
+- **Modos:** B-Épico (antigüedad, realismo de cine) y B-Puente (un ángel o la batalla espiritual en la RD de hoy; ironía dramática: el público ve lo que los personajes no ven). La ficha guarda modo, «lo invisible que se revela» y el plano de impacto del segundo 0.
+- **Banco:** `EPIC_BANK` en `src/lib/knowledge.ts` (2 Reyes 6:16, Daniel 10:12, Génesis 28:16, Daniel 3:25, 2 Reyes 2:11, Salmo 91:11, Salmo 34:7, Isaías 14:12, Génesis 5:24).
+- **Estructura (B5):** 0-3 s imagen impactante + texto de 2 líneas → humano en crisis → revelación de lo invisible → clímax de fe e intervención → cierre en calma con el mensaje y el versículo. Por defecto 12 escenas de 5 s.
+- **Prompts (v16):** «Cinematic epic, anamorphic lens flare, volumetric light, 35mm grain, vertical 9:16, photorealistic» + negativo «no saints, no Virgin, no halos, no altars, no votive candles, no rosaries, no cartoon cherubs, no gore»; nunca el rostro de Dios ni de Jesús (solo luz, voz, sombras, manos de luz; Cristo de espaldas o como luz); ángeles altos sin halos; gigantes y caídos como siluetas; planos cerrados si la multitud no se anima bien. Mismo inicio («Usa Seedance 2.5.») y la misma línea final que la Pista A.
+- **Apócrifos (Enoc, Jubileos):** siempre «inspirado en la tradición de Enoc», nunca como Palabra de Dios; puente con Judas 14-15 y Génesis 5:24; sin inventar doctrina ni magia; el mensaje: Dios es justo y cuida al que camina con Él. La ficha avisa cuando el relato es apócrifo.
+- **Descripción:** siempre termina con «Historia inspirada en textos antiguos. Contenido de IA, ficción.»
+- **Créditos:** los efectos grandes cuestan más; cotizar antes y generar primero escenas de 5 s en 480p, y subir a 720p solo las clave (la app no gasta créditos: se genera en Flow).
+- **Calendario del perfil:** jueves y domingo, Pista B.

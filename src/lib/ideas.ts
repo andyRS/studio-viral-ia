@@ -60,6 +60,14 @@ const BY_STYLE: Record<StyleKey, { who: string[]; conflict: string[]; object: st
     twist: ["la verdad sale a la luz", "el que lo traicionó termina necesitándolo", "llega la ayuda inesperada", "alguien cambia de corazón"],
     mech: ["traición", "prueba de fe", "integridad", "estatus y humildad"],
   },
+  epica: {
+    who: ["un profeta y su criado", "una madre que ora en un hospital", "un joven a punto de rendirse", "un fugitivo que duerme en la calle", "tres jóvenes fieles", "un conductor que casi muere"],
+    conflict: ["está rodeado de enemigos", "lleva 21 días orando sin respuesta", "lo van a echar al fuego", "no ve ninguna salida", "su hijo está entre la vida y la muerte"],
+    object: ["un carro de fuego", "una escalera de luz", "un manto", "una espada de luz", "una puerta custodiada"],
+    place: ["en una ciudad antigua sitiada", "en el horno de fuego", "en el pasillo de un hospital de Santo Domingo", "en una calle con tráfico", "en el cielo abierto"],
+    twist: ["se abren sus ojos y ve el ejército de ángeles", "un cuarto hombre camina en el fuego", "la respuesta ya venía en camino", "un ángel lo cubre sin que nadie lo vea"],
+    mech: ["lo invisible se revela", "ironía dramática espiritual", "fe en la crisis", "intervención de Dios"],
+  },
   frutinovela: {
     who: ["un motoconchista de Los Mina", "una muchacha rica de Piantini", "un colmadero", "una suegra chismosa", "un tíguere del barrio", "una vecina metiche"],
     conflict: ["se enamora de quien su familia jamás aceptaría", "gana la lotería y todo el barrio aparece como familia", "descubre que su esposo tiene otra en el mismo barrio", "humilla al novio pobre de su hija", "esconde un hijo que nadie conocía"],

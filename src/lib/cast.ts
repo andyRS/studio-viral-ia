@@ -34,10 +34,12 @@ export function accentPrompt(member: Partial<CastMember> | null | undefined, lan
 // Colores de reserva cuando dos personajes coinciden (hex sin #).
 export const PALETTE = ["FF9A1F", "C08BFF", "5BC94A", "FF4D6D", "FFD23F", "4DD0E1", "B6F08A", "D9A066", "FF6B81", "F2C14E"];
 
-export const isFruitStyle = (style?: string) => style !== "cine90" && style !== "biblica";
+export const isFruitStyle = (style?: string) => style !== "cine90" && style !== "biblica" && style !== "epica";
 // Estilos con personas reales (cine de los 90 y drama bíblico moderno) y estilos para público cristiano.
-export const isRealStyle = (style?: string) => style === "cine90" || style === "biblica";
-export const isChristianStyle = (style?: string) => style === "cristiana" || style === "biblica";
+export const isRealStyle = (style?: string) => style === "cine90" || style === "biblica" || style === "epica";
+export const isChristianStyle = (style?: string) => style === "cristiana" || style === "biblica" || style === "epica";
+// Pista A (drama bíblico moderno) y Pista B (épica bíblica): versículo al final, mensaje del Narrador, vídeo que se entiende solo.
+export const isBibleStyle = (style?: string) => style === "biblica" || style === "epica";
 const clean = (v: unknown) => String(v ?? "").trim();
 export const norm = (v: unknown) => clean(v).toLocaleLowerCase("es").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9ñ ]+/g, " ").replace(/\s+/g, " ").trim();
 

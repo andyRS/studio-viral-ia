@@ -1,3 +1,4 @@
+import { EPIC_NOTICE } from "./knowledge";
 // MÓDULO 4B — ADAPTACIÓN POR PLATAFORMA
 // REGLA OBLIGATORIA: toda historia se construye primero con la FÓRMULA BASE
 // (Instagram) y después se generan 4 versiones, una por plataforma.
@@ -31,6 +32,7 @@ const STYLE_PUBLISH: Record<string, { word: (part: number) => string; topic: str
   // Cristianas: sin palabra para comentar (Meta penaliza «comenta AMÉN» como interacción no auténtica).
   cristiana: { word: () => "", topic: "Religión", tags: ["#frutinovela", "#frutinovelas", "#reflexion", "#cristianos", "#ia"] },
   biblica: { word: () => "", topic: "Religión", tags: ["#historiasbiblicas", "#reflexion", "#fe", "#cristianos", "#dramacristiano"] },
+  epica: { word: () => "", topic: "Religión", tags: ["#historiasbiblicas", "#angeles", "#fe", "#biblia", "#cristianos"] },
   cine90: { word: () => "BUTACA", topic: "Películas", tags: ["#peliculasquenoexisten", "#historiadeamor", "#cortometraje", "#videoia", "#romance"] },
 };
 export const stylePublish = (style?: string) => STYLE_PUBLISH[style || ""] || STYLE_PUBLISH.frutinovela;
@@ -251,6 +253,7 @@ export function buildPlatformAdaptations(input: any): PlatformAdaptation[] {
       // Historia suelta (parte 1): sin «Parte 1» ni «mira la siguiente parte»; en una serie se conserva.
       if (part <= 1) { a.title = seriesTitle; a.description = formatDescription(seriesTitle, "", a.hashtags, q); }
       else a.description = sinLlamadas(a.description) || formatDescription(shortTitle, "", a.hashtags, q);
+      if (input?.style === "epica" && !a.description.includes(EPIC_NOTICE)) a.description += `\n${EPIC_NOTICE}`;
       a.checklist = (a.checklist || []).filter(c => !ENGAGEMENT_BAIT.test(c)).concat("Marcar «Contenido de IA» al publicar", "Sin «comenta AMÉN», «dale like», «sígueme» ni «comparte» en pantalla ni en el texto");
     }
   }

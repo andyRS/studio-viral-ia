@@ -16,7 +16,7 @@ function genre(c: MusicContext) {
   const christmas = /navidad|navideñ|nochebuena|christmas|diciembre/i.test(text);
   const base = c.style === "cine90"
     ? { mood: "balada romántica y bolero de los 90, cinematográfica y nostálgica", inst: "piano de cola, cuerdas, guitarra española de requinto y un saxo muy suave", bpm: "70-80 BPM" }
-    : c.style === "cristiana" || c.style === "biblica"
+    : c.style === "cristiana" || c.style === "biblica" || c.style === "epica"
       ? { mood: "emotiva y esperanzadora, de inspiración cristiana contemporánea", inst: "piano, cuerdas cálidas y pads suaves", bpm: "65-75 BPM" }
       : { mood: "telenovela latina dominicana, dramática y con sabor caribeño", inst: "cuerdas dramáticas, piano, guitarra de requinto de bachata y güira muy suave", bpm: "85-95 BPM" };
   return christmas ? { ...base, inst: `${base.inst}, con campanitas y celesta navideñas` } : base;

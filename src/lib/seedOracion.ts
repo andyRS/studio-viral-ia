@@ -1,7 +1,7 @@
 // Perfil de la cuenta cristiana «Un Minuto en Oración» (TikTok @unminutodeoracion2026 + página de Facebook):
 // instrucción de trabajo de Andy (oct. 2026). Se carga con el botón de Publish & Grow → Cuentas.
 import type { AccountProfile } from "./types";
-import { BIBLE_BANK } from "./knowledge";
+import { BIBLE_BANK, EPIC_BANK, EPIC_NOTICE } from "./knowledge";
 
 export const ORACION_HANDLE = "unminutodeoracion2026";
 export const isOracionAccount = (name: string) => /minuto(de|en)oracion/.test(String(name || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z]/g, ""));
@@ -34,15 +34,20 @@ export const ORACION_PROFILE: Omit<AccountProfile, "id" | "accountId"> = {
     "No inventar milagros ni curas médicas como promesa real: son historias ficticias. Marcar «Contenido de IA» al publicar",
     "Facebook: nunca «comenta AMÉN», «dale like», «sígueme» ni «comparte» en pantalla ni en el texto (Meta lo penaliza y ya desmonetizó páginas). La pregunta abierta va en el texto sin pedir acción",
     "Cada plataforma con su archivo y su texto; nunca el mismo en todas",
+    "PISTA B · Épica bíblica (estilo «Épica bíblica»): cine épico realista con ángeles y cielo. B-Épico en la antigüedad o B-Puente (un ángel o la batalla espiritual en la RD de hoy, que los personajes no ven)",
+    `Banco de la Pista B: ${EPIC_BANK.map(b => `${b.story} (${b.verse})`).join("; ")}`,
+    "Pista B: nunca el rostro de Dios ni de Jesús (solo luz, voz, sombras o manos de luz); ángeles altos y majestuosos sin halos ni querubines de bebé; sin gore ni desnudez; gigantes y caídos como siluetas",
+    `Pista B con apócrifos (Enoc, Jubileos): siempre «inspirado en la tradición de Enoc», nunca como Palabra de Dios; puente con Judas 14-15 y Génesis 5:24; sin inventar doctrina ni magia. Aviso en la descripción: «${EPIC_NOTICE}»`,
+    "Pista B: los efectos grandes cuestan más créditos; cotizar antes y generar primero escenas de 5 s en 480p, y subir a 720p solo las clave",
   ],
   schedule: [
     { day: "Lunes", piece: "Historia suelta del banco (tipo distinto al de la semana anterior)" },
     { day: "Martes", piece: "Historia suelta" },
     { day: "Miércoles", piece: "Historia suelta" },
-    { day: "Jueves", piece: "Repetir la estructura del vídeo con más vistas de la semana" },
+    { day: "Jueves", piece: "Pista B: épica bíblica (B-Épico o B-Puente)" },
     { day: "Viernes", piece: "Historia suelta" },
     { day: "Sábado", piece: "Historia suelta" },
-    { day: "Domingo", piece: "Historia suelta con mensaje de esperanza" },
+    { day: "Domingo", piece: "Pista B: épica bíblica con mensaje de esperanza (o repetir la estructura del vídeo con más vistas)" },
   ],
   scheduleNotes: [
     "Facebook (Un Minuto en Oración): mínimo 60 s, publicar de 7 a 10 p. m. Título «Título · Parte N» solo si hay serie.",

@@ -21,6 +21,11 @@ export const STYLES = {
     visual: "Drama moderno dominicano cinematográfico, personas reales, luz natural, grano de 35 mm, vertical 9:16. Escenarios reales de RD: barrio, colmado, campo, iglesia evangélica sencilla, hospital público, oficina, aeropuerto. Vestuario modesto de manga larga.",
     voice: "Español latino neutro, palabras completas (nunca pa', vamo'), con sus tildes; dominicanismos escritos completos solo cuando aporten (vaina, tíguere, colmado). Frases de 2 a 6 palabras.",
   },
+  epica: {
+    label: "Épica bíblica (ángeles, cielo, relatos antiguos)",
+    visual: "Cine épico realista: lente anamórfica con destellos, luz volumétrica, grano de 35 mm, vertical 9:16, fotorrealista. Ángeles majestuosos y altos con ropa blanca o de luz; nunca el rostro de Dios ni de Jesús (solo luz, voz, sombras o manos de luz).",
+    voice: "Español latino neutro, palabras completas, con tildes. Frases de 2 a 6 palabras; los ángeles hablan poco, con voz grave («No temas.», «Yo estoy contigo.»).",
+  },
   cine90: {
     label: "Cine romántico de los 90 (realista)",
     visual: "Película romántica de los años 90 en República Dominicana, grano de 35 mm, luz cálida dorada, vestuario y peinados de los 90, vertical 9:16, personas reales.",
@@ -161,3 +166,21 @@ export const BIBLE_BANK = [
 export const BIBLE_GUARD_EN = "No saints, no Virgin, no altars, no votive candles, no rosaries, plain evangelical church, plain empty cross";
 // Final obligatorio de cada prompt de vídeo del drama bíblico.
 export const BIBLE_VIDEO_END = "Español latino neutro, cada palabra completa, nunca acento inglés. Sin música, sin subtítulos ni texto en pantalla.";
+
+// Pista B: épica bíblica (ángeles, cielo, libros apócrifos), aparte del drama moderno (Pista A).
+// B-Épico: en la antigüedad, con realismo de cine. B-Puente: un ángel o la batalla espiritual irrumpe en la RD de hoy.
+export const EPIC_BANK = [
+  { story: "Los ojos abiertos del criado de Eliseo", mode: "B-Épico", idea: "Joven rodeado de enemigos; el profeta ora y el cielo se llena de carros de fuego", message: "Los que están con nosotros son más", verse: "2 Reyes 6:16" },
+  { story: "Daniel y el ángel retrasado", mode: "B-Épico", idea: "Oración de 21 días; vemos la batalla en el cielo mientras él sigue orando", message: "La respuesta ya venía en camino", verse: "Daniel 10:12" },
+  { story: "Jacob y la escalera", mode: "B-Épico", idea: "Fugitivo duerme en la calle y ve ángeles subir y bajar", message: "Dios está en el lugar menos esperado", verse: "Génesis 28:16" },
+  { story: "El horno de fuego", mode: "B-Épico", idea: "Tres hombres en el fuego y un cuarto «semejante a hijo de los dioses»", message: "No caminas solo en el fuego", verse: "Daniel 3:25" },
+  { story: "Elías y el carro de fuego", mode: "B-Épico", idea: "Relevo entre el profeta y su discípulo", message: "El legado se hereda", verse: "2 Reyes 2:11" },
+  { story: "Ángel guardián", mode: "B-Puente", idea: "Un niño cruza la calle; vemos a su protector entre los autos", message: "Dios cuida lo que no ves", verse: "Salmo 91:11" },
+  { story: "La mujer en el hospital", mode: "B-Puente", idea: "Una madre ora en el pasillo; un ángel de guardia en la puerta del cuarto", message: "La oración mueve el cielo", verse: "Salmo 34:7" },
+  { story: "La caída de Satanás", mode: "B-Épico", idea: "Vista épica de la rebelión en el cielo (sin pretender doctrina nueva)", message: "El orgullo cae", verse: "Isaías 14:12" },
+  { story: "Enoc, el que caminó con Dios", mode: "B-Épico", idea: "Inspirado en la tradición de Enoc: camina con Dios y desaparece; los Vigilantes y los gigantes, el juicio", message: "Dios es justo y cuida al que camina con Él", verse: "Génesis 5:24" },
+] as const;
+// Prohibido en la épica (en inglés para los modelos de imagen y vídeo).
+export const EPIC_GUARD_EN = "No saints, no Virgin, no halos, no altars, no votive candles, no rosaries, no cartoon cherubs, no gore. Never show the face of God or of Jesus: only light, a voice, shadows or hands of light; Christ, if present, seen from behind or as light. Angels: tall majestic figures in white or light, realistic wings only when the text calls for them, no iconographic halos. No nudity, no explicit blood; giants and fallen ones as silhouettes and scale, never gore";
+// Aviso obligatorio en la descripción de la épica (sobre todo con relatos apócrifos como Enoc).
+export const EPIC_NOTICE = "Historia inspirada en textos antiguos. Contenido de IA, ficción.";

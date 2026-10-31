@@ -13,7 +13,7 @@ import IdeasPanel from "./IdeasPanel";
 import FlowSendButton from "./FlowSendButton";
 import type { StoryIdea } from "@/lib/ideas";
 import SceneDesk from "./SceneDesk";
-import { STYLES, type StyleKey } from "@/lib/knowledge";
+import { EPIC_NOTICE, STYLES, type StyleKey } from "@/lib/knowledge";
 import { templateSeries, templateNext } from "@/lib/story";
 import { isGenericName } from "@/lib/cast";
 import { buildFlowBatch, refreshPrompts, PROMPT_RULES_VERSION, sceneCountFor } from "@/lib/production";
@@ -53,7 +53,8 @@ function publishPack(out: any, style: string, part: number, seriesTitle = "", ac
     const text = String(a?.description || (platform === "TikTok" && out?.social?.tiktokDescription ? `${out.social.tiktokDescription}\n${hashtags.slice(0, 5).join(" ")}` : formatDescription(title, sp.word(part), hashtags))).replace(/#[^\s#]+/g, "").replace(/[ \t]+\n/g, "\n").trim();
     const credit = style === "cine90" && !/higgsfield/i.test(text) ? "\nHecho con @higgsfield.ai" : "";
     // Cristianas: fuera cualquier «comenta / AMÉN / like / sígueme / comparte» (Meta desmonetiza por eso).
-    const clean = sp.word(part) ? text : (sinLlamadas(text) || formatDescription(title, "", hashtags));
+    let clean = sp.word(part) ? text : (sinLlamadas(text) || formatDescription(title, "", hashtags));
+    if (style === "epica" && !clean.includes(EPIC_NOTICE)) clean += `\n${EPIC_NOTICE}`;   // aviso obligatorio de la épica
     return { platform, text: clean + credit, hashtags: hashtags.join(" "), extra: platform === "Facebook" ? (a?.topic || sp.topic ? `Tema al publicar: ${a?.topic || sp.topic}` : "") : (a?.bestTime ? `Mejor hora: ${a.bestTime}` : "") };
   });
 }
@@ -75,6 +76,11 @@ const IDEAS: Record<StyleKey, string[]> = {
     "José vendido por sus hermanos: un joven traicionado por sus socios del colmado termina dirigiendo la empresa (Génesis 50:20)",
     "La viuda de Sarepta: una madre soltera con el último arroz y aceite ayuda a un desconocido (1 Reyes 17:16)",
     "Daniel en el foso: un empleado cristiano no firma un negocio sucio y lo acusan (Daniel 6:22)",
+  ],
+  epica: [
+    "B-Puente: una madre ora en el pasillo del hospital y vemos al ángel de guardia en la puerta del cuarto (Salmo 34:7)",
+    "B-Épico: el criado de Eliseo ve la ciudad rodeada; el profeta ora y el cielo se llena de carros de fuego (2 Reyes 6:16)",
+    "B-Épico: Enoc, el que caminó con Dios (inspirado en la tradición de Enoc; Génesis 5:24 y Judas 14)",
   ],
   cine90: [
     "Una mujer encuentra en una tienda de antigüedades las cartas de amor que su madre nunca envió",
@@ -174,6 +180,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
     if (p.platform === "Instagram") setDuration(40);
     // Drama bíblico: 14 escenas (~64 s tras quitar pausas): Facebook pide 60 s o más para monetizar.
     else if (p.style === "biblica") setDuration(64);
+    else if (p.style === "epica") setDuration(48);
   }, [account?.id, data.accountProfiles]);
 
   async function call(path: string, body: any, local: () => any) {
@@ -312,7 +319,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab }: { focusEpi
             <legend className="field-label">Estilo <span className="normal-case tracking-normal text-amber-300">· obligatorio{styleChosen ? "" : ": elige uno"}</span></legend>
             <div className="grid gap-2 sm:grid-cols-3">
               {(Object.keys(STYLES) as StyleKey[]).map(k => (
-                <button key={k} type="button" aria-pressed={styleChosen && style === k} onClick={() => { setStyle(k); if (k === "biblica") setDuration(64); }} className={`rounded-xl border px-3 py-3 text-left text-sm ${styleChosen && style === k ? "border-amber-400/60 bg-amber-400/10 text-amber-100" : "border-white/10 bg-white/[.03] text-slate-300"}`}>{STYLES[k].label}</button>
+                <button key={k} type="button" aria-pressed={styleChosen && style === k} onClick={() => { setStyle(k); if (k === "biblica") setDuration(64); if (k === "epica") setDuration(48); }} className={`rounded-xl border px-3 py-3 text-left text-sm ${styleChosen && style === k ? "border-amber-400/60 bg-amber-400/10 text-amber-100" : "border-white/10 bg-white/[.03] text-slate-300"}`}>{STYLES[k].label}</button>
               ))}
             </div>
           </fieldset>
@@ -796,6 +803,8 @@ function EpisodeSheet({ ficha, bible, score, cast, scenes, seconds }: { ficha: a
             <p className="text-[11px] font-semibold uppercase tracking-[.14em] text-amber-300">{bible.story || "Historia bíblica"} · {bible.verse}</p>
             {bible.verseText && <p className="mt-1 italic text-slate-200">«{bible.verseText}»</p>}
             {bible.message && <p className="mt-1 font-semibold text-white">Mensaje: {bible.message}</p>}
+            {bible.mode && <p className="mt-1 text-xs text-slate-300"><b>{bible.mode}</b>{bible.invisible ? ` · Lo invisible que se revela: ${bible.invisible}` : ""}{bible.impact ? ` · Plano de impacto (segundo 0): ${bible.impact}` : ""}</p>}
+            {bible.apocryphal && <p className="mt-1 text-xs text-amber-200">Relato apócrifo: preséntalo como «inspirado en», nunca como Palabra de Dios. El aviso va en la descripción.</p>}
             <p className="mt-1 text-[11px] text-slate-400">El versículo sale en la tarjeta final del montaje (últimos 3 s).</p>
           </div>}
           <div className="mt-3 flex flex-wrap gap-2 text-xs">

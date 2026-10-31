@@ -77,7 +77,7 @@ export function adaptGuion(guion: any, nClips: number, opts: { marca?: "dola" | 
 // Llamada final (línea amarilla de la tarjeta de cierre) según el estilo y si la serie termina.
 export function defaultCta(style: string, part: number, last: boolean) {
   // Cristianas: nada de «Escribe AMÉN» (Meta lo penaliza como interacción no auténtica); la tarjeta lleva el versículo.
-  if (style === "cristiana" || style === "biblica") return "";
+  if (style === "cristiana" || style === "biblica" || style === "epica") return "";
   return last ? "Dale me gusta y comenta qué te pareció" : `Comenta PARTE ${part + 1}`;
 }
 
@@ -226,7 +226,7 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
         }
       }
       const fd = new FormData();
-      fd.append("guion", new Blob([JSON.stringify({ ...adaptGuion(guion, files.length, { marca, delogo, cierre: guion?.versiculo || (lastEpisode ? "FIN" : guion?.cierre || "Continuará..."), cierreCta: cta }), ...(music ? { musica_volumen: Number(musicVol), musica_modo: musicMode } : {}), recortar, velocidad: Number(velocidad), versiones, parte: part, ...(style === "cristiana" || style === "biblica" ? { cristiana: true } : {}), ...(anterior && resumen.trim() ? { anterior_resumen: resumen.trim() } : {}), ...(watermark !== "none" && logo2 && logo2 !== logo ? { logo_nombre: await logoName(logo), logo2_nombre: await logoName(logo2), ...(logo2 === FRUTI ? { logo2: "frutienganchados" } : {}) } : {}), ...(coverData?.parte ? { portada: { ...coverData, clip: Math.round(files.length * 0.35) } } : {}) })], { type: "application/json" }), "guion.json");
+      fd.append("guion", new Blob([JSON.stringify({ ...adaptGuion(guion, files.length, { marca, delogo, cierre: guion?.versiculo || (lastEpisode ? "FIN" : guion?.cierre || "Continuará..."), cierreCta: cta }), ...(music ? { musica_volumen: Number(musicVol), musica_modo: musicMode } : {}), recortar, velocidad: Number(velocidad), versiones, parte: part, ...(style === "cristiana" || style === "biblica" || style === "epica" ? { cristiana: true } : {}), ...(anterior && resumen.trim() ? { anterior_resumen: resumen.trim() } : {}), ...(watermark !== "none" && logo2 && logo2 !== logo ? { logo_nombre: await logoName(logo), logo2_nombre: await logoName(logo2), ...(logo2 === FRUTI ? { logo2: "frutienganchados" } : {}) } : {}), ...(coverData?.parte ? { portada: { ...coverData, clip: Math.round(files.length * 0.35) } } : {}) })], { type: "application/json" }), "guion.json");
       for (const f of files) fd.append("clips", f, f.name);
       if (music) fd.append("musica", music, music.name);
       if (anterior) fd.append("anterior", anterior, anterior.name);

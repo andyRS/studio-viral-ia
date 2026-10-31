@@ -5,7 +5,7 @@ export type Niche = "frutinovelas"|"cine90"|"cristiano"|"dropshipping";
 export interface Account { id:string; name:string; platform:Platform; niche:Niche; audience:string; idealDuration:string }
 // Perfil de cuenta: se inyecta en todos los prompts de la IA cuando se trabaja para esa cuenta.
 export interface AccountProfile { id:string; accountId:string; handle:string; platform:Platform; verified?:boolean;
-  style:"frutinovela"|"cristiana"|"biblica"|"cine90"; onlyThisStyle?:boolean; objective:string; goals:string[]; audience:string;
+  style:"frutinovela"|"cristiana"|"biblica"|"epica"|"cine90"; onlyThisStyle?:boolean; objective:string; goals:string[]; audience:string;
   setting?:string; results?:string; contentRules:string[]; schedule:{ day:string; piece:string }[]; scheduleNotes?:string[];
   cta:string; commentWords:string[]; hashtags?:string[]; signatureSongs:Record<string,string>; bio:string; notes?:string;
   reference?:string; followers?:number; ideas?:{ title:string; idea:string }[] }
