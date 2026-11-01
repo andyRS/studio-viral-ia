@@ -250,6 +250,29 @@ const ir = async (page, espacio, modulo) => {
       const t = o.acts[0].sequences[0].scenes[0].tomas[0];
       ok(hecho && t.plano === "primer plano" && t.luz === "atardecer", "Tomas: plano y luz editados a la vez se guardan los dos");
       await ctx.close(); }
+
+    // 11. Canal de la serie: conectar una cuenta nueva sin salir de la creación (con y sin cuentas previas).
+    { const { ctx, page } = await abrir(b);
+      await ir(page, "Creative Studio", "Generador");
+      await page.getByRole("button", { name: /Crear$/ }).first().click(); await page.waitForTimeout(900);
+      const canal = page.getByLabel("Canal de la serie");
+      await canal.selectOption({ label: "＋ Conectar una cuenta nueva…" }); await page.waitForTimeout(300);
+      await page.locator("#nueva-cuenta-red").selectOption("YouTube");
+      await page.locator("#nueva-cuenta-nombre").fill("Canal E2E YouTube");
+      await page.getByRole("button", { name: "Conectar y usar esta cuenta" }).click(); await page.waitForTimeout(800);
+      const cuentas = await page.evaluate(() => JSON.parse(localStorage.getItem("estudio-viral:accounts") || "[]"));
+      const nueva = cuentas.find(a => a.name === "Canal E2E YouTube");
+      ok(!!nueva && nueva.platform === "YouTube", "se registra la cuenta nueva desde el canal de la serie");
+      ok((await page.getByLabel("Canal de la serie").inputValue()) === nueva?.id, "la cuenta nueva queda elegida como canal");
+      ok(await page.getByRole("button", { name: /Largo · 16:9/ }).isEnabled(), "con YouTube se puede elegir el formato largo");
+      await ctx.close(); }
+    { const { ctx, page } = await abrir(b, () => { localStorage.setItem("estudio-viral:accounts", "[]"); });
+      await ir(page, "Creative Studio", "Generador");
+      await page.getByRole("button", { name: /Crear$/ }).first().click(); await page.waitForTimeout(900);
+      ok(await page.locator("#nueva-cuenta-nombre").count() === 1, "sin cuentas, el formulario de cuenta nueva aparece directamente");
+      await page.locator("#nueva-cuenta-nombre").fill("Primera cuenta"); await page.locator("#nueva-cuenta-nombre").press("Enter"); await page.waitForTimeout(800);
+      ok((await page.getByLabel("Canal de la serie").count()) === 1 && (await page.evaluate(() => JSON.parse(localStorage.getItem("estudio-viral:accounts")).length)) === 1, "Intro guarda la primera cuenta y vuelve al selector");
+      await ctx.close(); }
   } finally {
     await b.close();
     if (srv) try { process.kill(-srv.pid); } catch {}
