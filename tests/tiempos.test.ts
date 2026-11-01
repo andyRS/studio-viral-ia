@@ -74,5 +74,6 @@ ok(!/9:16/.test(JSON.stringify(soloRefresh.scenes)), "formato · Actualizar prom
 const vertical: any = refreshPrompts(conAspecto(ep, "9:16"), "epica");
 ok(vertical.aspecto === "9:16" && /vertical 9:16/.test(vertical.scenes[0].animationPrompt) && !/16:9/.test(JSON.stringify(vertical.scenes)) && !/16:9/.test(JSON.stringify(vertical.cast)), "formato · cambiar el episodio a vertical rehace escenas y fichas en 9:16");
 ok(conAspecto({ scenes: [{ imagePromptFlow: "vertical 9:16" }] }, "9:16").scenes[0].imagePromptFlow === "vertical 9:16", "formato · una serie corta no se toca");
+ok(ep.guionJson.formato === "16:9" && soloRefresh.guionJson.formato === "16:9" && vertical.guionJson.formato === undefined, "formato · el guion del montaje lleva «formato: 16:9» (1920x1080) y se quita al pasar a vertical");
 
 console.log(`${checks} comprobaciones de tiempos correctas.`);

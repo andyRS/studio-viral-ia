@@ -389,7 +389,7 @@ const ir = async (page, espacio, modulo) => {
       await page.getByRole("button", { name: /Crear serie y episodio 1/ }).click(); await page.waitForTimeout(3000);
       ok(await page.getByLabel("Formato de imagen del episodio").inputValue() === "16:9", "canal corto: el episodio de Daniel queda en 16:9");
       const e = await page.evaluate(() => JSON.parse(localStorage.getItem("estudio-viral:episodes")).slice(-1)[0]);
-      ok(e.output.aspecto === "16:9" && !/9:16/.test(JSON.stringify(e.output.scenes)), "canal corto: ningún prompt en 9:16");
+      ok(e.output.aspecto === "16:9" && !/9:16/.test(JSON.stringify(e.output.scenes)) && e.output.guionJson.formato === "16:9", "canal corto: ningún prompt en 9:16 y el montaje sale en 16:9");
       await ctx.close(); }
 
     // 14. Caso real: Daniel EP01 (clips + biblioteca canónica) en modo fidelidad, serie larga.

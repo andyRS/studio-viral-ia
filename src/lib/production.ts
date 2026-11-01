@@ -117,12 +117,14 @@ export function conAspecto<T>(v: T, aspecto: Aspecto): T {
     if (!objeto(v) || (v as any).aspecto !== "16:9") return v;
     const mapV = (x: any): any => typeof x === "string" ? vertical(x) : Array.isArray(x) ? x.map(mapV)
       : x && typeof x === "object" ? Object.fromEntries(Object.entries(x).map(([k, y]) => [k, mapV(y)])) : x;
-    return { ...mapV(v), aspecto: "9:16" } as T;
+    const r = mapV(v); if (r.guionJson?.formato === "16:9") { const { formato: _f, ...g } = r.guionJson; r.guionJson = g; }
+    return { ...r, aspecto: "9:16" } as T;
   }
   const map = (x: any): any => typeof x === "string" ? horizontal(x) : Array.isArray(x) ? x.map(map)
     : x && typeof x === "object" ? Object.fromEntries(Object.entries(x).map(([k, y]) => [k, map(y)])) : x;
   const r = map(v);
-  return (r && typeof r === "object" && !Array.isArray(r) && "scenes" in r ? { ...r, aspecto } : r) as T;
+  // El guion del montaje (subtitular.py) monta en 1920x1080 cuando lleva «formato: 16:9».
+  return (objeto(r) ? { ...r, aspecto, ...(r.guionJson ? { guionJson: { ...r.guionJson, formato: "16:9" } } : {}) } : r) as T;
 }
 
 // Mantiene el gancho y el cierre; los recortes salen del desarrollo.
