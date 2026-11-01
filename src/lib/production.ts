@@ -155,8 +155,23 @@ interface Ctx {
   style: StyleKey; duration: number; characters: CastMember[]; idea: string;
   chosenHook?: string[] | null; seriesTitle?: string; partNumber?: number; previousSummary?: string;
   scenes?: number;   // escenas elegidas a mano (si no, salen de la duración)
+  // Modo fidelidad (capítulo importado): diálogos, hablantes, orden y cantidad tal cual; no se parten frases,
+  // no se añade cierre del Narrador ni se cambian palabras. Solo se enriquecen la dirección visual y los prompts.
+  fidelidad?: boolean;
 }
 
+// Dirección de escena (importación cinematográfica): lo estático va a la imagen y el movimiento al vídeo.
+export type Direccion = { visualAction?: string; videoAction?: string; shotType?: string; camera?: string; lighting?: string; atmosphere?: string; vfx?: string; expression?: string; conflict?: string; continuity?: string };
+const CAMPOS_DIRECCION = ["visualAction", "videoAction", "shotType", "camera", "lighting", "atmosphere", "vfx", "expression", "conflict", "continuity"] as const;
+function direccionDe(r: any): Direccion {
+  return Object.fromEntries(CAMPOS_DIRECCION.map(k => [k, clean(r?.[k])]).filter(([, v]) => v)) as Direccion;
+}
+// Modo fidelidad: el hablante se respeta tal cual (nunca se cambia por el primero del elenco si no se reconoce).
+function findSpeakerFiel(name: unknown, cast: CastMember[]) {
+  const n = norm(name);
+  if (!n || /^(narrador|narradora|voz en off)/.test(n)) return NARRATOR;
+  return cast.find(c => norm(c.name) === n)?.name || clean(name);
+}
 function findSpeaker(name: unknown, cast: CastMember[]) {
   const n = norm(name);
   if (!n || /narrador|narradora|voz en off/.test(n)) return NARRATOR;
@@ -290,8 +305,13 @@ function imagePrompt(s: { setting: string; speaker: string; emotion: string; loc
     // Estilo común primero (el lote de Flow lo saca una sola vez arriba), luego el plano y lo que pasa.
     const people = [member, ...others].filter((m): m is CastMember => !!m);
     const who = people.length ? people.map(m => `${m.name}${tag(m)} (${m.visualEN || m.visualES}; outfit: ${m.clothing})`).join("; ") : EMPTY_EN;
-    const shotName = shot.en.charAt(0).toUpperCase() + shot.en.slice(1);
-    return `${look(style).img}, vertical 9:16, photorealistic, real people, same faces and wardrobe as the reference sheets, no text, no watermark.${bibleImg(style)}${location ? ` Location (identical in every scene set here: same set, time of day and light): ${location}.` : ""} ${shotName}: ${setting}. ${who}${s.emotion && tidy(s.emotion).split(/\s+/).length >= 2 ? `, ${tidy(s.emotion)}` : ""}.`;
+    const d = direccionDe(s);
+    const shotName = d.shotType || shot.en.charAt(0).toUpperCase() + shot.en.slice(1);
+    const narrador = s.speaker === NARRATOR;
+    // La emoción es de quien habla en cámara; el Narrador es una voz en off y nunca tiene rostro ni gestos.
+    const gesto = !people.length ? "" : d.expression ? `, ${d.expression}` : !narrador && member && s.emotion && tidy(s.emotion).split(/\s+/).length >= 2 ? `, ${tidy(s.emotion)}` : "";
+    const direccion = [d.visualAction && !tidy(s.setting).includes(tidy(d.visualAction)) && `Frozen moment: ${d.visualAction}.`, d.lighting && `Light: ${d.lighting}.`, d.atmosphere && `Atmosphere: ${d.atmosphere}.`, d.vfx && `Visual effects: ${d.vfx}.`, narrador ? "The narrator is an off-screen voice only: never shown, no narrator figure." : ""].filter(Boolean).join(" ");
+    return `${look(style).img}, vertical 9:16, photorealistic, real people, same faces and wardrobe as the reference sheets, no text, no watermark.${bibleImg(style)}${location ? ` Location (identical in every scene set here: same set, time of day and light): ${location}.` : ""} ${shotName}: ${setting}. ${who}${gesto}.${direccion ? ` ${direccion}` : ""}`;
   }
   const guard = style === "cristiana" ? ` ${CHRISTIAN_SCENE_GUARD[0].toUpperCase()}${CHRISTIAN_SCENE_GUARD.slice(1)}.` : "";
   const who = member ? `${member.name}${tag(member)} (piel de ${member.fruit}: ${member.headES}; ${member.clothing}) con expresión ${s.emotion}`
@@ -311,7 +331,7 @@ function animationPrompt(s: { setting: string; speaker: string; line: string; em
 References: image 1 = scene${member ? `; image 2 = character sheet of ${member.name}` : others.length ? others.map((o, k) => `; image ${k + 2} = character sheet of ${o.name}`).join("") : ""}.
 CHARACTERS: ${member ? `${member.name}: ${member.visualEN || member.visualES}; outfit: ${member.clothing}. Real people.` : others.length ? `${others.map(o => `${o.name}: ${o.visualEN || o.visualES}; outfit: ${o.clothing}`).join(". ")}. Real people, identical to their sheets; nobody speaks on camera.` : `${EMPTY_EN}. Nobody appears at any moment.`}
 SCENE: ${location ? `${location} (same set as the other scenes here). ` : ""}${setting}.
-SHOTS: ${shot.en}, ${shot.moveEn}. From 0.3 s, with no pause before, ${narrator ? "slow push-in while the narrator says" : `${member!.name}, already in full ${s.emotion}, says while the camera dollies slowly toward the face`} (in Spanish, exact words): "${s.line}" Right after the line: 1 s ${narrator ? "holding on the scene" : `close-up of ${member!.name} holding the emotion`}, then the same shot continues without cuts.
+${(() => { const d = direccionDe(s); return [d.videoAction && `ACTION: ${d.videoAction}.`, d.camera && `CAMERA: ${d.camera} One continuous move, no cuts.`, d.vfx && `VFX: ${d.vfx}.`, d.continuity && `CONTINUITY: ${d.continuity}.`].filter(Boolean).map(x => x + "\n").join(""); })()}SHOTS: ${direccionDe(s).shotType || shot.en}, ${direccionDe(s).camera ? "with the camera move above" : shot.moveEn}. From 0.3 s, with no pause before, ${narrator ? `the on-screen action plays while the off-screen narrator says` : `${member!.name}, already in full ${s.emotion}, says while the camera dollies slowly toward the face`} (in Spanish, exact words): "${s.line}" Right after the line: 1 s ${narrator ? "holding on the scene" : `close-up of ${member!.name} holding the emotion`}, then the same shot continues without cuts.
 ${SOUND_EN}${kissNote(s, "en")}
 PRONUNCIATION: ${narrator ? accentPrompt(null, "en", style) : accentPrompt(member, "en", style)}.
 VOICES: ${voice}${voicesEnd(style)}${bibleVid(style)}`;
@@ -379,10 +399,11 @@ export function buildProduction(raw: any, ctx: Ctx) {
   let base = rawScenes(raw)
     .map((r: any) => ({
       setting: tidy(clean(r.setting || r.scene || r.escena)) || (raw?.title ? `continuación de «${clean(raw.title)}»` : "interior de una casa dominicana"),
-      speaker: findSpeaker(r.speaker || r.hablante, cast),
-      line: fixDialogue(r.line || r.text || r.dialogo || ""),
+      speaker: ctx.fidelidad ? findSpeakerFiel(r.speaker || r.hablante, cast) : findSpeaker(r.speaker || r.hablante, cast),
+      line: ctx.fidelidad ? clean(r.line || r.text || r.dialogo || "") : fixDialogue(r.line || r.text || r.dialogo || ""),
       emotion: clean(r.emotion || r.emocion) || "emoción contenida",
-      present: Array.isArray(r.onScreen) ? r.onScreen : [],
+      present: Array.isArray(r.visibleCharacters) ? r.visibleCharacters : Array.isArray(r.onScreen) ? r.onScreen : [],
+      ...direccionDe(r),
       title: clean(r.title || r.titulo), goal: clean(r.goal || r.objetivo), sfx: clean(r.sfx || r.efectos), music: clean(r.music || r.musica),
       transition: clean(r.transition || r.transicion), link: clean(r.link || r.conexion), location: clean(r.location || r.lugar), shot: clean(r.shot || r.plano),
       phone: normPhone(r.phone || r.telefono, style) as PhoneScene | undefined,
@@ -391,7 +412,7 @@ export function buildProduction(raw: any, ctx: Ctx) {
   // Un solo hablante por escena: una frase que no cabe en 8 s se parte en dos escenas,
   // pero solo por un punto o pausa natural (nunca a mitad de frase).
   base = base.flatMap(s => {
-    if (s.line.split(" ").length <= 18) return [s];
+    if (ctx.fidelidad || s.line.split(" ").length <= 18) return [s];
     const parts = s.line.match(/[^.!?…]+[.!?…]+["”]?\s*/g)?.map(p => p.trim()).filter(Boolean) || [];
     if (parts.length < 2) return [s];
     const half = s.line.length / 2; let acc = 0, cut = 1;
@@ -403,10 +424,10 @@ export function buildProduction(raw: any, ctx: Ctx) {
   });
   // Cristianas: nada católico en escena; la frutinovela cristiana además con vocabulario neutro.
   if (style === "cristiana") base = base.map(s => ({ ...s, setting: stripForbidden(s.setting), line: neutralize(stripForbidden(s.line)) }));
-  if (isBibleStyle(style)) base = base.map(s => ({ ...s, setting: stripForbidden(s.setting), line: stripForbidden(s.line) }));
+  if (isBibleStyle(style)) base = base.map(s => ({ ...s, setting: stripForbidden(s.setting), line: ctx.fidelidad ? s.line : stripForbidden(s.line) }));
   // v15: nunca «Escribe AMÉN» ni otras llamadas a interacción (Meta lo penaliza y desmonetiza la página).
   // El cierre es la frase del Narrador con el mensaje; si falta, se añade.
-  if (isChristianStyle(style)) {
+  if (isChristianStyle(style) && !ctx.fidelidad) {
     base = base.map(s => ({ ...s, line: s.line.replace(/\s*(escribe|comenta|di)\s+am[eé]n\.?/gi, "").trim() })).filter(s => s.line.length >= 3);
     const last = base[base.length - 1];
     if (last?.speaker !== NARRATOR) {
@@ -419,11 +440,13 @@ export function buildProduction(raw: any, ctx: Ctx) {
   const ids: Record<string, string> = Object.fromEntries(cast.map((c, k) => [c.name.toLowerCase(), sheetId(k + 1)]));
   const scenes: Scene[] = base.map((s, i) => {
     const member = byName.get(s.speaker);
-    const others = s.present.map((p: unknown) => byName.get(findSpeaker(p, cast))).filter((m: CastMember | undefined): m is CastMember => !!m && m !== member);
+    const others = s.present.map((p: unknown) => byName.get(ctx.fidelidad ? findSpeakerFiel(p, cast) : findSpeaker(p, cast))).filter((m: CastMember | undefined): m is CastMember => !!m && m !== member)
+      .filter((m: CastMember, k: number, a: CastMember[]) => a.indexOf(m) === k);
     const role = sceneRole(i, base.length);
     const present = (remoteCall(s, member, others) ? others : [member, ...others]).filter((m): m is CastMember => !!m).map(m => m.name);
     return {
       n: i + 1, durationSec: SCENE_SECONDS, location: s.location, setting: s.setting, speaker: s.speaker, line: s.line, emotion: s.emotion,
+      ...direccionDe(s), ...(ctx.fidelidad ? { visibleCharacters: present } : {}),
       // Ficha de escena (estructura del prompt maestro). Lo que la IA no rellena lo completa el código.
       title: s.title || role.title, goal: s.goal || role.goal, shot: pickShot(s, present.length, i).es, characters: present,
       sfx: s.sfx || role.sfx, music: s.music || role.music,

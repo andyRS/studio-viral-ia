@@ -1,0 +1,156 @@
+{
+  "clips": [
+    [
+      [
+        "Narrador",
+        "En la tierra, Daniel oraba. En lo invisible, comenzaba una resistencia."
+      ]
+    ],
+    [
+      [
+        "Daniel",
+        "Señor, dame entendimiento. No apartaré mi corazón de ti."
+      ]
+    ],
+    [
+      [
+        "Narrador",
+        "Su oración fue escuchada desde el primer día."
+      ]
+    ],
+    [
+      [
+        "Mensajero Celestial",
+        "La respuesta debe llegar hasta Daniel."
+      ]
+    ],
+    [
+      [
+        "Príncipe de Persia",
+        "Ningún mensajero cruzará mis dominios."
+      ]
+    ],
+    [
+      [
+        "Narrador",
+        "Durante veintiún días, el príncipe de Persia resistió su avance."
+      ]
+    ],
+    [
+      [
+        "Daniel",
+        "Señor, sigo esperando. Guíame hacia tu verdad."
+      ]
+    ],
+    [
+      [
+        "Narrador",
+        "Daniel siguió en duelo, sin manjares, carne ni vino."
+      ]
+    ],
+    [
+      [
+        "Mensajero Celestial",
+        "Debo cumplir la misión para la que fui enviado."
+      ]
+    ],
+    [
+      [
+        "Príncipe de Persia",
+        "Todavía no pasarás."
+      ]
+    ],
+    [
+      [
+        "Narrador",
+        "Entonces, Miguel, uno de los principales príncipes, acudió en su ayuda."
+      ]
+    ],
+    [
+      [
+        "Miguel",
+        "Sigue adelante. Yo te ayudaré."
+      ]
+    ],
+    [
+      [
+        "Príncipe de Persia",
+        "¡Esta batalla no ha terminado!"
+      ]
+    ],
+    [
+      [
+        "Narrador",
+        "Con la ayuda de Miguel, el mensajero continuó su misión."
+      ]
+    ],
+    [
+      [
+        "Narrador",
+        "A orillas del Tigris, Daniel había contemplado una visión sobrecogedora."
+      ]
+    ],
+    [
+      [
+        "Daniel",
+        "No tengo fuerzas... apenas puedo respirar."
+      ]
+    ],
+    [
+      [
+        "Mensajero Celestial",
+        "Daniel, muy amado, no temas. Sé fuerte."
+      ]
+    ],
+    [
+      [
+        "Mensajero Celestial",
+        "Desde el primer día, tus palabras fueron oídas. Debo volver contra Persia."
+      ]
+    ],
+    [
+      [
+        "Mensajero Celestial",
+        "Miguel vino en mi ayuda. Cuando regrese a luchar contra Persia, vendrá el príncipe de Grecia."
+      ]
+    ],
+    [
+      [
+        "Príncipe de Grecia",
+        "Mi tiempo se acerca."
+      ]
+    ]
+  ],
+  "cierre": "DANIEL 10:12–21 · CONTINUARÁ",
+  "gancho": [
+    "Su oración fue escuchada desde el primer día...",
+    "pero un príncipe resistió la respuesta durante 21 días."
+  ],
+  "colores": {
+    "Daniel": "F7D58A",
+    "Miguel": "80D8FF",
+    "Narrador": "F2F5FF",
+    "Mensajero Celestial": "FFF1C7",
+    "Príncipe de Persia": "FF8656",
+    "Príncipe de Grecia": "A5BFFF"
+  },
+  "tarjetas": [
+    {
+      "antes": 1,
+      "texto": "DANIEL · LA GUERRA DE LOS 21 DÍAS"
+    },
+    {
+      "antes": 11,
+      "texto": "DÍA 21 · LA AYUDA DE MIGUEL"
+    },
+    {
+      "antes": 15,
+      "texto": "A ORILLAS DEL TIGRIS"
+    },
+    {
+      "antes": 20,
+      "texto": "PRÓXIMAMENTE · EL PRÍNCIPE DE GRECIA"
+    }
+  ],
+  "versiculo": "Daniel 10:1–21"
+}

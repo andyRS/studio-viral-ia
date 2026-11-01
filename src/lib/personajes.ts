@@ -10,12 +10,22 @@ export type CharacterBible = {
   relaciones?: string;      // «hermano de…», «enemigo de…»
   candado?: boolean;        // identidad bloqueada: la IA no puede proponer cambios de aspecto
   versiones?: { at: string; nota: string }[];
+  canon?: Canon;            // datos de la biblioteca canónica importada (tipo, apariciones, reglas…)
+};
+// Biblioteca canónica importada de otra IA: se conserva tal cual para el validador y la dirección de escena.
+export type Canon = {
+  tipo?: string;               // personaje_en_pantalla · personaje_visual_sin_dialogo · voz_en_off…
+  apariciones?: number[];      // clips donde aparece (número desde 1, del archivo original)
+  soloEnApariciones?: boolean; // restricción: no aparece fuera de esas escenas (p. ej. anticipación final)
+  reglas?: string[];           // reglas de continuidad que lo nombran
+  ambiente?: string; estiloVisual?: string; consistencia?: string; referenciaBiblica?: string; notaFidelidad?: string;
 };
 
 export const normBible = (b: any): CharacterBible => ({
   rasgos: String(b?.rasgos || ""), vestuario: Array.isArray(b?.vestuario) ? b.vestuario.map(String).filter(Boolean) : [],
   paleta: String(b?.paleta || ""), negativo: String(b?.negativo || ""), voz: String(b?.voz || ""), relaciones: String(b?.relaciones || ""),
   candado: !!b?.candado, versiones: Array.isArray(b?.versiones) ? b.versiones.slice(-20) : [],
+  ...(b?.canon && typeof b.canon === "object" ? { canon: b.canon } : {}),
 });
 
 // Una línea compacta por personaje para la IA.

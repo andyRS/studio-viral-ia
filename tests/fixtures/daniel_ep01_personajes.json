@@ -1,0 +1,135 @@
+{
+  "titulo_serie": "Daniel: La Guerra de los 21 Días",
+  "episodio": "Episodio 1 — El cielo no estaba en silencio",
+  "formato": "16:9 horizontal",
+  "estilo": "Épica bíblica (ángeles, cielo, relatos antiguos)",
+  "fuente_principal": "Daniel 10:1–21",
+  "personajes": [
+    {
+      "nombre": "Daniel",
+      "rol": "Protagonista humano, persevera en oración y recibe la visión.",
+      "tipo": "personaje_en_pantalla",
+      "descripcion_maestra": "Anciano hebreo de unos 80 años como caracterización artística; complexión delgada, piel oliva, arrugas profundas, ojos marrones, cabello gris oscuro hasta los hombros, barba larga gris plata. Túnica beige de lino, cinturón tejido, manto de lana azul grisáceo, sandalias de cuero. Dignidad y perseverancia; nunca cambiar facciones ni vestuario salvo desgaste gradual del ayuno.",
+      "ambiente_referencia": "Interior persa antiguo de piedra y adobe; orillas del Tigris. Iluminación cálida de lámparas y amanecer.",
+      "formato_referencia": "16:9 horizontal (3840 x 2160 objetivo, si está disponible)",
+      "estilo_visual": "Cine épico bíblico de acción real hiperrealista, materiales físicos creíbles, fotografía cinematográfica premium, iluminación volumétrica controlada, rostro reconocible y anatomía realista; no anime ni estética de videojuego.",
+      "consistencia": "Usar la misma imagen maestra aprobada en cada toma; no reinventar rostro, silueta, vestuario, armas ni paleta sin una variante aprobada.",
+      "participa_en_clips": [
+        2,
+        7,
+        16
+      ],
+      "referencia_biblica": "Daniel 10:1-4, 10:8-19",
+      "color_guion": "F7D58A",
+      "referencia_visual": null,
+      "nota_fidelidad": "Edad y vestuario representados artísticamente."
+    },
+    {
+      "nombre": "Mensajero Celestial",
+      "rol": "Mensajero que explica la resistencia y comunica la respuesta.",
+      "tipo": "personaje_en_pantalla",
+      "descripcion_maestra": "Hombre celestial de apariencia madura, rostro noble, piel oliva clara, ojos gris azulados, cabello castaño oscuro ondulado hasta los hombros, sin barba. Túnica marfil de lino en capas, bordados sobrios de oro, cinturón dorado, brazales ceremoniales. Luz blanca dorada contenida. Sin alas ni armadura de combate.",
+      "ambiente_referencia": "Corredores de nubes y luz; después, orillas del Tigris.",
+      "formato_referencia": "16:9 horizontal (3840 x 2160 objetivo, si está disponible)",
+      "estilo_visual": "Cine épico bíblico de acción real hiperrealista, materiales físicos creíbles, fotografía cinematográfica premium, iluminación volumétrica controlada, rostro reconocible y anatomía realista; no anime ni estética de videojuego.",
+      "consistencia": "Usar la misma imagen maestra aprobada en cada toma; no reinventar rostro, silueta, vestuario, armas ni paleta sin una variante aprobada.",
+      "participa_en_clips": [
+        4,
+        9,
+        17,
+        18,
+        19,
+        20
+      ],
+      "referencia_biblica": "Daniel 10:10-21",
+      "color_guion": "FFF1C7",
+      "referencia_visual": null,
+      "nota_fidelidad": "Interpretación visual cinematográfica; Daniel 10 no describe su apariencia ni combate en detalle."
+    },
+    {
+      "nombre": "Príncipe de Persia",
+      "rol": "Antagonista de la resistencia durante 21 días.",
+      "tipo": "personaje_en_pantalla",
+      "descripcion_maestra": "Entidad humanoide masculina de porte regio, muy alta, rostro severo, piel bronce grisácea, ojos ámbar rojizos, cabello negro largo y barba trenzada. Corona persa de oro envejecido y obsidiana; armadura negra de obsidiana y bronce con motivos de leones, capa negra pesada, cetro oscuro. Sin cuernos, sin rasgos demoníacos genéricos.",
+      "ambiente_referencia": "Fortaleza espiritual ficticia inspirada en la Persia aqueménida: columnas gigantes, cielo de tormenta rojo profundo, bronce y sombras.",
+      "formato_referencia": "16:9 horizontal (3840 x 2160 objetivo, si está disponible)",
+      "estilo_visual": "Cine épico bíblico de acción real hiperrealista, materiales físicos creíbles, fotografía cinematográfica premium, iluminación volumétrica controlada, rostro reconocible y anatomía realista; no anime ni estética de videojuego.",
+      "consistencia": "Usar la misma imagen maestra aprobada en cada toma; no reinventar rostro, silueta, vestuario, armas ni paleta sin una variante aprobada.",
+      "participa_en_clips": [
+        5,
+        10,
+        13
+      ],
+      "referencia_biblica": "Daniel 10:13, 10:20",
+      "color_guion": "FF8656",
+      "referencia_visual": null,
+      "nota_fidelidad": "Interpretación visual cinematográfica; Daniel 10 no describe su apariencia ni combate en detalle."
+    },
+    {
+      "nombre": "Miguel",
+      "rol": "Uno de los principales príncipes, interviene en ayuda del mensajero.",
+      "tipo": "personaje_en_pantalla",
+      "descripcion_maestra": "Guerrero celestial de figura masculina madura, piel oliva cálida, ojos ámbar, mandíbula marcada, cabello negro largo y ondulado hasta los hombros, sin barba. Armadura de plata blanca y oro antiguo, capa blanca, dos grandes alas blancas y doradas y espada plateada dorada, como licencias artísticas. Mantener exactamente rostro, armadura, alas y espada.",
+      "ambiente_referencia": "Campo de batalla celestial simbólico con nubes monumentales, luz blanca y dorada y tormentas azules.",
+      "formato_referencia": "16:9 horizontal (3840 x 2160 objetivo, si está disponible)",
+      "estilo_visual": "Cine épico bíblico de acción real hiperrealista, materiales físicos creíbles, fotografía cinematográfica premium, iluminación volumétrica controlada, rostro reconocible y anatomía realista; no anime ni estética de videojuego.",
+      "consistencia": "Usar la misma imagen maestra aprobada en cada toma; no reinventar rostro, silueta, vestuario, armas ni paleta sin una variante aprobada.",
+      "participa_en_clips": [
+        11,
+        12,
+        14
+      ],
+      "referencia_biblica": "Daniel 10:13, 10:21; Daniel 12:1",
+      "color_guion": "80D8FF",
+      "referencia_visual": null,
+      "nota_fidelidad": "Interpretación visual cinematográfica; Daniel 10 no describe su apariencia ni combate en detalle."
+    },
+    {
+      "nombre": "Príncipe de Grecia",
+      "rol": "Figura de anticipación del conflicto posterior; aparece únicamente al final.",
+      "tipo": "personaje_en_pantalla",
+      "descripcion_maestra": "Entidad humanoide de porte regio, rostro aristocrático anguloso, piel pálida con textura de mármol, ojos azul hielo, cabello negro corto ondulado, sin barba. Armadura helénica de bronce antiguo y acero azul oscuro, capa azul noche, lanza larga, casco ceremonial en mano. Claramente distinto del príncipe de Persia; aspecto inventado.",
+      "ambiente_referencia": "Arquitectura helénica sobrenatural ficticia, columnas de mármol, nubes de tormenta azul glacial.",
+      "formato_referencia": "16:9 horizontal (3840 x 2160 objetivo, si está disponible)",
+      "estilo_visual": "Cine épico bíblico de acción real hiperrealista, materiales físicos creíbles, fotografía cinematográfica premium, iluminación volumétrica controlada, rostro reconocible y anatomía realista; no anime ni estética de videojuego.",
+      "consistencia": "Usar la misma imagen maestra aprobada en cada toma; no reinventar rostro, silueta, vestuario, armas ni paleta sin una variante aprobada.",
+      "participa_en_clips": [
+        20
+      ],
+      "referencia_biblica": "Daniel 10:20",
+      "color_guion": "A5BFFF",
+      "referencia_visual": null,
+      "nota_fidelidad": "Interpretación visual cinematográfica; Daniel 10 no describe su apariencia ni combate en detalle."
+    },
+    {
+      "nombre": "Varón vestido de lino",
+      "rol": "Visión de Daniel 10:5–6; personaje visual sin diálogo.",
+      "tipo": "personaje_visual_sin_dialogo",
+      "descripcion_maestra": "Figura humana solemne vestida de lino resplandeciente, cinturón de oro fino, cuerpo semejante al berilo, rostro luminoso como relámpago, ojos como antorchas, brazos y pies como bronce bruñido. No alas ni espada ni armadura. Mantenerlo diferenciado del mensajero celestial como decisión de producción, sin atribuir identidad teológica definitiva.",
+      "ambiente_referencia": "Orillas del río Tigris; luz blanca y dorada sobrenatural, agua y paisaje antiguo.",
+      "formato_referencia": "16:9 horizontal (3840 x 2160 objetivo, si está disponible)",
+      "estilo_visual": "Cine épico bíblico de acción real hiperrealista, materiales físicos creíbles, fotografía cinematográfica premium, iluminación volumétrica controlada, rostro reconocible y anatomía realista; no anime ni estética de videojuego.",
+      "consistencia": "Usar la misma imagen maestra aprobada en cada toma; no reinventar rostro, silueta, vestuario, armas ni paleta sin una variante aprobada.",
+      "participa_en_clips": [
+        15
+      ],
+      "referencia_biblica": "Daniel 10:5-6",
+      "color_guion": null,
+      "referencia_visual": null,
+      "nota_fidelidad": "Su identidad respecto al mensajero posterior es materia interpretativa; evitar afirmación definitiva."
+    }
+  ],
+  "narrador": {
+    "nombre": "Narrador",
+    "tipo": "voz_en_off",
+    "descripcion": "Voz en off solemne, emocional, español latino neutro; sin representación física.",
+    "color_guion": "F2F5FF"
+  },
+  "reglas_de_continuidad": [
+    "Vincular imágenes maestras de referencia una vez aprobadas; ningún JSON sin imágenes garantiza identidad visual exacta.",
+    "El príncipe de Grecia NO interviene en los primeros 21 días; solo aparece como anticipación del conflicto futuro en el clip 20.",
+    "El varón vestido de lino aparece como visión en el clip 15 (retrospectiva visual); no debe confundirse automáticamente con Miguel o el mensajero.",
+    "Alas, armas, vestuarios sobrenaturales y diálogos entre príncipes son dramatización, no descripciones bíblicas literales.",
+    "Conservar todos los personajes en proporción horizontal 16:9 con rostros visibles en referencias maestras."
+  ]
+}

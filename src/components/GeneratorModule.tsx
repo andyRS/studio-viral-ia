@@ -26,7 +26,8 @@ import type { StoryIdea } from "@/lib/ideas";
 import SceneDesk from "./SceneDesk";
 import StoryArchitect from "./StoryArchitect";
 import { EPIC_NOTICE, STYLES, type StyleKey } from "@/lib/knowledge";
-import { adaptarPersonajesLocal, capituloDeJson, escenasDelGuion, importarCapitulo, templateSeries, templateNext } from "@/lib/story";
+import { normalizarCapitulo, normalizarPersonajes, importarFiel, estiloDeTexto } from "@/lib/importacion";
+import { adaptarPersonajesLocal, escenasDelGuion, templateSeries, templateNext } from "@/lib/story";
 import { fichaGenerica, isGenericName } from "@/lib/cast";
 import { aspectoDe, buildFlowBatch, conAspecto, escenasEnTexto, MAX_SCENES, MIN_SCENES, refreshPrompts, PROMPT_RULES_VERSION, sceneCountFor } from "@/lib/production";
 import { seriesSignals } from "@/lib/seriesSignals";
@@ -158,7 +159,10 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
   const [guionOtro, setGuionOtro, guionOtroB] = useBorrador("generador:guion-externo", "");
   const [personajesOtro, setPersonajesOtro, personajesOtroB] = useBorrador("generador:personajes-externos", "");
   // Capítulo con la estructura del estudio (capitulo.json): se importa tal cual, sin IA.
-  const capitulo = useMemo(() => kind === "adaptar" ? capituloDeJson(guionOtro) : null, [kind, guionOtro]);
+  // Capítulo reconocible (clips o scenes con hablante y frase): se puede importar en modo fidelidad.
+  const capitulo = useMemo(() => kind === "adaptar" ? normalizarCapitulo(guionOtro) : null, [kind, guionOtro]);
+  const biblioteca = useMemo(() => kind === "adaptar" && personajesOtro.trim() ? normalizarPersonajes(personajesOtro) : null, [kind, personajesOtro]);
+  const [modoImport, setModoImport] = useState<"fidelidad" | "creativa">("fidelidad");
   const [replica, setReplica] = useBorrador("generador:replica", "");
   // Continuar
   const [seriesId, setSeriesId] = useState("");
@@ -244,7 +248,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
   async function createStory(override?: { idea: string; notes: string }) {
     const idea_ = override?.idea ?? idea, notes_ = override?.notes ?? notes, kind_ = override ? "nueva" : kind;
     if (!canal) { setNotice("Elige primero el canal de la serie (red y cuenta): cada serie nace anclada a un canal."); return; }
-    const estiloCapitulo = kind_ === "adaptar" ? (capitulo?.episodio?.seriesBible?.style || capitulo?.serie?.style) : "";
+    const estiloCapitulo = kind_ === "adaptar" ? (estiloDeTexto(capitulo?.estilo) || biblioteca?.estilo || "") : "";
     if (!styleChosen && !override && !estiloCapitulo) { setNotice("Elige primero el estilo de la historia."); return; }
     if (kind_ === "adaptar" && !guionOtro.trim()) { setNotice("Pega o sube el guion que escribió la otra IA."); return; }
     if (kind_ !== "adaptar" && !idea_.trim() && !(kind_ === "replica" && replica.trim())) { setNotice(kind === "replica" ? "Describe el viral que quieres replicar." : "Escribe la idea de la historia o elige una de las sugerencias."); return; }
@@ -256,9 +260,13 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
         return [x.title, ep?.output?.bible?.story].filter(Boolean).join(" = ");
       });
       const body = { idea: idea_, style: styleChosen ? style : (estiloCapitulo || style), personajesExternos: kind_ === "adaptar" ? personajesOtro : "", duration, scenes: kind_ === "adaptar" && !escenas ? sceneCountFor(duration, escenasDelGuion(guionOtro) || 0) : nEscenas, formato, account, notes: notes_, learnings, chosenHook, replica: kind_ === "replica" ? replica : "", guionExterno: kind_ === "adaptar" ? guionOtro : "", accountProfile: profileFor(account?.id), usadas };
-      const res = kind_ === "adaptar" && capitulo
-        ? (() => { const d = importarCapitulo(body); return { data: d, note: d.notice }; })()
+      // Fidelidad: diálogos, hablantes y orden intactos (la IA, si está, solo mejora la dirección visual).
+      const fiel = kind_ === "adaptar" && capitulo && modoImport === "fidelidad";
+      const cuerpoFiel = { capitulo: guionOtro, personajes: personajesOtro, style: body.style, formato, duration, scenes: escenas ? nEscenas : capitulo?.clips.length };
+      const res = fiel
+        ? await call("/api/importar", cuerpoFiel, () => importarFiel(cuerpoFiel))
         : await call("/api/series", body, () => templateSeries(body)); if (!res) return;
+      if (fiel) res.note = res.data.notice || res.note;
       const d = res.data;
       // Lo generado se aparta antes de guardar: si un guardado falla a mitad, se reanuda sin volver a generar.
       const p: CreacionPendiente = {
@@ -446,7 +454,8 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
               <textarea id="generator-replica" className="aurora-field" value={replica} onChange={e => setReplica(e.target.value)} placeholder="Qué pasa en el vídeo, su gancho, quién humilla a quién, qué objeto revela el giro… Se copia la estructura y la emoción, nunca los personajes ni el texto." /></div>}
             <CapituloDeOtraIA activo={kind === "adaptar"} onActivar={() => setKind("adaptar")} onQuitar={() => { setKind("nueva"); setGuionOtro(""); setPersonajesOtro(""); }}
               capitulo={guionOtro} onCapitulo={setGuionOtro} personajes={personajesOtro} onPersonajes={setPersonajesOtro}
-              resumen={capitulo ? `Estructura del estudio detectada: ${capitulo.episodio.scenes.length} escenas. Se importa tal cual, sin gastar IA${capitulo.episodio?.seriesBible?.style ? "" : " (elige el estilo)"}.` : guionOtro.trim() ? `Formato de otra IA: se adaptará con IA a ${!escenas && escenasDelGuion(guionOtro) ? `las ${sceneCountFor(duration, escenasDelGuion(guionOtro) || 0)} escenas del guion` : `${nEscenas} escenas`}${formato === "largo" ? " en 16:9" : ""}.` : ""} />
+              modo={modoImport} onModo={setModoImport} reconocido={!!capitulo}
+              resumen={capitulo ? `Capítulo reconocido: ${capitulo.clips.length} ${capitulo.fuente === "clips" ? "clips" : "escenas"}${capitulo.gancho.length ? ", gancho" : ""}${capitulo.tarjetas.length ? `, ${capitulo.tarjetas.length} tarjetas` : ""}${capitulo.cierre ? ", cierre" : ""} (los metadatos no crean escenas).${biblioteca ? ` Personajes: ${biblioteca.personajes.length} visuales${biblioteca.narradores.length ? ` + ${biblioteca.narradores.join(", ")} como voz en off` : ""}.` : ""} ${modoImport === "fidelidad" ? `Modo fidelidad: diálogos y orden intactos${escenas && nEscenas !== capitulo.clips.length ? `; la configuración pide ${nEscenas} escenas (se explicará la diferencia)` : ""}.` : "Adaptación creativa: la IA puede reescribir; verás la lista de cambios."}${!estiloDeTexto(capitulo.estilo) && !biblioteca?.estilo && !styleChosen ? " Elige el estilo." : ""}` : guionOtro.trim() ? `Formato de otra IA: se adaptará con IA a ${!escenas && escenasDelGuion(guionOtro) ? `las ${sceneCountFor(duration, escenasDelGuion(guionOtro) || 0)} escenas del guion` : `${nEscenas} escenas`}${formato === "largo" ? " en 16:9" : ""}.` : ""} />
             {/* Compositor Aurora: la idea, el tipo de pedido (real) y el estado de la generación (real). */}
             <div className={`aurora-border p-3 ${loading ? "creation-energy" : ""}`} data-estado={loading ? "generando" : /^(No se pudo|La historia «)/.test(notice) || authError ? "error" : undefined} data-spotlight="creacion">
               <label htmlFor="generator-idea" className="field-label block">{kind === "replica" ? "Idea para adaptarlo a RD" : kind === "adaptar" ? "Ajustes para la adaptación (opcional)" : "Idea de la historia"}</label>
@@ -795,6 +804,7 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
         <div className="mt-3 flex flex-wrap gap-2"><CopyButton text={p.text} label="Copiar texto" /><CopyButton text={p.hashtags} label="Copiar hashtags" /></div>
       </div>)}</div>
     </section>}
+    {(out.validacion || out.adaptacion) && <RevisionImportacion out={out} />}
     {promptsOutdated && !finished && <div className="mt-3 flex flex-wrap items-center gap-3 rounded-xl border border-sky-400/30 bg-sky-400/10 p-3 text-xs text-sky-100"><span className="flex-1 min-w-[220px]">{formatoViejo ? "Esta serie es de formato largo, pero los prompts de este episodio están en vertical 9:16. Actualízalos para pasar fichas, escenas y animación a horizontal 16:9 (el guion no cambia)." : <>Hay reglas nuevas para los prompts (ritmo viral: hablan desde el primer segundo, sin pausas y sin música dentro del clip). Este episodio tiene los prompts de una versión anterior.</>}</span><button type="button" onClick={refresh} disabled={refreshing} className="rounded-lg bg-sky-400 px-3 py-1.5 font-bold text-slate-950 hover:bg-sky-300 disabled:opacity-50">{refreshing ? "Actualizando…" : "Actualizar prompts"}</button></div>}
     {scenes.length > 0 && cast.length >= 2 && !referencesReady && <div className="mt-3 rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 text-xs text-amber-100">Faltan fichas maestras aprobadas: {missingMasters.join(", ")}. Súbelas y apruébalas en «1 · Personajes canónicos» antes de producir.</div>}
     {scenes.length > 0 && cast.length >= 2 && referencesReady && !snapshotValid && <div className="mt-3 rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 text-xs text-amber-100">La ficha maestra cambió desde que se creó este guion, o el episodio es anterior al control de versiones. Regenera el episodio para alinear prompts y personajes.</div>}
@@ -1264,7 +1274,7 @@ function ImportarPersonajes({ onImportar, ocupado }: { onImportar: (t: string) =
 }
 
 // «Nueva historia» → capítulo (y personajes canónicos) hechos en otra IA, en JSON o texto.
-function CapituloDeOtraIA({ activo, onActivar, onQuitar, capitulo, onCapitulo, personajes, onPersonajes, resumen }: { activo: boolean; onActivar: () => void; onQuitar: () => void; capitulo: string; onCapitulo: (v: string) => void; personajes: string; onPersonajes: (v: string) => void; resumen: string }) {
+function CapituloDeOtraIA({ activo, onActivar, onQuitar, capitulo, onCapitulo, personajes, onPersonajes, resumen, modo, onModo, reconocido }: { activo: boolean; onActivar: () => void; onQuitar: () => void; capitulo: string; onCapitulo: (v: string) => void; personajes: string; onPersonajes: (v: string) => void; resumen: string; modo: "fidelidad" | "creativa"; onModo: (m: "fidelidad" | "creativa") => void; reconocido: boolean }) {
   if (!activo) return <div className="mb-3 flex flex-wrap items-center gap-3 rounded-xl border border-cyan-300/25 bg-cyan-300/[.05] p-3">
     <span className="flex-1 min-w-[220px] text-sm text-slate-200"><b className="text-cyan-100">¿Ya tienes el capítulo hecho en otra IA?</b> Súbelo en JSON (o texto) con sus personajes canónicos y se crea la historia desde ahí.</span>
     <button type="button" onClick={onActivar} className="rounded-lg border border-cyan-300/50 px-3 py-2 text-sm font-semibold text-cyan-100 hover:bg-cyan-300/10">📄 Subir capítulo de otra IA</button>
@@ -1273,6 +1283,10 @@ function CapituloDeOtraIA({ activo, onActivar, onQuitar, capitulo, onCapitulo, p
     <div className="flex items-center gap-2"><b className="text-sm text-cyan-100">Capítulo de otra IA</b><button type="button" onClick={onQuitar} className="ml-auto text-xs text-slate-400 hover:text-white">Quitar y volver a Historia nueva</button></div>
     <SubirGuion id="generator-guion-externo" etiqueta="Capítulo (JSON o texto)" valor={capitulo} onValor={onCapitulo} ayuda="Sube el capitulo.json (estructura del estudio) o el guion de otra IA en JSON o texto." />
     <SubirGuion id="generator-personajes-externos" etiqueta="Personajes canónicos (JSON o texto, opcional)" valor={personajes} onValor={onPersonajes} ayuda="Sube personajes.json o pega las fichas (nombre, apariencia, ropa, voz…). Si no, se toman del capítulo." />
+    {reconocido && <fieldset className="grid gap-2 sm:grid-cols-2"><legend className="field-label mb-1">Cómo usar el capítulo</legend>
+      {([["fidelidad", "Fidelidad (recomendado)", "Conserva diálogos, hablantes, orden y personajes. La app añade dirección de cámara, acción visual y prompts."], ["creativa", "Adaptación creativa", "La IA puede reescribir, reorganizar o ampliar escenas. Verás qué cambió."]] as const).map(([k, t, d]) =>
+        <label key={k} className={`cursor-pointer rounded-lg border p-2 text-xs ${modo === k ? "border-cyan-300/60 bg-cyan-300/10 text-cyan-50" : "border-white/10 text-slate-300"}`}><input type="radio" name="modo-importacion" className="mr-2" checked={modo === k} onChange={() => onModo(k)} /><b>{t}</b><span className="mt-1 block opacity-80">{d}</span></label>)}
+    </fieldset>}
     {resumen && <p role="status" className="text-xs text-cyan-100">{resumen}</p>}
     <p className="text-xs text-slate-400">Luego pulsa «Crear serie y episodio 1». La idea de abajo es opcional (ajustes para la adaptación).</p>
   </div>;
@@ -1307,4 +1321,17 @@ ${scenes.map((x: any) => `[${x.setting || ""}] ${x.speaker}: ${x.line}`).join("\
     <button type="button" disabled={ocupado} onClick={() => { void completar(); }} className="rounded-lg bg-amber-400 px-3 py-2 text-xs font-bold text-slate-950 disabled:opacity-60">{ocupado ? "Escribiendo…" : "✦ Completar fichas desde el guion"}</button>
     {error && <p role="alert" className="w-full text-xs text-rose-200">{error}</p>}
   </div>;
+}
+
+// Capítulo importado: modo, diferencias con el original y revisión de continuidad (personajes, narrador, formato…).
+function RevisionImportacion({ out }: { out: any }) {
+  const problemas: { nivel: string; mensaje: string }[] = out.validacion || [];
+  const errores = problemas.filter(p => p.nivel === "error");
+  const a = out.adaptacion || {};
+  const lista = [...(a.avisos || []), ...(a.cambios || [])];
+  return <details className={`mt-3 rounded-xl border p-3 text-xs ${errores.length ? "border-rose-400/40 bg-rose-400/10 text-rose-50" : "border-cyan-300/30 bg-cyan-300/[.06] text-cyan-50"}`} open={errores.length > 0}>
+    <summary className="cursor-pointer text-sm font-semibold">Revisión de continuidad · {a.modo === "creativa" ? "adaptación creativa" : "modo fidelidad"} · {a.original ? `${a.original} clips originales → ${a.escenas} escenas · ` : ""}{errores.length ? `${errores.length} error(es)` : "sin errores"}, {problemas.length - errores.length} aviso(s){a.cambios?.length ? ` · ${a.cambios.length} cambio(s)` : ""}</summary>
+    {!!problemas.length && <ul className="mt-2 space-y-1">{problemas.map((p, i) => <li key={i}><b>{p.nivel === "error" ? "Error" : "Aviso"}:</b> {p.mensaje}</li>)}</ul>}
+    {!!lista.length && <><p className="mt-3 font-semibold">{a.modo === "creativa" ? "Cambios respecto al original" : "Notas de la importación"}</p><ul className="mt-1 space-y-1">{lista.map((x: string, i: number) => <li key={i}>{x}</li>)}</ul></>}
+  </details>;
 }

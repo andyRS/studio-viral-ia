@@ -29,6 +29,10 @@ export interface Scene { n:number; durationSec:8; setting:string; imagePromptFlo
   location?:string;      // lugar fijo: idéntico en todas las escenas seguidas que pasan en ese sitio
   references?:string[];  // fichas que el usuario debe seleccionar en Flow/Pavo (fuera del prompt)
   phone?:ScenePhone;     // la vida de hoy: chat de WhatsApp, llamada, videollamada o nota de voz
+  // Dirección cinematográfica (capítulos importados): presencia visual independiente del diálogo,
+  // descripción estática para la imagen y acción/movimiento para el vídeo.
+  visibleCharacters?:string[]; visualAction?:string; videoAction?:string; shotType?:string; camera?:string;
+  lighting?:string; atmosphere?:string; vfx?:string; expression?:string; conflict?:string; continuity?:string;
 }
 export interface ScenePhone { type:"whatsapp"|"llamada"|"videollamada"|"nota_de_voz"; contact?:string; messages?:string[] }
 export interface Formula { id:string; name:string; category:string; content:string; structure:string[] }

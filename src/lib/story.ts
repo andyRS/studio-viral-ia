@@ -7,6 +7,7 @@ import { BIBLE_BANK, EPIC_BANK, EPIC_NOTICE, CHRISTIAN_RULES, FRUIT_CAST_RULES, 
 import { templateHookVariants, type HookVariant } from "./hooks";
 import { castNeedsRepair, fichaGenerica, isFruitStyle, norm, normalizeCast, templateCast, type CastMember } from "./cast";
 import { aspectoDe, buildProduction, conAspecto, NARRATOR, sceneCountFor, templateScenes } from "./production";
+import { cambiosDeAdaptacion, CAMPOS_IA, elencoDesdeBiblioteca, importarFiel, normalizarCapitulo, normalizarPersonajes, validarImportacion } from "./importacion";
 import { christianSafe, templateIdeas, type IdeasRequest, type StoryIdea } from "./ideas";
 
 export const styleKey = (s?: string): StyleKey => ((s as StyleKey) in STYLES ? (s as StyleKey) : "frutinovela");
@@ -282,7 +283,45 @@ function validateEpisode(episode: ReturnType<typeof buildProduction>, expected: 
 }
 
 // ---------- HISTORIA NUEVA ----------
-export async function generateSeries(input: any) { return conAspecto(await generateSeriesBase(input), aspectoDe(input?.formato)); }
+export async function generateSeries(input: any) { return conCambios(conAspecto(await generateSeriesBase(input), aspectoDe(input?.formato)), input); }
+// Adaptación creativa de un guion externo: se adjuntan los cambios respecto al original y la revisión de continuidad.
+function conCambios(r: any, input: any) {
+  const cap = String(input?.guionExterno || "").trim() ? normalizarCapitulo(String(input.guionExterno)) : null;
+  if (!cap || !r?.episode?.scenes) return r;
+  const biblioteca = String(input?.personajesExternos || "").trim() ? normalizarPersonajes(String(input.personajesExternos)) : null;
+  const cambios = cambiosDeAdaptacion(cap.clips, r.episode.scenes);
+  const validacion = validarImportacion({ episodio: r.episode, cast: r.characters || [], original: cap, biblioteca, modo: "creativa", aspecto: aspectoDe(input?.formato) });
+  return { ...r, episode: { ...r.episode, adaptacion: { modo: "creativa", original: cap.clips.length, escenas: r.episode.scenes.length, cambios, avisos: cap.avisos }, validacion } };
+}
+
+// ---------- IMPORTAR EN MODO FIDELIDAD (diálogos intactos; la IA solo mejora la dirección visual) ----------
+export async function importarCapituloFiel(input: any) {
+  const datos = { capitulo: String(input.capitulo || input.guionExterno || ""), personajes: String(input.personajes || input.personajesExternos || "") || undefined, style: input.style, formato: input.formato, duration: input.duration, scenes: input.scenes };
+  const base: any = importarFiel(datos);
+  if (!process.env.LLM_API_KEY || input.enriquecer === false) return base;
+  try {
+    const style = styleKey(base.series.style);
+    const system = `${styleRules(style)}
+
+ERES DIRECTOR DE FOTOGRAFÍA de una película épica. Recibes un capítulo YA ESCRITO y su elenco canónico.
+TAREA: mejora SOLO la dirección visual de cada escena (no el guion):
+- NO cambies diálogos, hablantes, orden ni cantidad de escenas; no añadas escenas, citas bíblicas ni conclusiones.
+- El Narrador es una voz en off: nunca aparece, no tiene rostro, gestos ni vestuario.
+- "visibles": solo nombres del elenco; un personaje puede verse sin hablar y quien habla puede no verse. Respeta las restricciones (apariciones permitidas) de cada ficha; ante una duda, deja los visibles propuestos.
+- "visualAction" es el fotograma fijo para la imagen (composición, posición, expresión); "videoAction" es la acción física y el movimiento para el vídeo: una sola acción principal y un solo movimiento de cámara por toma, posible en un clip corto de vídeo con IA.
+- Alas, armas, ejércitos y combates son dramatización artística, no hechos bíblicos literales: preséntalos como representación.
+Responde SOLO JSON: {"escenas":[{"n":1,"visibles":[],"visualAction":"","videoAction":"","shotType":"","camera":"","lighting":"","atmosphere":"","vfx":"","expression":"","conflict":"","continuity":"","sfx":"","music":""}]}`;
+    const user = JSON.stringify({
+      elenco: base.characters.map((c: any) => ({ name: c.name, rol: c.role, apariencia: c.visualES, vestuario: c.clothing, ...(c.bible?.canon ? { tipo: c.bible.canon.tipo, apariciones: c.bible.canon.apariciones, soloEnApariciones: c.bible.canon.soloEnApariciones, reglas: c.bible.canon.reglas } : {}) })),
+      escenas: base.episode.scenes.map((s: any) => ({ n: s.n, speaker: s.speaker, line: s.line, visibles: s.visibleCharacters, propuesta: Object.fromEntries(CAMPOS_IA.map(k => [k, s[k]]).filter(([, v]) => v)) })),
+    });
+    const parsed = await askJson(system, user);
+    const r: any = importarFiel({ ...datos, direccionIA: Array.isArray(parsed?.escenas) ? parsed.escenas : [] });
+    return { ...r, mode: "importado-ia", notice: `${r.notice} Dirección visual mejorada con IA (diálogos intactos).` };
+  } catch (error) {
+    return { ...base, notice: `${base.notice} La IA no pudo mejorar la dirección visual (${error instanceof Error ? error.message : String(error)}): se usó la dirección automática.` };
+  }
+}
 async function generateSeriesBase(input: any) {
   const startedAt = Date.now();
   const style = styleKey(input.style);
@@ -299,10 +338,11 @@ Responde SOLO JSON: {"series":{"title":"","logline":"","world":"","tone":""},"ch
     const parsed = await askJson(system, JSON.stringify({ idea, duracionSegundos: duration, cuentaPrincipal: input.account?.name, notas: input.notes, ...(externo ? { guionExterno: externo } : {}) }));
     // Elenco sin fruta o con nombres genéricos: primero se le pide a la IA solo el elenco
     // (llamada corta); lo que siga faltando lo completa el código en normalizeCast.
-    const fijos = String(input.personajesExternos || "").trim() ? personajesSinIA(String(input.personajesExternos)) : [];
-    let chars = fijos.length ? fijos : parsed.characters;
+    const biblioteca = String(input.personajesExternos || "").trim() ? normalizarPersonajes(String(input.personajesExternos)) : null;
+    const fijos = biblioteca ? elencoDesdeBiblioteca(biblioteca, style) : String(input.personajesExternos || "").trim() ? personajesSinIA(String(input.personajesExternos)) : [];
+    let chars: any = fijos.length ? fijos : parsed.characters;
     if (isFruitStyle(style) && castNeedsRepair(chars, style)) chars = await repairCast(chars, style, idea, Math.min(25000, 120000 - (Date.now() - startedAt)));
-    const characters = normalizeCast(chars, style).slice(0, 6);
+    const characters = biblioteca && fijos.length ? (fijos as CastMember[]) : normalizeCast(chars, style).slice(0, 6);
     const episodeRaw = await ensureNarratorEnding(renameSpeakers(parsed.episode || parsed, parsed.characters, characters), idea, style, Math.min(25000, 150000 - (Date.now() - startedAt)));
     const title = String(parsed.series?.title || idea).trim().slice(0, 100);
     const episode = buildProduction(episodeRaw, { style, duration, scenes: count, characters, idea, chosenHook: input.chosenHook, seriesTitle: title, partNumber: 1 });
@@ -462,7 +502,7 @@ Responde SOLO JSON: {"reply":"1-2 frases para el usuario","ideas":[{"title":"","
 const CLAVES_PJ = {
   name: ["name", "nombre", "personaje", "character"],
   role: ["role", "rol", "papel", "funcion", "función"],
-  visualES: ["visuales", "apariencia", "descripcion", "descripción", "aspecto", "fisico", "físico", "appearance", "description", "look"],
+  visualES: ["descripcion_maestra", "visuales", "apariencia", "descripcion", "descripción", "aspecto", "fisico", "físico", "appearance", "description", "look"],
   visualEN: ["visualen", "appearance_en", "description_en"],
   clothing: ["clothing", "ropa", "vestuario", "outfit", "costume", "vestimenta"],
   voice: ["voice", "voz"],
@@ -480,6 +520,7 @@ export function personajesSinIA(texto: string): any[] {
       if (Array.isArray(n)) { n.forEach(visitar); return; }
       if (!n || typeof n !== "object") return;
       const nombre = tomar(n, CLAVES_PJ.name);
+      if (nombre && /voz[_ ]en[_ ]off|narrador/i.test(`${tomar(n, ["tipo", "type"])} ${nombre}`)) return;   // el Narrador es una voz, no una ficha visual
       if (nombre && nombre.length <= 40) {
         const fila: any = { name: nombre };
         for (const [k, ks] of Object.entries(CLAVES_PJ)) if (k !== "name") { const v = tomar(n, ks); if (v) fila[k] = v; }

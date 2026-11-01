@@ -345,13 +345,40 @@ const ir = async (page, espacio, modulo) => {
       await page.getByLabel("Subir archivo: Capítulo (JSON o texto)").setInputFiles({ name: "capitulo.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify({ formato: "estudio-viral/capitulo", series: { title: "Daniel importado", style: "epica" }, episode: { title: "Los 21 días", seriesBible: { style: "epica" }, scenes: escenas } })) });
       await page.getByLabel("Subir archivo: Personajes canónicos (JSON o texto, opcional)").setInputFiles({ name: "personajes.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify({ personajes: [{ name: "Daniel", visualES: "anciano de barba blanca", clothing: "túnica gris" }, { name: "Gabriel", visualES: "ángel alto", clothing: "túnica blanca" }] })) });
       await page.waitForTimeout(300);
-      ok(await page.getByText(/Estructura del estudio detectada: 5 escenas/).count() === 1, "se detecta el capitulo.json del estudio");
+      ok(await page.getByText(/Capítulo reconocido: 5 escenas/).count() === 1, "se detecta el capitulo.json del estudio");
       await page.getByRole("button", { name: /Crear serie y episodio 1/ }).click(); await page.waitForTimeout(2500);
       const ser = await page.evaluate(() => JSON.parse(localStorage.getItem("estudio-viral:series") || "[]").find(x => x.title === "Daniel importado"));
       const ep = ser && await page.evaluate(id => JSON.parse(localStorage.getItem("estudio-viral:episodes") || "[]").find(e => e.seriesId === id), ser.id);
       const pjs = ser && await page.evaluate(id => JSON.parse(localStorage.getItem("estudio-viral:characters") || "[]").filter(c => c.seriesId === id), ser.id);
       ok(!!ep && ep.output.scenes.map(x => x.line).join("|") === escenas.map(x => x.line).join("|") && ser.style === "epica", "el capítulo se importa tal cual (mismos diálogos, estilo del archivo)");
       ok(!!pjs && pjs.length === 2 && /barba blanca/.test(pjs.find(c => c.name === "Daniel")?.visualES || ""), "los personajes canónicos se crean desde personajes.json");
+      await ctx.close(); }
+    // 14. Caso real: Daniel EP01 (clips + biblioteca canónica) en modo fidelidad, serie larga.
+    { const { ctx, page } = await abrir(b);
+      const fs = require("fs"), path = require("path");
+      const capTxt = fs.readFileSync(path.join(__dirname, "../fixtures/daniel_ep01_capitulo.json"));
+      const pjTxt = fs.readFileSync(path.join(__dirname, "../fixtures/daniel_ep01_personajes.json"));
+      await ir(page, "Creative Studio", "Generador");
+      await page.getByRole("button", { name: /Crear$/ }).first().click(); await page.waitForTimeout(900);
+      await page.getByLabel("Canal de la serie").selectOption({ label: "＋ Conectar una cuenta nueva…" }); await page.waitForTimeout(300);
+      await page.locator("#nueva-cuenta-red").selectOption("YouTube");
+      await page.locator("#nueva-cuenta-nombre").fill("Canal Daniel");
+      await page.getByRole("button", { name: "Conectar y usar esta cuenta" }).click(); await page.waitForTimeout(600);
+      await page.getByRole("button", { name: /Largo · 16:9/ }).click();
+      await page.getByRole("button", { name: /Subir capítulo de otra IA/ }).click();
+      await page.getByLabel("Subir archivo: Capítulo (JSON o texto)").setInputFiles({ name: "Daniel_EP01_capitulo_para_importar.json", mimeType: "application/json", buffer: capTxt });
+      await page.getByLabel("Subir archivo: Personajes canónicos (JSON o texto, opcional)").setInputFiles({ name: "Daniel_EP01_personajes_canonicos.json", mimeType: "application/json", buffer: pjTxt });
+      await page.waitForTimeout(400);
+      ok(await page.getByText(/Capítulo reconocido: 20 clips, gancho, 4 tarjetas, cierre/).count() === 1 && await page.getByText(/6 visuales \+ Narrador como voz en off/).count() === 1, "Daniel: se reconocen 20 clips, metadatos y 6 personajes + narrador en off");
+      await page.getByRole("button", { name: /Crear serie y episodio 1/ }).click(); await page.waitForTimeout(3000);
+      const ser = await page.evaluate(() => JSON.parse(localStorage.getItem("estudio-viral:series") || "[]").find(x => /Daniel/.test(x.title) && x.format === "largo"));
+      const ep = ser && await page.evaluate(id => JSON.parse(localStorage.getItem("estudio-viral:episodes") || "[]").find(e => e.seriesId === id), ser.id);
+      const pjs = ser && await page.evaluate(id => JSON.parse(localStorage.getItem("estudio-viral:characters") || "[]").filter(c => c.seriesId === id), ser.id);
+      const orig = JSON.parse(capTxt.toString());
+      ok(!!ep && ep.output.scenes.length === 20 && ep.output.scenes.every((x, i) => x.line === orig.clips[i][0][1]), "Daniel: 20 escenas con los diálogos originales intactos");
+      ok(!!pjs && pjs.length === 6 && !pjs.some(c => /narrador/i.test(c.name)) && pjs.every(c => c.bible && c.bible.canon), "Daniel: 6 fichas canónicas guardadas con su biblioteca (sin Narrador)");
+      ok(!!ep && ep.output.scenes[14].visibleCharacters.includes("Varón vestido de lino") && !/9:16/.test(JSON.stringify(ep.output)), "Daniel: el Varón vestido de lino en la visión y todo en 16:9");
+      ok(await page.getByText(/Revisión de continuidad · modo fidelidad · 20 clips originales → 20 escenas/).count() === 1, "Daniel: se muestra la revisión de continuidad");
       await ctx.close(); }
   } finally {
     await b.close();
