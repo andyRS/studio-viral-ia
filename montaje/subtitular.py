@@ -554,6 +554,29 @@ HABLA0 = [str((G["clips"][ci] or [["", ""]])[0][0]) for ci in range(len(clips))]
 DUR_SRC = [dur(c) for c in clips]
 
 
+def alto_de(f):
+    """Altura del vídeo de entrada (para saber si se reescala hacia arriba)."""
+    try:
+        return int(subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=height", "-of", "csv=p=0", f],
+                                  capture_output=True, text=True).stdout.strip().splitlines()[0])
+    except Exception:
+        return H
+
+
+# Calidad: los clips de IA suelen llegar a 720p o 480p. Se reescalan con Lanczos (más nítido que el bicúbico
+# por defecto) y, si se agrandan, con un enfoque suave que compensa el reescalado (sin halos).
+ALTO_SRC = [alto_de(c) for c in clips]
+LADO_CORTO = min(W, H)
+PEQUENOS = [ci for ci, a in enumerate(ALTO_SRC) if a < LADO_CORTO * 0.95]
+if PEQUENOS:
+    progreso(60, f"Calidad: {len(PEQUENOS)} clip(s) por debajo de {LADO_CORTO}p (p. ej. {ALTO_SRC[PEQUENOS[0]]}p): se reescalan con Lanczos y enfoque suave. Para la máxima nitidez, genera los clips en 1080p.")
+
+
+def escala(ci):
+    enfoque = ",unsharp=5:5:0.55:5:5:0.0" if ci in PEQUENOS else ""
+    return f"scale={RES}:force_original_aspect_ratio=increase:flags=lanczos,crop={RES}{enfoque}"
+
+
 def _rms(ci):
     try:
         w_ = wave.open(os.path.join(tmp, f"c{ci}.wav"))
@@ -746,7 +769,7 @@ for ci, c in enumerate(clips):
     if GAIN_RGB[ci] is not None:
         gr, gg, gb = GAIN_RGB[ci]
         col = f",colorchannelmixer=rr={gr:.3f}:gg={gg:.3f}:bb={gb:.3f}"
-    base = f"setpts=(PTS-STARTPTS)/{VEL:.3f},{dl}scale={RES}:force_original_aspect_ratio=increase,crop={RES},setsar=1,fps=24{col}"
+    base = f"setpts=(PTS-STARTPTS)/{VEL:.3f},{dl}{escala(ci)},setsar=1,fps=24{col}"
     if PUNCH[ci] is not None:
         T = PUNCH[ci]
         fc += (f"[{n}:v]split=2[p{n}a][p{n}b];[p{n}a]trim=start={va:.3f}:end={T:.3f},{base}[q{n}a];"
@@ -936,9 +959,10 @@ if not MUSICA:
     fc += ";[voz]anull[amx]"
 # Volumen final de redes: -14 LUFS integrados y picos por debajo de -1,5 dBTP (TikTok, Instagram, Facebook).
 fc += ";[amx]loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000[a]" if PRO_SONIDO else ";[amx]anull[a]"
-VCODEC = (["-c:v", "h264_nvenc", "-preset", "p5", "-rc", "vbr", "-cq", "19", "-b:v", "0"]
+# Vídeo final: máxima calidad del codificador (una sola codificación de todo el montaje).
+VCODEC = (["-c:v", "h264_nvenc", "-preset", "p7", "-tune", "hq", "-rc", "vbr", "-cq", "17", "-b:v", "0", "-spatial-aq", "1", "-profile:v", "high"]
           if os.environ.get("VIDEO_ENCODER") == "h264_nvenc"
-          else ["-c:v", "libx264", "-crf", "17", "-preset", os.environ.get("X264_PRESET", "medium")])
+          else ["-c:v", "libx264", "-crf", "16", "-preset", os.environ.get("X264_PRESET", "medium"), "-profile:v", "high"])
 mmss = lambda x: f"{int(x // 60)}:{int(x % 60):02d}"
 for png, *_ in LOGOS:
     inputs += ["-i", png]   # imagen fija: overlay la repite hasta el final
@@ -952,20 +976,33 @@ if len(LOGOS) > 1:
     fc += ";[a]asplit=2[a1][a2]"
     salidas = [("[v]", "[a1]", out_mp4), ("[v2]", "[a2]", os.path.splitext(out_mp4)[0] + "_2.mp4")]
     progreso(70, f"Dos versiones: con {LOGOS[0][5]} y con {LOGOS[1][5]}")
-cmd_out = []
-for vl, al, ruta in salidas:
-    cmd_out += ["-map", vl, "-map", al, *VCODEC, "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", ruta]
-enc = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-nostats", "-progress", "pipe:1", *inputs, "-filter_complex", fc, *cmd_out],
-                       stdout=subprocess.PIPE, text=True)
-last_pct = -1
-for row in enc.stdout:
-    if row.startswith("out_time_us=") and row[12:].strip().isdigit():
-        done = int(row[12:]) / 1e6
-        pct = 70 + 29 * min(1, done / max(total, 1))
-        if int(pct) != last_pct:
-            last_pct = int(pct); progreso(pct, f"Codificando el vídeo final: {mmss(done)} de {mmss(total)}")
-if enc.wait() != 0:
-    raise SystemExit("ffmpeg falló al codificar el vídeo final")
+X264 = ["-c:v", "libx264", "-crf", "16", "-preset", os.environ.get("X264_PRESET", "medium"), "-profile:v", "high"]
+
+
+def codificar(vcodec):
+    cmd_out = []
+    for vl, al, ruta in salidas:
+        cmd_out += ["-map", vl, "-map", al, *vcodec, "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", ruta]
+    enc = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-nostats", "-progress", "pipe:1", *inputs, "-filter_complex", fc, *cmd_out],
+                           stdout=subprocess.PIPE, text=True)
+    last_pct = -1
+    for row in enc.stdout:
+        if row.startswith("out_time_us=") and row[12:].strip().isdigit():
+            done = int(row[12:]) / 1e6
+            pct = 70 + 29 * min(1, done / max(total, 1))
+            if int(pct) != last_pct:
+                last_pct = int(pct); progreso(pct, f"Codificando el vídeo final: {mmss(done)} de {mmss(total)}")
+    return enc.wait()
+
+
+if codificar(VCODEC) != 0:
+    if VCODEC[1] != "h264_nvenc":
+        raise SystemExit("ffmpeg falló al codificar el vídeo final")
+    # La GPU no aceptó la codificación (driver o ffmpeg antiguos): se repite con x264, misma calidad, más lento.
+    progreso(70, "La GPU no pudo codificar con máxima calidad: repito con x264 (más lento, misma calidad)")
+    VCODEC = X264
+    if codificar(VCODEC) != 0:
+        raise SystemExit("ffmpeg falló al codificar el vídeo final")
 # Portada fija (mismo diseño en todas las partes): fotograma limpio de una escena (sin subtítulos ni
 # gancho), franja casi negra arriba que se funde con la imagen y zona oscura abajo detrás de «PARTE N».
 P = G.get("portada") if isinstance(G.get("portada"), dict) else None
@@ -1149,6 +1186,9 @@ try:
         bien.append("Color igualado entre clips" + (f" y look «{ESTILO}»" if LOOK else "") + ".")
     bien.append("Textos dentro de las zonas seguras de TikTok e Instagram.")
     # Tiempos medidos con la voz real: frases cortadas o clips que terminan antes de completar su acción.
+    if PEQUENOS:
+        avisos.append({"tipo": "calidad", "texto": f"{len(PEQUENOS)} clip(s) llegaron por debajo de {LADO_CORTO}p ({', '.join(str(ALTO_SRC[ci]) + 'p' for ci in PEQUENOS[:3])}…): se reescalaron y se ven menos nítidos.",
+                       "arreglo": "Genera los clips en 1080p (Seedance y Flow lo admiten) o sube la versión en mayor resolución."})
     for aviso in AVISOS_TIEMPO:
         avisos.append({"tipo": "tiempo", "texto": aviso, "arreglo": "Genera esa toma más larga o sube el margen de acción de la escena en «Tiempos del montaje»."})
     revision = {"nota": max(0, nota), "duracion": round(total, 1), "avisos": avisos, "bien": bien}
