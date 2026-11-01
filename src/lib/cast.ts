@@ -95,7 +95,12 @@ export function dialectPronunciations(text: string) {
 
 export function flowPromptFor(c: Pick<CastMember, "name" | "fruit" | "headES" | "clothing" | "role" | "visualES" | "visualEN">, style: StyleKey) {
   if (!isFruitStyle(style)) {
-    return `Photorealistic 1990s Dominican romance film character sheet, full body, standing, neutral grey background, vertical 9:16, 35mm film grain, warm light. ${c.visualEN || c.visualES}. Outfit: ${c.clothing}. Real human, natural skin, no text.`;
+    // Cada estilo con su propio look (antes todos decían «romance dominicano de los 90», también la épica bíblica).
+    const lookFicha: Record<string, string> = {
+      epica: "Photorealistic epic biblical film character sheet, ancient Near East, volumetric light, 35mm film grain",
+      biblica: "Photorealistic modern Dominican drama character sheet, natural light, 35mm film grain",
+    };
+    return `${lookFicha[style] || "Photorealistic 1990s Dominican romance film character sheet, 35mm film grain, warm light"}, full body, standing, neutral grey background, vertical 9:16. ${c.visualEN || c.visualES}. Outfit: ${c.clothing}. Real human, natural skin, no text.`;
   }
   const trait = c.role ? `${c.role}` : "expresiva";
   return `Personaje 3D cinematográfico realista (película animada premium tipo Disney/Pixar realista), cuerpo entero, de pie, fondo gris neutro, vertical 9:16. ${c.name}: rostro y cuerpo humanos con proporciones reales, ojos grandes y expresivos, cabello humano real; piel de ${c.fruit}: ${c.headES}. ${c.clothing.charAt(0).toUpperCase()}${c.clothing.slice(1)}. Expresión: ${trait}. Nunca una fruta entera como cabeza, nunca una persona normal sin piel de fruta. Sin texto.`;
