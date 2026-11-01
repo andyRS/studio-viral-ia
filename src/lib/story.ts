@@ -133,13 +133,29 @@ export function escenasDeJson(texto: string): EscenaExterna[] | null {
   return out.length ? out : null;
 }
 
+// Líneas «NOMBRE: frase» (o «NOMBRE (acotación): frase»), sin encabezados de escena, cámara ni sonido.
+function lineasConHablante(texto: string) {
+  const lineas = texto.split("\n").map(l => l.replace(/^[-*#>\d.\s]+/, "").trim()).filter(Boolean);
+  return lineas.map(l => { const m = l.match(/^([A-ZÁÉÍÓÚÑa-záéíóúñ][\wÁÉÍÓÚÑáéíóúñ .]{0,30}?)\s*(?:\([^)]*\))?\s*[:：—–-]\s*(.{3,})$/);
+    return m ? { speaker: m[1].trim(), line: m[2].replace(/^["«“]|["»”]$/g, "").trim() } : null; })
+    .filter((x): x is { speaker: string; line: string } => !!x && !/^(escena|toma|plano|int|ext|c[aá]mara|sonido|m[uú]sica|nota)\b/i.test(x.speaker));
+}
+
+// Cuántas escenas trae el guion externo (JSON: sus diálogos; texto: líneas «NOMBRE: frase»; si no, la cifra
+// que mencione). null si no se puede saber.
+export function escenasDelGuion(texto: string): number | null {
+  const t = String(texto || "").trim(); if (!t) return null;
+  const json = escenasDeJson(t); if (json) return json.length;
+  const dialogos = lineasConHablante(t);
+  if (dialogos.length >= 3) return dialogos.length;
+  const m = t.match(/\b(\d{1,2})\s+(?:tomas|escenas|clips)\b/i); return m ? Number(m[1]) : null;
+}
+
 export function guionExternoSinIA(texto: string, count: number) {
   const json = escenasDeJson(texto);
   if (json) return json.slice(0, Math.max(2, count)).map(e => ({ setting: "según el guion original", emotion: "emoción contenida", ...e }));
   const lineas = texto.split("\n").map(l => l.replace(/^[-*#>\d.\s]+/, "").trim()).filter(Boolean);
-  const escenas = lineas.map(l => { const m = l.match(/^([A-ZÁÉÍÓÚÑa-záéíóúñ][\wÁÉÍÓÚÑáéíóúñ .]{0,30}?)\s*(?:\([^)]*\))?\s*[:：—–-]\s*(.{3,})$/);
-    return m ? { speaker: m[1].trim(), line: m[2].replace(/^["«“]|["»”]$/g, "").trim() } : null; })
-    .filter((x): x is { speaker: string; line: string } => !!x && !/^(escena|toma|plano|int|ext|c[aá]mara|sonido|m[uú]sica|nota)\b/i.test(x.speaker));
+  const escenas = lineasConHablante(texto);
   const lista = escenas.length ? escenas : lineas.map(line => ({ speaker: "Narrador", line }));
   return lista.slice(0, Math.max(2, count)).map(e => ({ ...e, setting: "según el guion original", emotion: "emoción contenida" }));
 }

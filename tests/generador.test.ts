@@ -1,7 +1,7 @@
 // Generador: cantidad de escenas elegida y formato 16:9 de las series largas. npm test
 import assert from "node:assert/strict";
 import { buildProduction, escenasEnTexto, sceneCountFor, MAX_SCENES, NARRATOR } from "../src/lib/production";
-import { escenasDeJson, guionExternoSinIA, templateSeries, templateNext } from "../src/lib/story";
+import { escenasDelGuion, escenasDeJson, guionExternoSinIA, templateSeries, templateNext } from "../src/lib/story";
 let checks = 0;
 const ok = (c: boolean, m: string) => { assert.ok(c, m); checks++; console.log(`ok · ${m}`); };
 
@@ -48,4 +48,6 @@ ok(!!j3 && j3.map(e => e.line).join("|") === "Señor, escucha.|Aquí estoy.", "e
 ok(escenasDeJson("DANIEL: hola") === null, "un texto que no es JSON sigue por la vía de líneas");
 const desdeJson = templateSeries({ style: "epica", duration: 88, guionExterno: JSON.stringify({ escenas: [{ dialogos: [{ personaje: "Daniel", texto: "Señor, ¿por qué callas?" }, { personaje: "Gabriel", texto: "Fui enviado desde el primer día." }] }] }) });
 ok(desdeJson.characters.some((c: any) => /gabriel/i.test(c.name)) && desdeJson.episode.scenes.some((s: any) => /primer día/.test(s.line)), "crear serie desde un guion JSON");
+ok(escenasDelGuion(JSON.stringify({ clips: Array.from({ length: 28 }, (_, i) => [["DANIEL", `frase ${i}`]]) })) === 28, "se cuentan las escenas de un guion.json (28)");
+ok(escenasDelGuion(otro) === 4 && escenasDelGuion("Una historia de 24 escenas sobre Daniel") === 24 && escenasDelGuion("") === null, "se cuentan los diálogos de un guion en texto o la cifra que menciona");
 console.log(`${checks} comprobaciones del generador correctas.`);

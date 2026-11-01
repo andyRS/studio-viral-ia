@@ -26,7 +26,7 @@ import type { StoryIdea } from "@/lib/ideas";
 import SceneDesk from "./SceneDesk";
 import StoryArchitect from "./StoryArchitect";
 import { EPIC_NOTICE, STYLES, type StyleKey } from "@/lib/knowledge";
-import { templateSeries, templateNext } from "@/lib/story";
+import { escenasDelGuion, templateSeries, templateNext } from "@/lib/story";
 import { isGenericName } from "@/lib/cast";
 import { aspectoDe, buildFlowBatch, conAspecto, escenasEnTexto, MAX_SCENES, MIN_SCENES, refreshPrompts, PROMPT_RULES_VERSION, sceneCountFor } from "@/lib/production";
 import { seriesSignals } from "@/lib/seriesSignals";
@@ -251,7 +251,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
         const ep = data.episodes.find((e: any) => e.seriesId === x.id);
         return [x.title, ep?.output?.bible?.story].filter(Boolean).join(" = ");
       });
-      const body = { idea: idea_, style, duration, scenes: nEscenas, formato, account, notes: notes_, learnings, chosenHook, replica: kind_ === "replica" ? replica : "", guionExterno: kind_ === "adaptar" ? guionOtro : "", accountProfile: profileFor(account?.id), usadas };
+      const body = { idea: idea_, style, duration, scenes: kind_ === "adaptar" && !escenas ? sceneCountFor(duration, escenasDelGuion(guionOtro) || 0) : nEscenas, formato, account, notes: notes_, learnings, chosenHook, replica: kind_ === "replica" ? replica : "", guionExterno: kind_ === "adaptar" ? guionOtro : "", accountProfile: profileFor(account?.id), usadas };
       const res = await call("/api/series", body, () => templateSeries(body)); if (!res) return;
       const d = res.data;
       // Lo generado se aparta antes de guardar: si un guardado falla a mitad, se reanuda sin volver a generar.
@@ -290,13 +290,13 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
 
   // Archivos → «Adaptar un guion de otra IA»: rehace el episodio abierto con ese guion y el elenco fijo.
   // La versión anterior queda en el historial del episodio.
-  async function adaptarEpisodio(texto: string) {
+  async function adaptarEpisodio(texto: string, cuantas?: number) {
     if (!result?.episodeId || !current || current.id !== result.seriesId) throw new Error("Abre el episodio desde su serie para adaptarlo.");
     const part = result.part || 1;
     const eps = current.eps;
     const bible = eps[0]?.output?.seriesBible || result.episode?.seriesBible || { style: "frutinovela", logline: current.description };
     const body = {
-      series: { title: current.title, logline: current.description }, bible, style: bible.style, partNumber: part, wish: "", duration, scenes: nEscenas, formato: current.format,
+      series: { title: current.title, logline: current.description }, bible, style: bible.style, partNumber: part, wish: "", duration, scenes: cuantas || nEscenas, formato: current.format,
       account: data.accounts.find((a: any) => a.id === current.accountId) || account, learnings, accountProfile: profileFor(current.accountId), guionExterno: texto,
       characters: currentCast.map((c: any) => ({ name: c.name, role: c.role, fruit: c.fruit, fruitEmoji: c.fruitEmoji, headES: c.headES, visualES: c.visualES, visualEN: c.visualEN, clothing: c.clothing, voice: c.voice, subtitleColor: c.subtitleColor, speechStyle: c.speechStyle, pronunciations: c.pronunciations, flowPrompt: c.flowPrompt })),
       history: eps.filter((e: any) => e.id !== result.episodeId).map((e: any, i: number) => ({ part: i + 1, title: e.title, summary: e.output?.summary || e.theme, cliffhanger: cliffhangerOf(e.output) })),
@@ -397,7 +397,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
             {kind === "replica" && <div className="mb-3"><label htmlFor="generator-replica" className="field-label block">Describe el viral</label>
               <textarea id="generator-replica" className="aurora-field" value={replica} onChange={e => setReplica(e.target.value)} placeholder="Qué pasa en el vídeo, su gancho, quién humilla a quién, qué objeto revela el giro… Se copia la estructura y la emoción, nunca los personajes ni el texto." /></div>}
             {kind === "adaptar" && <div className="mb-3"><SubirGuion id="generator-guion-externo" valor={guionOtro} onValor={setGuionOtro} />
-              <p className="mt-1 text-xs text-slate-400">La IA conserva la historia, los personajes y el sentido de los diálogos, y lo pasa al formato de la app: {nEscenas} escenas, fichas de personajes y prompts{formato === "largo" ? " en 16:9" : ""}. La idea de abajo es opcional (para indicar ajustes).</p></div>}
+              <p className="mt-1 text-xs text-slate-400">La IA conserva la historia, los personajes y el sentido de los diálogos, y lo pasa al formato de la app: {!escenas && escenasDelGuion(guionOtro) ? `las ${sceneCountFor(duration, escenasDelGuion(guionOtro) || 0)} escenas del guion` : `${nEscenas} escenas`}, fichas de personajes y prompts{formato === "largo" ? " en 16:9" : ""}. La idea de abajo es opcional (para indicar ajustes).</p></div>}
             {/* Compositor Aurora: la idea, el tipo de pedido (real) y el estado de la generación (real). */}
             <div className={`aurora-border p-3 ${loading ? "creation-energy" : ""}`} data-estado={loading ? "generando" : /^(No se pudo|La historia «)/.test(notice) || authError ? "error" : undefined} data-spotlight="creacion">
               <label htmlFor="generator-idea" className="field-label block">{kind === "replica" ? "Idea para adaptarlo a RD" : kind === "adaptar" ? "Ajustes para la adaptación (opcional)" : "Idea de la historia"}</label>
@@ -1162,19 +1162,28 @@ function SubirGuion({ id, valor, onValor }: { id: string; valor: string; onValor
 }
 
 // Archivos → adaptar un guion de otra IA a este episodio (reemplaza las escenas; la versión anterior queda en el historial).
-function AdaptarGuionEpisodio({ onAdaptar, ocupado, escenas }: { onAdaptar: (t: string) => Promise<void>; ocupado: boolean; escenas: number }) {
+function AdaptarGuionEpisodio({ onAdaptar, ocupado, escenas }: { onAdaptar: (t: string, cuantas?: number) => Promise<void>; ocupado: boolean; escenas: number }) {
   const [texto, setTexto] = useState(""); const [error, setError] = useState("");
+  // Escenas: por defecto las que trae el guion; se pueden cambiar a mano (8–30).
+  const delGuion = useMemo(() => escenasDelGuion(texto), [texto]);
+  const [cuantas, setCuantas] = useState(0);
+  const final = sceneCountFor(88, cuantas || delGuion || 0);
   async function enviar() {
     if (!texto.trim()) { setError("Pega o sube primero el guion."); return; }
     if (escenas && !window.confirm("Las escenas actuales de este episodio se reemplazarán por la adaptación (la versión anterior queda en el historial). Las imágenes y clips ya hechos pueden dejar de coincidir. ¿Continuar?")) return;
     setError("");
-    try { await onAdaptar(texto); setTexto(""); } catch (e: any) { setError(e?.message || String(e)); }
+    try { await onAdaptar(texto, final); setTexto(""); setCuantas(0); } catch (e: any) { setError(e?.message || String(e)); }
   }
   return <details className="rounded-xl border border-white/10 bg-black/20 p-3">
     <summary className="cursor-pointer text-sm font-semibold text-slate-100">Adaptar un guion de otra IA a este episodio</summary>
     <div className="mt-3 space-y-2">
       <SubirGuion id="episodio-guion-externo" valor={texto} onValor={setTexto} />
-      <p className="text-xs text-slate-400">La IA conserva la historia y el sentido de los diálogos, usa el elenco fijo de la serie y rehace escenas, fichas y prompts. Usa la cantidad de escenas elegida en el generador.</p>
+      <div className="flex flex-wrap items-center gap-2"><label htmlFor="episodio-guion-escenas" className="field-label">Escenas</label>
+        <select id="episodio-guion-escenas" className="w-auto" value={cuantas} onChange={e => setCuantas(Number(e.target.value))}>
+          <option value={0}>{delGuion ? `Las del guion · ${sceneCountFor(88, delGuion)}` : `Automático · ${final}`}</option>
+          {Array.from({ length: MAX_SCENES - MIN_SCENES + 1 }, (_, k) => MIN_SCENES + k).map(n => <option key={n} value={n}>{n} escenas</option>)}</select>
+        {delGuion && delGuion > MAX_SCENES && !cuantas && <span className="text-xs text-amber-200">El guion trae {delGuion}; el máximo es {MAX_SCENES}: se unirán las menores.</span>}</div>
+      <p className="text-xs text-slate-400">Pulsa «Adaptar con IA» y listo: la IA conserva la historia y el sentido de los diálogos, usa el elenco fijo de la serie y rehace escenas, fichas y prompts. Después revisa el Guion y aprueba las fichas de personajes nuevos.</p>
       {error && <p role="alert" className="text-xs text-rose-200">{error}</p>}
       <button type="button" disabled={ocupado} onClick={() => { void enviar(); }} className="rounded-lg bg-cyan-400 px-4 py-2 text-sm font-bold text-slate-950 disabled:opacity-60">{ocupado ? "Adaptando…" : "✦ Adaptar con IA"}</button>
     </div>
