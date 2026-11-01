@@ -6,7 +6,7 @@
 import { useEffect, useMemo, useState, type KeyboardEvent as RKE, type ReactNode } from "react";
 import { allScenes, escenarioTexto, isProtected, type Outline, type OutlineScene } from "@/lib/outline";
 import { duracionClip, ESTADO_LABEL, perfilActivo, type Toma } from "@/lib/tomas";
-import { opCandadoLarga, opDesplazarLarga, opEditarLarga } from "./studio/operaciones";
+import { opCandadoLarga, opDesplazarLarga, opEditarLarga, opTrasladarLarga } from "./studio/operaciones";
 import { useOperaciones, type Aplicar } from "./studio/useOperaciones";
 import { Divisor, useAnchos } from "./studio/Divisores";
 import SceneTransferDialog, { type ConfirmSceneTransfer } from "./studio/SceneTransferDialog";
@@ -45,6 +45,8 @@ export default function LongDirector(p: Props) {
   const editar = (id: string, campo: string, valor: any) => { void ops.ejecutar(opEditarLarga(id, campo, valor)); };
   const mover = (id: string, delta: number) => { void ops.ejecutar(opDesplazarLarga(id, delta)); };
   const candado = (id: string, locked: boolean) => { void ops.ejecutar(opCandadoLarga(id, !locked)); };
+  // Traslado real entre secuencias: operación reversible por la cola compartida; entra en Deshacer/Rehacer del director.
+  const trasladar: ConfirmSceneTransfer = async req => { await ops.ejecutarOError(opTrasladarLarga(req)); };
 
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
@@ -96,11 +98,11 @@ export default function LongDirector(p: Props) {
       : <p className="text-sm">{String(sc[k] ?? "—")}</p>}</div>;
 
   return <section ref={motionRef} className="sd" aria-label="Director del proyecto largo">
-    {transferScene && <SceneTransferDialog outline={o} sceneId={transferScene} busy={p.busy} onClose={() => setTransferScene(null)} onConfirm={p.onTransferScene ? async request => {
-      await p.onTransferScene!(request);
+    {transferScene && <SceneTransferDialog outline={o} sceneId={transferScene} busy={p.busy} onClose={() => setTransferScene(null)} onConfirm={async request => {
+      await (p.onTransferScene ?? trasladar)(request);
       setActiva(request.sceneId);
       requestAnimationFrame(() => document.getElementById(`ld-${request.sceneId}`)?.focus({ preventScroll: true }));
-    } : undefined} />}
+    }} />}
     <div className="sd-toolbar">
       <div className="sd-views" role="group" aria-label="Vista">{([["director", "Director"], ["secuencia", "Secuencia"], ["guion", "Guion"]] as const).map(([v, l]) =>
         <button key={v} type="button" aria-pressed={vista === v} onClick={() => setVista(v)}>{l}</button>)}</div>
@@ -146,7 +148,7 @@ export default function LongDirector(p: Props) {
           {!sc.script?.length && !prot && <button type="button" className="sd-iconbtn" disabled={p.busy} onClick={() => p.onEscribirGuion(sc)}>✦ Escribir el guion con IA</button>}
           <button type="button" className="sd-iconbtn" onClick={() => { setPestaña("guion"); }}>¶ Editar guion</button>
           <button type="button" className="sd-iconbtn" onClick={() => p.onIrA("tomas", sc.id)}>▦ {tomasDe(sc).length ? "Abrir tomas" : "Dividir en tomas"}</button>
-          <button type="button" className="sd-iconbtn transfer-trigger" disabled={prot || p.busy} onClick={() => setTransferScene(sc.id)}>{p.onTransferScene ? "↗ Cambiar de secuencia" : "↗ Vista previa de traslado"}</button>
+          <button type="button" className="sd-iconbtn transfer-trigger" disabled={prot || p.busy} onClick={() => setTransferScene(sc.id)}>↗ Cambiar de secuencia</button>
           <button type="button" className="sd-iconbtn" disabled={p.busy || prot} onClick={() => p.onRegenerar(sc.id, "scene")}>↻ Regenerar escena</button>
           <button type="button" className="sd-iconbtn" disabled={p.busy || !!(ubic?.a.locked || ubic?.q.locked)} onClick={() => candado(sc.id, !!sc.locked)}>{sc.locked ? "🔒 Desbloquear" : "🔓 Bloquear"}</button>
           <button type="button" className="sd-iconbtn" disabled={prot} onClick={() => mover(sc.id, -1)} aria-label="Mover la escena antes en su secuencia">↑</button>

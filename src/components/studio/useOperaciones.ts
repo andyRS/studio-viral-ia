@@ -26,6 +26,15 @@ export function useOperaciones<T>(aplicar: Aplicar<T>) {
     setEstado({ estado: "guardando", texto: "Guardando…" });
     return informar(await historial.ejecutar(op));
   }, [historial, informar]);
+  // Para diálogos que esperan la operación: resuelve solo si se aplicó y guardó; si no, rechaza con el motivo
+  // (el diálogo sigue abierto y conserva la elección para reintentar).
+  const ejecutarOError = useCallback(async (op: Op<T>) => {
+    setEstado({ estado: "guardando", texto: "Guardando…" });
+    const r = await historial.ejecutar(op);
+    informar(r);
+    if (!r.hecha) throw new Error(r.motivo || (r.error ? `No se guardó (${(r.error as any)?.message || r.error}).` : "No había nada que cambiar."));
+    return r.hecha;
+  }, [historial, informar]);
   const deshacer = useCallback(async () => {
     if (historial.puedeDeshacer) { setEstado({ estado: "guardando", texto: "Deshaciendo…" }); forzar(x => x + 1); }
     informar(await historial.deshacer(), "deshacer");
@@ -36,7 +45,7 @@ export function useOperaciones<T>(aplicar: Aplicar<T>) {
   }, [historial, informar]);
   const deshacerYa = useCallback(() => { void deshacer(); }, [deshacer]);
   const rehacerYa = useCallback(() => { void rehacer(); }, [rehacer]);
-  return { estado, ejecutar, deshacer: deshacerYa, rehacer: rehacerYa, puedeDeshacer: historial.puedeDeshacer, puedeRehacer: historial.puedeRehacer };
+  return { estado, ejecutar, ejecutarOError, deshacer: deshacerYa, rehacer: rehacerYa, puedeDeshacer: historial.puedeDeshacer, puedeRehacer: historial.puedeRehacer };
 }
 
 // Espera a que React pinte el estado nuevo (p. ej. revisiones recién renumeradas) antes de la operación siguiente.

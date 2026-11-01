@@ -1,7 +1,7 @@
 // Directores: cola de guardado, deshacer por operación y mínimo del lienzo central. npm test
 import { crearCola } from "../src/components/studio/cola";
 import { crearHistorial } from "../src/components/studio/historial";
-import { opCandadoLarga, opMoverLarga } from "../src/components/studio/operaciones";
+import { opCandadoLarga, opMoverLarga, opTrasladarLarga } from "../src/components/studio/operaciones";
 import { esAplicada, opDesplazarLarga, opDuplicarCorta, opEditarCorta, opEditarLarga, type Op } from "../src/components/studio/operaciones";
 import { ajustarAnchos, MIN_CENTRO } from "../src/components/studio/Divisores";
 import { mapNode, normOutline, saveScript, allScenes, type Outline } from "../src/lib/outline";
@@ -123,6 +123,53 @@ const espera = (ms: number) => new Promise(r => setTimeout(r, ms));
     await h.ejecutar(opEditarLarga(id, "objective", "b"));
     const [x, y] = await Promise.all([h.deshacer(), h.deshacer()]);
     ok(!!x.hecha && !!y.ocupado && allScenes(o)[0].objective === "a" && h.puedeDeshacer, "dos deshacer seguidos: el segundo espera su turno y la pila queda en orden");
+  }
+
+  // 5. Traslado entre secuencias del mismo acto: misma escena, reversible, validado y con versión «antes».
+  {
+    const base = () => normOutline({ acts: [
+      { title: "A1", sequences: [
+        { title: "S1", scenes: [{ heading: "UNO", summary: "u" }, { heading: "DOS", summary: "d" }, { heading: "TRES", summary: "t" }] },
+        { title: "S2", scenes: [{ heading: "CUATRO" }, { heading: "CINCO" }] }] },
+      { title: "A2", sequences: [{ title: "S3", scenes: [{ heading: "SEIS" }] }] }] }, "s", 3, 20);
+    let o: Outline = base();
+    const [s1, s2] = o.acts[0].sequences; const s3 = o.acts[1].sequences[0];
+    const dos = s1.scenes[1]; const cinco = s2.scenes[1];
+    o = saveScript(o, dos.id, [{ type: "dialogo", speaker: "Ana", text: "Hola." }], "guion");
+    const cola = crearCola<Outline>(async v => { await espera(5); o = v; return v; });
+    cola.sincronizar(o);
+    const h = crearHistorial<Outline>(() => cola.aplicar);
+    const orden = (x: Outline) => x.acts[0].sequences.map(q => q.scenes.map(sc => sc.heading).join(",")).join(" | ");
+    const antes = orden(o);
+    const r = await h.ejecutar(opTrasladarLarga({ sceneId: dos.id, sourceSequenceId: s1.id, targetSequenceId: s2.id, beforeSceneId: cinco.id }));
+    ok(!!r.hecha && orden(o) === "UNO,TRES | CUATRO,DOS,CINCO", "trasladar coloca la escena antes del ancla en la secuencia destino");
+    const movida = o.acts[0].sequences[1].scenes[1];
+    ok(movida.id === dos.id && movida.script?.[0]?.text === "Hola.", "la escena trasladada conserva su id y su guion");
+    const snap = o.history?.[0];
+    ok(!!snap && snap.acts[0].sequences.map(q => q.scenes.map(sc => sc.heading).join(",")).join(" | ") === antes, "la versión del historial guarda el proyecto ANTES del traslado");
+    await h.deshacer();
+    ok(orden(o) === antes, "deshacer devuelve la escena a su posición original");
+    await h.rehacer();
+    ok(orden(o) === "UNO,TRES | CUATRO,DOS,CINCO", "rehacer vuelve a trasladarla");
+    await h.deshacer();
+    const alFinal = await h.ejecutar(opTrasladarLarga({ sceneId: dos.id, sourceSequenceId: s1.id, targetSequenceId: s2.id, beforeSceneId: null }));
+    ok(!!alFinal.hecha && orden(o) === "UNO,TRES | CUATRO,CINCO,DOS", "sin ancla, la escena va al final del destino");
+    await h.deshacer();
+    // Validaciones (cada una devuelve un motivo y no cambia nada).
+    const motivo = (x: Outline, t: Parameters<typeof opTrasladarLarga>[0]) => { const res = opTrasladarLarga(t)(x); return res && !esAplicada(res) ? res.motivo : ""; };
+    const t0 = { sceneId: dos.id, sourceSequenceId: s1.id, targetSequenceId: s2.id, beforeSceneId: null };
+    ok(!!motivo(o, { ...t0, targetSequenceId: s3.id }), "no traslada a una secuencia de otro acto");
+    ok(!!motivo(o, { ...t0, targetSequenceId: s1.id }), "no traslada a la misma secuencia");
+    ok(!!motivo(o, { ...t0, beforeSceneId: "no-existe" }), "rechaza un ancla que ya no existe");
+    ok(!!motivo(o, { ...t0, sourceSequenceId: s2.id }), "rechaza si la escena ya no está en el origen");
+    ok(!!motivo(mapNode(o, dos.id, n => ({ ...n, locked: true })), t0), "rechaza una escena bloqueada");
+    ok(!!motivo(mapNode(o, s2.id, n => ({ ...n, locked: true })), t0), "rechaza un destino bloqueado");
+    ok(!!motivo(mapNode(o, cinco.id, n => ({ ...n, locked: true })), t0), "rechaza un destino con escenas bloqueadas");
+    ok(!!motivo(mapNode(o, o.acts[0].id, n => ({ ...n, locked: true })), t0), "rechaza un acto bloqueado");
+    // Mover dentro de la secuencia también guarda la versión ANTES del cambio.
+    const pre = orden(o);
+    await h.ejecutar(opMoverLarga(o.acts[0].sequences[0].scenes[2].id, 0));
+    ok(o.history?.[0]?.acts[0].sequences.map(q => q.scenes.map(sc => sc.heading).join(",")).join(" | ") === pre, "mover escena guarda en el historial el orden previo");
   }
 
   if (fallos) { console.log(`${fallos} prueba(s) fallaron`); process.exit(1); }

@@ -173,6 +173,33 @@ const ir = async (page, espacio, modulo) => {
       ok(await page.getByRole("tab", { name: "Tomas y storyboard", selected: true }).count() === 1, "«Abrir tomas» lleva a Tomas y storyboard con esa escena");
       await ctx.close(); }
 
+    // 8b. Traslado real entre secuencias: el diálogo confirma, guarda una versión y Deshacer lo revierte.
+    { const { ctx, page } = await abrir(b, () => {
+        const S = (k, v) => localStorage.setItem("estudio-viral:" + k, JSON.stringify(v));
+        const esc = (id, h, extra = {}) => ({ id, heading: h, summary: "x", objective: "o", obstacle: "b", consequence: "c", tension: 5, minutes: 2, ...extra });
+        S("series", [{ id: "s1", title: "Serie Traslado", description: "x", format: "largo", style: "epica" }]);
+        S("storyOutlines", [{ id: "o1", seriesId: "s1", structure: 3, targetMinutes: 20, acts: [{ id: "a1", title: "Acto I", goal: "", sequences: [
+          { id: "q1", title: "Sec 1", goal: "", scenes: [esc("e1", "EXT. RÍO"), esc("e2", "INT. CASA", { script: [{ type: "accion", text: "Entra Ana." }] })] },
+          { id: "q2", title: "Sec 2", goal: "", scenes: [esc("e3", "EXT. CIELO"), esc("e4", "INT. TEMPLO")] }] }] }]);
+      });
+      await ir(page, "Creative Studio", "Generador");
+      const serie = page.getByRole("button", { name: /Serie Traslado/ }).first(); if (await serie.count()) { await serie.click(); await page.waitForTimeout(700); }
+      const mesa = page.getByRole("button", { name: /Mesa de dirección/ }).first(); if (await mesa.count() && (await mesa.getAttribute("aria-expanded")) === "false") { await mesa.click(); await page.waitForTimeout(600); }
+      await page.locator("#ld-e2").click(); await page.waitForTimeout(200);
+      await page.getByRole("button", { name: /Cambiar de secuencia/ }).first().click(); await page.waitForTimeout(400);
+      const dlg = page.locator("dialog.scene-transfer");
+      await dlg.getByLabel("Secuencia de destino").selectOption("q2");
+      await dlg.getByLabel("Ubicación dentro de la secuencia").selectOption("e4");
+      await dlg.getByRole("button", { name: /Confirmar traslado/ }).click(); await page.waitForTimeout(1000);
+      let o = await page.evaluate(() => JSON.parse(localStorage.getItem("estudio-viral:storyOutlines"))[0]);
+      const ids = x => x.acts[0].sequences.map(q => q.scenes.map(s => s.id).join(",")).join("|");
+      ok(ids(o) === "e1|e3,e2,e4" && await dlg.count() === 0, "confirmar el traslado mueve la escena a la otra secuencia y cierra el diálogo");
+      ok(o.acts[0].sequences[1].scenes[1].script?.[0]?.text === "Entra Ana." && (o.history || []).length === 1 && o.history[0].acts[0].sequences[0].scenes.length === 2, "la escena conserva su guion y la versión guardada es la de antes");
+      await page.getByRole("button", { name: "Deshacer" }).first().click(); await page.waitForTimeout(1000);
+      o = await page.evaluate(() => JSON.parse(localStorage.getItem("estudio-viral:storyOutlines"))[0]);
+      ok(ids(o) === "e1,e2|e3,e4", "Deshacer devuelve la escena a su secuencia y posición");
+      await ctx.close(); }
+
     // 9. Integridad de los directores: dos ediciones en el mismo instante no se pisan, y deshacer un detalle
     //    no borra el guion guardado después por el editor de guion.
     { const { ctx, page } = await abrir(b, () => {

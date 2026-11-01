@@ -21,9 +21,11 @@ export const opEditarLarga = (id: string, campo: string, valor: unknown): Op<Out
 export const opMoverLarga = (id: string, a: number, version = true): Op<Outline> => o => {
   const f = findNode(o, id); if (!f?.seq) return { motivo: "No se encontró la escena." };
   const i = f.seq.scenes.findIndex(s => s.id === id);
-  const r = moverEscenaLarga(o, id, a);
-  if (!r.movida) return r.motivo ? { motivo: r.motivo } : null;
-  return { valor: version ? snapshot(r.outline, `Antes de mover «${f.node.heading}»`) : r.outline, inversa: opMoverLarga(id, i, false), etiqueta: "mover escena" };
+  const prueba = moverEscenaLarga(o, id, a);
+  if (!prueba.movida) return prueba.motivo ? { motivo: prueba.motivo } : null;
+  // La versión del historial guarda el proyecto ANTES de mover (snapshot primero, cambio después).
+  const r = version ? moverEscenaLarga(snapshot(o, `Antes de mover «${f.node.heading}»`), id, a) : prueba;
+  return { valor: r.outline, inversa: opMoverLarga(id, i, false), etiqueta: "mover escena" };
 };
 // Mover relativo (±1): el destino se calcula sobre el estado actual, no sobre el del render en que se pidió.
 export const opDesplazarLarga = (id: string, delta: number): Op<Outline> => o => {
@@ -66,4 +68,38 @@ export const opQuitarCorta = (n: number, origen: number): Op<any> => out => {
     ...(Array.isArray(out?.dolaSceneNumbers) ? { dolaSceneNumbers: out.dolaSceneNumbers.filter((x: number) => x !== n).map((x: number) => mapa[x] || x) } : {}),
   };
   return { valor, mapa, inversa: opDuplicarCorta(origen), etiqueta: `quitar la copia de la escena ${origen}` };
+};
+
+// Trasladar una escena a otra secuencia del MISMO acto, delante de `beforeSceneId` (o al final si es null).
+// Se valida todo sobre el proyecto actual al ejecutarse (no sobre lo que vio el diálogo): acto, origen,
+// destino, ancla y candados. La escena es el mismo objeto (id, guion, tomas, historial y escenario).
+// La inversa la devuelve a su secuencia original, delante de la escena que tenía detrás.
+export type Traslado = { sceneId: string; sourceSequenceId: string; targetSequenceId: string; beforeSceneId: string | null };
+export const opTrasladarLarga = (t: Traslado, restaurar = false): Op<Outline> => o => {
+  const act = o.acts.find(a => a.sequences.some(q => q.id === t.sourceSequenceId));
+  const origen = act?.sequences.find(q => q.id === t.sourceSequenceId);
+  const destino = act?.sequences.find(q => q.id === t.targetSequenceId);
+  if (!act || !origen) return { motivo: "La secuencia de origen ya no existe." };
+  const i = origen.scenes.findIndex(s => s.id === t.sceneId);
+  if (i < 0) return { motivo: "La escena ya no está en esa secuencia (pudo moverse en otra ventana). Vuelve a abrir el traslado." };
+  if (!destino) return { motivo: "La secuencia de destino no existe o pertenece a otro acto." };
+  if (destino.id === origen.id) return { motivo: "Elige una secuencia distinta de la de origen." };
+  const escena = origen.scenes[i];
+  if (act.locked) return { motivo: "El acto está bloqueado: desbloquéalo para cambiar escenas de secuencia." };
+  if (origen.locked || destino.locked) return { motivo: "La secuencia de origen o la de destino está bloqueada." };
+  if (escena.locked) return { motivo: "La escena está bloqueada: desbloquéala para trasladarla." };
+  if (!restaurar && destino.scenes.some(s => s.locked)) return { motivo: "La secuencia de destino tiene escenas bloqueadas: desbloquéalas antes de insertar otra entre ellas." };
+  const j = t.beforeSceneId ? destino.scenes.findIndex(s => s.id === t.beforeSceneId) : destino.scenes.length;
+  if (j < 0) return { motivo: "La escena de referencia del destino ya no existe. Elige otra posición." };
+  const despues = origen.scenes[i + 1]?.id ?? null;
+  const nuevasDestino = [...destino.scenes.slice(0, j), escena, ...destino.scenes.slice(j)];
+  // Historial: la versión guarda el proyecto ANTES del traslado (al deshacer no se añade otra).
+  const b = restaurar ? o : snapshot(o, `Antes de trasladar «${escena.heading}» a «${destino.title}»`);
+  const valor: Outline = { ...b, acts: o.acts.map(a => a.id !== act.id ? a : { ...a, sequences: a.sequences.map(q =>
+    q.id === origen.id ? { ...q, scenes: q.scenes.filter(s => s.id !== escena.id) } : q.id === destino.id ? { ...q, scenes: nuevasDestino } : q) }) };
+  return {
+    valor,
+    inversa: opTrasladarLarga({ sceneId: escena.id, sourceSequenceId: destino.id, targetSequenceId: origen.id, beforeSceneId: despues }, !restaurar),
+    etiqueta: restaurar ? `devolver «${escena.heading}» a «${destino.title}»` : `trasladar «${escena.heading}» a «${destino.title}»`,
+  };
 };

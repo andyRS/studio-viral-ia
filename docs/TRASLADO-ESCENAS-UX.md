@@ -21,7 +21,7 @@ Entrega de diseño sobre `fa85bdc`. Paleta petróleo, cyan/hielo y dorado. No ca
 - Al confirmar espera la promesa, impide envíos duplicados y conserva la elección si falla. Durante la espera no permite cerrar el diálogo. No muestra un aviso de guardado remoto propio.
 - Móvil: origen y destino se apilan y el contenido del diálogo se desplaza verticalmente.
 
-**Estado de la app:** `LongDirector` muestra «Vista previa de traslado». Se puede elegir y revisar un destino, pero el botón de confirmación permanece deshabilitado y explica que el traslado todavía no está disponible. No hay un traslado ficticio ni un botón que informe éxito sin ejecutar nada.
+**Estado de la app:** el traslado real está conectado (ver «Integración de datos» al final). `LongDirector` muestra «Cambiar de secuencia» y la confirmación ejecuta la operación.
 
 ## Contrato para el agente de desarrollo
 
@@ -57,3 +57,32 @@ Pantalla temporal en memoria, con escenas ficticias de Clara, sin DataProvider, 
 - Sin errores de consola en la revisión. Las pruebas de Supabase, movimiento real entre secuencias y deshacer de ese movimiento quedan para la integración de datos.
 
 Capturas con datos ficticios: [vista previa](previews/scene-transfer-preview.jpg), [móvil](previews/scene-transfer-mobile.jpg).
+
+
+## Integración de datos
+
+Hecha por el agente de desarrollo sobre `f627024`.
+
+- **Operación:** `opTrasladarLarga` está en `studio/operaciones.ts`. Se aplica al último proyecto guardado mediante la cola compartida de `StoryArchitect` (`p.aplicar`) y el historial del director (`ops.ejecutarOError`, la variante de `ops.ejecutar` que rechaza la promesa con el motivo). No hay un historial aparte.
+  - `onTransferScene` sigue siendo opcional y, si se pasa, tiene prioridad; por defecto se usa esta operación.
+- **Revalidación al ejecutar:**
+  - el origen existe y aún contiene la escena;
+  - el destino es del mismo acto y distinto del origen;
+  - el ancla existe;
+  - candados de acto, origen, destino y escena;
+  - el destino no tiene escenas bloqueadas.
+
+  Cada fallo rechaza con un motivo legible y el diálogo sigue abierto.
+- **La escena se conserva:** se mueve el mismo objeto (ID, guion, tomas, versiones, personajes, escenario).
+- **Historial:** antes de trasladar se guarda una versión «Antes de trasladar…».
+- **Deshacer y Rehacer:** la inversa devuelve la escena a su secuencia, antes de la escena que la seguía. Deshacer no crea otra versión.
+- **Corrección de paso en `opMoverLarga`:** la versión del historial se tomaba después de mover, así que guardaba el orden nuevo con la etiqueta «Antes de mover». Ahora el snapshot va primero.
+- **Pruebas:**
+  - `tests/directores.test.ts` tiene 16 pruebas nuevas:
+    - ancla y final;
+    - identidad y guion;
+    - versión previa;
+    - deshacer y rehacer;
+    - 8 validaciones;
+    - versión previa al mover.
+  - La sección 8b del e2e recorre el diálogo: confirma, comprueba `storyOutlines` y Deshacer.
