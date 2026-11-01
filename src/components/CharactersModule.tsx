@@ -1,4 +1,5 @@
 "use client";
+import { prepararFicha } from "@/lib/imagenFicha";
 import { useEffect, useRef, useState } from "react";
 import ReferencePreview from "./ReferencePreview";
 import { normBible, type CharacterBible } from "@/lib/personajes";
@@ -53,11 +54,9 @@ export default function CharactersModule({ focusCharacterId }: { focusCharacterI
   }
   function onImage(c: any, file: File | undefined){
     if (!file) return;
-    if (file.size > 2 * 1024 * 1024) { window.alert("La ficha debe pesar menos de 2 MB para guardarla en tu cuenta. Exporta una copia comprimida desde Flow."); return; }
     if (c.referenceApprovedAt && !window.confirm(`La ficha aprobada de ${c.name} quedará pendiente de nueva aprobación. ¿Crear versión ${Number(c.referenceVersion || 0) + 1}?`)) return;
-    const r = new FileReader();
-    r.onload = () => { const history = [...(c.referenceHistory || [])]; if (c.referenceApprovedAt && c.imageUrl) history.push({ version: c.referenceVersion || 1, imageUrl: c.imageUrl, approvedAt: c.referenceApprovedAt }); void update("characters", c.id, { imageUrl: r.result as string, referenceApprovedAt: undefined, referenceVersion: Number(c.referenceVersion || 0) + 1, referenceHistory: history }); };
-    r.readAsDataURL(file);
+    // Fotos grandes (2K, PNG…): se recomprimen solas conservando la resolución, sin rechazarlas.
+    void prepararFicha(file).then(({ url }) => { const history = [...(c.referenceHistory || [])]; if (c.referenceApprovedAt && c.imageUrl) history.push({ version: c.referenceVersion || 1, imageUrl: c.imageUrl, approvedAt: c.referenceApprovedAt }); void update("characters", c.id, { imageUrl: url, referenceApprovedAt: undefined, referenceVersion: Number(c.referenceVersion || 0) + 1, referenceHistory: history }); }).catch((e: any) => window.alert(`No se pudo usar esa imagen: ${e?.message || e}`));
   }
   function restoreReference(c: any) {
     const history = [...(c.referenceHistory || [])];

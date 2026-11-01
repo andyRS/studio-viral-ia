@@ -1,4 +1,5 @@
 "use client";
+import { prepararFicha } from "@/lib/imagenFicha";
 import { useEffect, useMemo, useRef, useState } from "react";
 import SceneDirector from "./SceneDirector";
 import { moverEscenaCorta, remapRevisiones } from "@/lib/ordenEscenas";
@@ -670,11 +671,9 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
   const tabs: [Tab, string][] = [["guion", "Guion"], ...(cast.length ? [["elenco", "1 · Personajes canónicos"]] as [Tab, string][] : []), ...(scenes.length && cast.length >= 2 ? [["imagenes", "2 · Imágenes"], ["animacion", "3 · Animación"], ["mesa", "4 · Mesa y montaje"]] as [Tab, string][] : []), ...(social ? [["redes", "Redes"]] as [Tab, string][] : []), ["plataformas", "Plataformas"], ...(!isTemplate ? [["archivos", "Archivos"]] as [Tab, string][] : [])];
   async function uploadMaster(c: any, file: File | undefined) {
     if (!file) return;
-    if (file.size > 2 * 1024 * 1024) { window.alert("Exporta la ficha en menos de 2 MB para guardarla en tu cuenta."); return; }
     if (c.referenceApprovedAt && !window.confirm(`Se creará una nueva versión pendiente de aprobación para ${c.name}. ¿Continuar?`)) return;
-    const reader = new FileReader();
-    reader.onload = () => { const history = [...(c.referenceHistory || [])]; if (c.referenceApprovedAt && c.imageUrl) history.push({ version: c.referenceVersion || 1, imageUrl: c.imageUrl, approvedAt: c.referenceApprovedAt }); void update("characters", c.id, { imageUrl: reader.result as string, referenceApprovedAt: undefined, referenceVersion: Number(c.referenceVersion || 0) + 1, referenceHistory: history }); };
-    reader.readAsDataURL(file);
+    // Fotos grandes (2K, PNG…): se recomprimen solas conservando la resolución, sin rechazarlas.
+    void prepararFicha(file).then(({ url }) => { const history = [...(c.referenceHistory || [])]; if (c.referenceApprovedAt && c.imageUrl) history.push({ version: c.referenceVersion || 1, imageUrl: c.imageUrl, approvedAt: c.referenceApprovedAt }); void update("characters", c.id, { imageUrl: url, referenceApprovedAt: undefined, referenceVersion: Number(c.referenceVersion || 0) + 1, referenceHistory: history }); }).catch((e: any) => window.alert(`No se pudo usar esa imagen: ${e?.message || e}`));
   }
   const sceneId = (n: number) => `[${String(n).padStart(3, "0")}]`;
   return <section className="episode-workspace" aria-label="Mesa de producción del episodio">
