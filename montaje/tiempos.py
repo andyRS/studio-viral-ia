@@ -88,6 +88,17 @@ def avisos_clip(ci, primera, ultima, D, a, b, cfg, empieza_con_voz=None):
     return out
 
 
+def fundidos_audio(dur, voz_ini, voz_fin, pelicula):
+    """(entrada, salida) del fundido de audio de un clip en el montaje, en segundos.
+    Viral: corte seco (0,03 / 0,04 s). Película: el ambiente entra en 0,12 s y se desvanece en 0,35 s, sin tocar la voz:
+    la entrada acaba antes de la primera palabra y la salida empieza después de la última."""
+    if not pelicula:
+        return 0.03, 0.04
+    fin = (voz_fin + 0.05) if voz_fin is not None else dur
+    ini = (voz_ini - 0.02) if voz_ini is not None else 0.12
+    return max(0.03, min(0.12, ini)), max(0.04, min(0.35, dur - fin))
+
+
 def corte_j_seguro(voz_fin_prev, a_prev, b_prev, vel, j):
     """Un corte J adelanta la voz siguiente `j` s sobre la imagen anterior: solo si la voz anterior ya terminó."""
     if voz_fin_prev is None:

@@ -368,10 +368,11 @@ if ANTERIOR:
         RECAP_PIEZAS = [(max(0.0, fin - 11.0), fin)]
     RECAP_S = round(sum(e0 - s0 for s0, e0 in RECAP_PIEZAS), 2)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from tiempos import avisos_clip, config_clip, corte_j_seguro, limites_clip, voz_al_inicio
+from tiempos import avisos_clip, config_clip, corte_j_seguro, fundidos_audio, limites_clip, voz_al_inicio
 offsets, words_per_clip, recortes, t = [], [], [], RECAP_S
 VOZ_FIN = []          # final de la voz de cada clip (segundos del clip), para no pisarla con un corte J
 VOZ_SPAN = []         # duración real de la voz de cada clip (de la primera a la última palabra)
+VOZ_INI = []          # inicio de la voz de cada clip (segundos del clip)
 AVISOS_TIEMPO = []
 for ci, clip in enumerate(clips):
     progreso(5 + 55 * ci / len(clips), f"Escuchando el clip {ci + 1} de {len(clips)} con Whisper")
@@ -404,6 +405,7 @@ for ci, clip in enumerate(clips):
         a, b = limites_clip(primera, ultima, D, cfg)
     VOZ_FIN.append(ultima)
     VOZ_SPAN.append((ultima - primera) if primera is not None else 0.0)
+    VOZ_INI.append(primera)
     for aviso in avisos_clip(ci, primera, ultima, D, a, b, cfg, empieza_con_voz=voz_al_inicio(x[: 16000]) if primera is not None else None):
         AVISOS_TIEMPO.append(aviso)
         progreso(5 + 55 * (ci + 1) / len(clips), f"Aviso: {aviso}")
@@ -866,8 +868,14 @@ for ci, c in enumerate(clips):
         extra_v.append(f"fade=t=out:st={max(0.0, dseg - FUNDIDO):.3f}:d={FUNDIDO}")
     fc += ",".join(["null"] + extra_v) + f"{chat}{ajusta(dseg)}[v{n}];"
     gan = f"volume={GANANCIA[ci]:.2f}dB," if abs(GANANCIA[ci]) > 0.3 else ""
+    # Fundidos de audio en cada corte. Viral: 0,03/0,04 s (corte seco). Película (16:9): el ambiente de cada plano
+    # entra en 0,12 s y se desvanece en 0,35 s, sin tocar nunca la voz (empiezan después de la última palabra y
+    # terminan antes de la primera).
+    fi, fo = fundidos_audio((b - a) / VEL,
+                            (VOZ_INI[ci] - a) / VEL if ci < len(VOZ_INI) and VOZ_INI[ci] is not None else None,
+                            (VOZ_FIN[ci] - a) / VEL if ci < len(VOZ_FIN) and VOZ_FIN[ci] is not None else None, HORIZ)
     fc += (f"[{n}:a]atrim=start={a:.3f}:end={b:.3f},asetpts=PTS-STARTPTS,{f'atempo={VEL:.3f},' if VEL > 1 else ''}{tel}{gan}aresample=48000,aformat=channel_layouts=stereo,"
-           f"afade=t=in:d=0.03,afade=t=out:st={max(0, (b - a) / VEL - 0.04):.3f}:d=0.04[a{n}];")
+           f"afade=t=in:d={fi:.3f},afade=t=out:st={max(0, (b - a) / VEL - fo):.3f}:d={fo:.3f}[a{n}];")
     catv += f"[v{n}]"; cata += f"[a{n}]"
     n += 1
 if G.get("cierre"):

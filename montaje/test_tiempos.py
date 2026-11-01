@@ -3,7 +3,7 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from tiempos import avisos_clip, config_clip, corte_j_seguro, limites_clip, voz_al_inicio  # noqa: E402
+from tiempos import avisos_clip, config_clip, corte_j_seguro, fundidos_audio, limites_clip, voz_al_inicio  # noqa: E402
 import math  # noqa: E402
 
 
@@ -51,6 +51,14 @@ class Tiempos(unittest.TestCase):
         self.assertFalse(voz_al_inicio([0.0] * sr, sr))
         # Whisper dice 0,0 s pero hay silencio delante: no se avisa
         self.assertEqual(avisos_clip(1, 0.0, 3.0, 5.0, 0.0, 3.4, {"modo": "voz"}, empieza_con_voz=False), [])
+
+
+    def test_fundidos_audio(self):
+        self.assertEqual(fundidos_audio(5.0, 0.3, 4.0, False), (0.03, 0.04))            # viral: corte seco
+        fi, fo = fundidos_audio(7.3, 1.6, 6.3, True)                                    # escena 15: 1 s de ambiente tras la voz
+        self.assertEqual((fi, fo), (0.12, 0.35))
+        fi, fo = fundidos_audio(5.0, 0.05, 4.9, True)                                   # voz pegada a los bordes: no se toca
+        self.assertLessEqual(fi, 0.05); self.assertLessEqual(4.9 + 0.05, 5.0 - fo + 1e-9)
 
 
 if __name__ == "__main__":
