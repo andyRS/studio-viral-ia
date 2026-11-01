@@ -2,6 +2,7 @@
 import PromptWorkbench from "./PromptWorkbench";
 import { useMemo, useState } from "react";
 import { useData } from "@/lib/DataContext";
+import WorkspaceIntro, { WorkspaceLoading } from "./WorkspaceIntro";
 
 const DOLA_URL = "https://www.dola.com/chat";
 
@@ -40,12 +41,13 @@ function downloadText(text: string, name: string) {
   const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([text], { type: "text/markdown" })); a.download = name; a.click();
 }
 
-export default function DolaStudioModule() {
-  const { data } = useData();
+export default function DolaStudioModule({ onNavigate }: { onNavigate?: (module: string) => void } = {}) {
+  const { data, mode } = useData();
   const d: any = data;
   const episodes = useMemo(() => [...(data.episodes || [])].reverse(), [data.episodes]);
   const [epId, setEpId] = useState<string>(episodes[0]?.id || "");
   const [frameKey, setFrameKey] = useState(0);
+  const [showDola, setShowDola] = useState(false);
   const [mobileTab, setMobileTab] = useState<"prompts" | "dola">("prompts");
   const ep: any = episodes.find(e => e.id === epId) || episodes[0];
   const out = ep?.output || {};
@@ -63,15 +65,15 @@ export default function DolaStudioModule() {
   const dolaDuration = out.dolaDuration || 60;
 
   const promptsPanel = (
-    <div className="space-y-3">
+    <div className="dola-prompt-stack space-y-4">
       {episodes.length === 0 ? (
-        <p className="rounded-xl border border-white/10 bg-white/[.03] p-4 text-sm text-slate-300">Todavía no hay episodios. Genera uno en el <b>Generador</b> y vuelve aquí para trabajarlo con Dola.</p>
+        <div className="dola-empty"><span aria-hidden="true">✦</span><p className="studio-eyebrow">01 / PREPARAR EL EPISODIO</p><h3>Tu mesa está lista.</h3><p>Todavía no hay episodios. Crea uno en el Generador y vuelve aquí para revisar sus referencias y prompts.</p>{onNavigate && <button type="button" className="studio-secondary-action" onClick={() => onNavigate("generador")}>Ir al Generador ↗</button>}</div>
       ) : (
-        <select value={ep?.id} onChange={e => setEpId(e.target.value)}>
+        <label className="dola-episode-picker">Episodio en la mesa<select value={ep?.id} onChange={e => setEpId(e.target.value)}>
           {episodes.map(e => <option key={e.id} value={e.id}>{e.title || e.theme}{e.status === "Borrador" || e.output?.mode === "plantilla-local" ? " · Borrador" : ""}</option>)}
-        </select>
+        </select></label>
       )}
-      <div className="rounded-xl bg-[#121826] p-4">
+      {ep && <div className="dola-step rounded-xl bg-[#121826] p-4">
         <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">1 · Prepara Dola</p>
         <ul className="mt-2 list-disc space-y-1 pl-4 text-sm text-slate-300">
           <li>Activa la habilidad <b>Zehlas 1min</b> y el modo <b>Profesional</b>.</li>
@@ -86,9 +88,9 @@ export default function DolaStudioModule() {
             </li>
           ))}
         </ol>
-      </div>
+      </div>}
       {ep && (
-        <div className="rounded-xl bg-[#121826] p-4">
+        <div className="dola-step rounded-xl bg-[#121826] p-4">
           <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">2 · Pega el prompt</p>
           {!verified && <p className="mt-3 rounded-lg border border-amber-400/30 bg-amber-400/10 p-3 text-xs leading-5 text-amber-100">{!Array.isArray(out.cast) || out.cast.length < 2 ? "Este episodio no tiene elenco de producción. Recréalo desde el Generador." : missingMasters.length ? `Faltan fichas maestras aprobadas: ${missingMasters.map((c: any) => c.name).join(", ")}. Apruébalas en Generador → Personajes canónicos.` : !versionsMatch ? "El guion usa fichas anteriores o no tiene versión registrada. Regenera el episodio con la biblia actual." : !endingProtected ? "Este prompt es anterior a la corrección de duración y puede cortar el cierre. Regenera el episodio antes de usar Dola." : "Este episodio necesita revisión en Generador antes de producir."}</p>}
           {verified && isTemplate && <p className="mt-3 rounded-lg border border-amber-400/30 bg-amber-400/10 p-3 text-xs leading-5 text-amber-100">Borrador de la plantilla local: el diálogo es de estructura genérica. Revísalo antes de producir o recréalo con la IA.</p>}
@@ -101,7 +103,7 @@ export default function DolaStudioModule() {
         </div>
       )}
       {ep && verified && (
-        <div className="rounded-xl bg-[#121826] p-4">
+        <div className="dola-step rounded-xl bg-[#121826] p-4">
           <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">3 · Envíalo a Claude</p>
           <p className="mt-2 text-sm text-slate-300">Descarga el paquete y adjúntalo en tu chat con Claude junto con los clips de Dola. Solicita allí la revisión, el montaje y las cuatro versiones; comprueba cada entrega antes de publicarla.</p>
           <button onClick={() => downloadText(buildClaudePack(ep, chars, d.metrics || [], d.clipChecks || []), `paquete-claude-${(ep.title || "episodio").replace(/[^a-z0-9áéíóúñ]+/gi, "-").toLowerCase()}.md`)}
@@ -112,33 +114,36 @@ export default function DolaStudioModule() {
   );
 
   const dolaPanel = (
-    <div className="flex h-full min-h-[70vh] flex-col overflow-hidden rounded-xl border border-white/10 bg-black">
+    <div role="region" aria-label="Espacio externo de Dola" tabIndex={0} className="dola-external-canvas flex h-full min-h-[70vh] flex-col overflow-hidden rounded-xl border border-white/10 bg-black">
       <div className="flex items-center gap-2 border-b border-white/10 bg-[#0d1220] px-3 py-2 text-xs">
-        <span className="h-2.5 w-2.5 rounded-full bg-teal-400" />
-        <span className="flex-1 truncate text-slate-400">dola.com/chat</span>
-        <button onClick={() => setFrameKey(k => k + 1)} className="rounded-md px-2 py-1 text-slate-300 hover:bg-white/10">Recargar</button>
+        <span aria-hidden="true" className="h-2.5 w-2.5 rounded-full border border-cyan-200/50" />
+        <span className="flex-1 truncate text-slate-300">Dola · espacio externo</span>
+        <button disabled={!showDola} onClick={() => setFrameKey(k => k + 1)} className="rounded-md px-2 py-1 text-slate-300 hover:bg-white/10 disabled:opacity-40">Recargar</button>
         <a href={DOLA_URL} target="_blank" rel="noopener" className="rounded-md px-2 py-1 font-semibold text-teal-300 hover:bg-white/10">Abrir en pestaña</a>
       </div>
-      <iframe key={frameKey} src={DOLA_URL} title="Dola" className="w-full flex-1 bg-white"
+      {showDola ? <iframe key={frameKey} src={DOLA_URL} title="Dola" className="w-full flex-1 bg-white"
         allow="clipboard-read; clipboard-write; microphone; fullscreen; autoplay"
-        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads allow-modals allow-storage-access-by-user-activation" />
+        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads allow-modals allow-storage-access-by-user-activation" /> : <div className="dola-launch-canvas"><span className="dola-aperture" aria-hidden="true">D</span><p className="studio-eyebrow">ESPACIO EXTERNO / DOLA</p><h3>La próxima escena empieza contigo.</h3><p>Revisa tu material y abre el espacio de generación cuando estés listo.</p><button type="button" className="studio-primary-action" onClick={() => setShowDola(true)}>Abrir espacio integrado ↗</button><small>La sesión y disponibilidad dependen de Dola.</small></div>}
       <p className="border-t border-white/10 bg-[#0d1220] px-3 py-2 text-[11px] text-slate-400">Si Dola no te deja iniciar sesión aquí dentro (algunos navegadores bloquean el login en ventanas integradas), usa «Abrir en pestaña»: los prompts siguen a la izquierda.</p>
     </div>
   );
 
+  if (mode === "cargando") return <WorkspaceLoading label="Creative Studio / Estudio Dola" />;
   return (
-    <div>
-      <h2 className="text-xl font-bold">Estudio Dola</h2>
-      <p className="mt-1 text-sm text-slate-400">Trabaja el episodio con Dola sin salir de la app.</p>
-      <div className="mt-3 grid grid-cols-2 gap-2 lg:hidden">
+    <section className="growth-workspace creative-library dola-studio space-y-6">
+      <WorkspaceIntro eyebrow="Creative Studio / Estudio Dola" title="De la dirección al movimiento." description="Prepara las referencias, revisa el prompt y lleva tu episodio al espacio de generación. Todo el material, al alcance de tu próxima decisión." index="01 / DOLA">
+        <a href={DOLA_URL} target="_blank" rel="noopener" className="studio-primary-action">Abrir Dola ↗</a><p className="growth-source">{ep ? ep.title : "Selecciona un episodio para empezar"}</p>
+      </WorkspaceIntro>
+      {ep && <div className="dola-context-strip"><div><span>EPISODIO</span><strong>{ep.title || ep.theme}</strong></div><div><span>REFERENCIAS</span><strong>{chars.filter(c => c.imageUrl && c.referenceApprovedAt).length} aprobadas</strong></div><div><span>PREPARACIÓN</span><strong data-ready={verified}>{verified ? isTemplate ? "Plantilla por revisar" : "Fichas y versiones verificadas" : "Requiere revisión"}</strong></div></div>}
+      <div className="dola-mobile-switch mt-3 grid grid-cols-2 gap-2 lg:hidden" role="group" aria-label="Área de trabajo Dola">
         {(["prompts", "dola"] as const).map(t => (
-          <button key={t} onClick={() => setMobileTab(t)} className={`rounded-xl border px-3 py-2 text-sm ${mobileTab === t ? "border-amber-400/50 bg-amber-400/10 text-amber-200" : "border-white/10 text-slate-300"}`}>{t === "prompts" ? "Prompts" : "Dola"}</button>
+          <button key={t} aria-pressed={mobileTab === t} onClick={() => setMobileTab(t)} className={`rounded-xl border px-3 py-2 text-sm ${mobileTab === t ? "border-cyan-300/50 bg-cyan-300/10 text-cyan-100" : "border-white/10 text-slate-300"}`}>{t === "prompts" ? "Prompts" : "Dola"}</button>
         ))}
       </div>
-      <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(320px,400px)_1fr]">
-        <div className={`${mobileTab === "prompts" ? "" : "hidden"} lg:block lg:max-h-[calc(100vh-180px)] lg:overflow-y-auto lg:pr-1`}>{promptsPanel}</div>
-        <div className={`${mobileTab === "dola" ? "" : "hidden"} lg:block lg:h-[calc(100vh-180px)]`}>{dolaPanel}</div>
+      <div className="dola-workspace-grid mt-4 grid gap-4 lg:grid-cols-[minmax(320px,400px)_1fr]">
+        <div className={`dola-directions ${mobileTab === "prompts" ? "" : "hidden"} lg:block`}>{promptsPanel}</div>
+        <div className={`dola-browser ${mobileTab === "dola" ? "" : "hidden"} lg:block`}>{dolaPanel}</div>
       </div>
-    </div>
+    </section>
   );
 }

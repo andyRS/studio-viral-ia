@@ -1,6 +1,7 @@
 "use client";
 import { useState, type FormEvent } from "react";
 import { useData } from "@/lib/DataContext";
+import WorkspaceIntro, { WorkspaceLoading } from "./WorkspaceIntro";
 
 const stages = ["Idea", "Guion", "Clips generados", "Montaje", "Publicado"];
 
@@ -44,22 +45,25 @@ export default function ProductionModule({ onOpenEpisode }: { onOpenEpisode?: (e
     setPendingDelete(null);
   }
 
-  return <section className="space-y-7">
-    <div>
-      <h2 className="text-xl font-bold">Centro de producción</h2>
-      <p className="mt-1 text-sm text-slate-400">Sigue cada episodio de la idea a la publicación. {mode === "supabase" ? "Los cambios se guardan en tu cuenta." : "Los cambios se guardan en este dispositivo."}</p>
-    </div>
-
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5" aria-label="Etapas de producción">
-      {stages.map(stage => {
+  if (mode === "cargando") return <WorkspaceLoading label="Creative Studio / Producción" />;
+  return <section className="growth-workspace creative-library production-studio space-y-6">
+    <WorkspaceIntro eyebrow="Creative Studio / Centro de producción" title="Cada episodio, un paso más cerca." description="Visualiza el trabajo de tu estudio, abre la revisión de escenas y mantén a la vista lo que inviertes en cada historia." index="01 / PRODUCCIÓN">
+      <a href="#production-create" className="studio-primary-action">+ Añadir al tablero</a><p className="growth-source">{mode === "supabase" ? "Datos de tu cuenta" : "Datos de este navegador"} · etapas manuales</p>
+    </WorkspaceIntro>
+    <div className="growth-summary" aria-label="Resumen de producción"><div><span>TARJETAS DEL ESTUDIO</span><strong>{cards.length.toString().padStart(2,"0")}</strong><small>{cards.filter(card => card.stage !== "Publicado").length} pendientes de publicar</small></div><div><span>PUBLICADAS</span><strong>{cards.filter(card => card.stage === "Publicado").length}</strong><small>Según la etapa registrada</small></div><div><span>COSTO REGISTRADO</span><strong><em>US$</em>{total.toFixed(2)}</strong><small>{costs.length} registros de costo</small></div></div>
+    <div className="creative-section-heading"><div><p className="studio-eyebrow">DEL CONCEPTO AL ESTRENO</p><h3>Tu tablero de producción</h3></div><a href="#production-costs" className="studio-text-action">Ver costos ↘</a></div>
+    <div className="production-board-wrap" role="region" aria-label="Tablero de etapas, desplazable horizontalmente" tabIndex={0}>
+    <div className="production-board" aria-label="Etapas de producción">
+      {stages.map((stage, stageIndex) => {
         const stageCards = cards.filter(card => card.stage === stage);
-        return <div key={stage} className="min-w-0 rounded-xl bg-[#121826] p-3">
+        return <div key={stage} className="production-lane min-w-0 rounded-xl bg-[#121826] p-3" data-stage={stageIndex}>
+          <p className="production-lane-index">FASE / {String(stageIndex + 1).padStart(2,"0")}</p>
           <h3 className="flex items-center justify-between gap-2 text-sm font-semibold"><span>{stage}</span><span className="rounded-full border border-white/10 px-2 py-0.5 text-xs text-slate-300" aria-label={`${stageCards.length} tarjetas`}>{stageCards.length}</span></h3>
           <div className="mt-3 space-y-2">
             {stageCards.length === 0 && <p className="rounded-lg border border-dashed border-white/10 p-3 text-xs text-slate-400">Sin episodios en esta etapa.</p>}
-            {stageCards.map(card => <article key={card.id} className={`min-w-0 rounded-lg border p-2.5 text-sm ${selectedCard?.id === card.id ? "border-amber-500/60 bg-amber-500/10" : "border-white/10 bg-slate-800/60"}`}>
+            {stageCards.map(card => <article key={card.id} className={`production-card min-w-0 rounded-lg border p-2.5 text-sm ${selectedCard?.id === card.id ? "border-cyan-300/60 bg-cyan-300/10" : "border-white/10 bg-slate-800/60"}`}>
               <button type="button" onClick={() => setSelectedCardId(card.id)} aria-pressed={selectedCard?.id === card.id} className="min-h-11 w-full break-words rounded-md px-1 py-2 text-left font-semibold text-white hover:text-amber-200">{card.title}<span className="mt-1 block text-xs font-normal text-slate-400">{selectedCard?.id === card.id ? "Seleccionado para revisión" : "Seleccionar para revisar"}</span></button>
-              <label htmlFor={`production-stage-${card.id}`} className="mt-2 block text-xs text-slate-300">Etapa</label>
+              <details className="production-card-controls"><summary>Etapa y episodio <span aria-hidden="true">＋</span></summary><div><label htmlFor={`production-stage-${card.id}`} className="mt-2 block text-xs text-slate-300">Etapa</label>
               <select id={`production-stage-${card.id}`} value={card.stage} disabled={episodes.some(episode => episode.id === card.episodeId && (episode.status === "Borrador" || episode.output?.mode === "plantilla-local"))} onChange={event => update("productionCards", card.id, { stage: event.target.value })} className="mt-1 min-h-11 text-sm disabled:opacity-50">{stages.map(nextStage => <option key={nextStage} value={nextStage}>{nextStage}</option>)}</select>
               {episodes.some(episode => episode.id === card.episodeId && (episode.status === "Borrador" || episode.output?.mode === "plantilla-local")) && <p className="mt-1 text-xs text-amber-200">Borrador de plantilla: recrea el guion con Gemini antes de avanzar.</p>}
               <label htmlFor={`production-episode-${card.id}`} className="mt-2 block text-xs text-slate-300">Episodio vinculado</label>
@@ -72,26 +76,32 @@ export default function ProductionModule({ onOpenEpisode }: { onOpenEpisode?: (e
                 <p className="text-xs text-red-100">¿Eliminar esta tarjeta?</p>
                 <div className="mt-2 flex flex-wrap gap-2"><button type="button" className="min-h-10 rounded-md border border-white/15 px-2 text-xs" onClick={() => setPendingDelete(null)}>Cancelar</button><button type="button" className="min-h-10 rounded-md bg-red-500 px-2 text-xs font-semibold text-white" onClick={() => confirmDelete("card", card.id)}>Sí, eliminar</button></div>
               </div> : <button type="button" className="mt-2 min-h-10 rounded-md px-2 text-xs text-slate-300 hover:bg-white/5 hover:text-white" onClick={() => setPendingDelete({ kind: "card", id: card.id })}>Eliminar tarjeta</button>}
+              </div></details>
             </article>)}
           </div>
         </div>;
       })}
     </div>
-
-    <form onSubmit={addCard} className="flex flex-wrap items-end gap-3 rounded-xl bg-[#121826] p-4">
+    </div>
+    <p className="creative-note">Desplaza el tablero para recorrer las cinco etapas. Elige una tarjeta para revisar su episodio.</p>
+    <div className="production-workbench">
+    <form id="production-create" onSubmit={addCard} className="creative-compose flex flex-wrap items-end gap-3 rounded-xl bg-[#121826] p-4">
+      <div className="w-full"><p className="studio-eyebrow">PRÓXIMA EN PRODUCCIÓN</p><h3 className="mt-2 text-lg font-semibold">Añadir una tarjeta</h3></div>
       <div className="min-w-[220px] flex-1"><label htmlFor="production-new-title" className="mb-1 block text-sm font-medium">Título del episodio o tarjeta</label><input id="production-new-title" value={newTitle} onChange={event => setNewTitle(event.target.value)} placeholder="Ej.: Episodio 2 · El encuentro" required /></div>
       <div className="min-w-[220px] flex-1"><label htmlFor="production-new-episode" className="mb-1 block text-sm font-medium">Vincular episodio</label><select id="production-new-episode" value={newEpisodeId} onChange={event => setNewEpisodeId(event.target.value)}><option value="">Sin vincular por ahora</option>{episodes.map(episode => <option key={episode.id} value={episode.id}>{episode.title}</option>)}</select></div>
       <button type="submit" className="min-h-11 rounded-lg bg-amber-500 px-4 text-sm font-bold">Añadir a producción</button>
     </form>
 
-    <div className="rounded-xl bg-[#121826] p-4">
+    <div className="production-review rounded-xl bg-[#121826] p-4">
+      <p className="studio-eyebrow">CONTROL DE CALIDAD</p>
       <h3 className="font-bold">Revisión general{selectedCard ? ` · ${selectedCard.title}` : ""}</h3>
       {selectedCard ? <>
         {selectedEpisodeId ? <div className="mt-2"><p className="text-sm text-slate-300">{selectedEpisode?.title}: {sceneCount ? `${approvedCount}/${sceneCount} escenas aprobadas` : "sin mesa de escenas"}.</p><p className="mt-1 text-xs text-slate-400">Imagen, prompt, clip y motivo de rehacer se revisan juntos en el episodio.</p>{onOpenEpisode && <button type="button" onClick={() => onOpenEpisode(selectedEpisodeId)} className="mt-3 rounded-lg bg-amber-500 px-3 py-2 text-xs font-bold text-slate-950">Abrir mesa de escenas</button>}</div> : <p className="mt-2 rounded-lg border border-amber-400/20 bg-amber-400/5 p-3 text-sm text-amber-100">{episodes.length ? "Vincula esta tarjeta a un episodio guardado para activar la revisión." : "Todavía no hay episodios guardados. Crea uno en Generador y luego vincúlalo para activar la revisión."}</p>}
       </> : <p className="mt-2 text-sm text-slate-400">Crea una tarjeta para empezar la revisión.</p>}
     </div>
-
-    <div className="rounded-xl bg-[#121826] p-4">
+    </div>
+    <div id="production-costs" className="production-costs rounded-xl bg-[#121826] p-4">
+      <p className="studio-eyebrow">RECURSOS DEL ESTUDIO</p>
       <h3 className="font-bold">Créditos y costos <span className="text-amber-300">· Total: ${total.toFixed(2)}</span></h3>
       <form onSubmit={addCost} className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5 xl:items-end">
         <div><label htmlFor="production-cost-tool" className="mb-1 block text-sm">Herramienta</label><select id="production-cost-tool" value={costForm.tool} onChange={event => setCostForm({ ...costForm, tool: event.target.value })}><option>Higgsfield</option><option>Dola</option><option>Otro</option></select></div>

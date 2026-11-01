@@ -2,8 +2,11 @@
 import { useState, type FormEvent } from "react";
 import { useData } from "@/lib/DataContext";
 import type { Formula } from "@/lib/types";
+import WorkspaceIntro, { WorkspaceLoading } from "./WorkspaceIntro";
+import CopyButton from "./CopyButton";
 
 const CATEGORY_LABELS: Record<string, string> = {
+  "base-instagram": "Base de Instagram",
   custom: "Personalizada",
   general: "General",
   "tiktok-facebook": "TikTok / Facebook",
@@ -94,6 +97,18 @@ export default function FormulasModule(){
   const [category, setCategory] = useState("custom");
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
+  const [query, setQuery] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("");
+  const [selectedId, setSelectedId] = useState("");
+  const visible = items.filter(formula => (!categoryFilter || formula.category === categoryFilter) && `${formula.name} ${formulaPreview(formula)}`.toLocaleLowerCase("es").includes(query.toLocaleLowerCase("es")));
+  const selected = visible.find(formula => formula.id === selectedId) || visible[0];
+  function inspect(id: string) {
+    setSelectedId(id);
+    if (window.matchMedia("(max-width: 900px)").matches) requestAnimationFrame(() => {
+      document.getElementById("formula-inspector")?.scrollIntoView({ block: "start", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+      document.getElementById("formula-inspector-title")?.focus({ preventScroll: true });
+    });
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>){
     event.preventDefault();
@@ -125,22 +140,19 @@ export default function FormulasModule(){
     }
   }
 
-  return <section>
-    <div className="flex flex-wrap items-end justify-between gap-2">
-      <div>
-        <h2 className="text-xl font-bold">Fórmulas virales</h2>
-        <p className="mt-1 text-sm text-slate-400">Estructuras narrativas para consultar y reutilizar.</p>
-      </div>
-      <span className="rounded-full border border-white/10 bg-white/[.03] px-3 py-1 text-xs text-slate-300">{items.length} guardadas</span>
-    </div>
-    <p className="mt-2 text-xs text-slate-400">{mode === "cargando" ? "Cargando tus fórmulas…" : mode === "supabase" ? "Los cambios se guardan en tu cuenta." : "Modo local: los cambios se guardan en este navegador."}</p>
+  if (mode === "cargando") return <WorkspaceLoading label="Creative Studio / Fórmulas" />;
+  return <section className="growth-workspace creative-library formulas-studio space-y-6">
+    <WorkspaceIntro eyebrow="Creative Studio / Biblioteca narrativa" title="La estructura detrás de la emoción." description="Explora tus fórmulas, estudia cada giro y construye una base para la próxima historia." index="01 / FÓRMULAS">
+      <a href="#formula-create" className="studio-primary-action">+ Nueva fórmula</a><p className="growth-source">{items.length} fórmulas · {mode === "supabase" ? "Datos de tu cuenta" : "Datos de este navegador"}</p>
+    </WorkspaceIntro>
     {notice && <p role="status" className="mt-3 rounded-xl border border-white/10 bg-white/[.04] p-3 text-sm text-slate-200">{notice}</p>}
-
-    <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
-      {items.map(formula => <article key={formula.id} className="flex min-w-0 flex-col rounded-2xl border border-white/10 bg-[#121826] p-4 sm:p-5">
+    <div className="creative-filterbar"><label>Buscar fórmula<input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Nombre o gancho…" /></label><label>Filtrar categoría<select value={categoryFilter} onChange={event => setCategoryFilter(event.target.value)}><option value="">Todas las categorías</option>{Array.from(new Set(items.map(formula => formula.category))).map(value => <option key={value} value={value}>{categoryLabel(value)}</option>)}</select></label><span className="creative-result-count" aria-live="polite">{visible.length} {visible.length === 1 ? "resultado" : "resultados"}</span></div>
+    <div className="formula-library-layout">
+    <div className="formula-catalog">
+      {visible.map((formula, index) => <article key={formula.id} data-selected={selected?.id === formula.id} className="formula-catalog-card">
         <div className="flex items-start gap-3">
           <div className="min-w-0 flex-1">
-            <span className="inline-flex rounded-full border border-amber-400/25 bg-amber-400/[.08] px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-amber-200">{categoryLabel(formula.category)}</span>
+            <p className="formula-card-index">F / {String(index + 1).padStart(2, "0")}</p><span className="creative-chip">{categoryLabel(formula.category)}</span>
             <h3 className="mt-2 break-words text-base font-bold leading-snug text-white">{formula.name}</h3>
           </div>
           <details className="relative shrink-0">
@@ -151,17 +163,15 @@ export default function FormulasModule(){
           </details>
         </div>
         <p className="mt-3 line-clamp-3 break-words text-sm leading-6 text-slate-300">{formulaPreview(formula)}</p>
-        <div className="mt-auto pt-4">
-          <details className="border-t border-white/10 pt-3">
-            <summary className="cursor-pointer text-xs font-semibold text-amber-200">Ver contenido y pasos</summary>
-            <FormulaDetails formula={formula} />
-          </details>
-        </div>
+        <button type="button" className="formula-open" aria-pressed={selected?.id === formula.id} onClick={() => inspect(formula.id)}>Ver contenido y pasos <span aria-hidden="true">↗</span></button>
       </article>)}
-      {items.length === 0 && <div className="rounded-2xl border border-dashed border-white/15 bg-[#151c2b] p-6 text-sm text-slate-300">Aún no hay fórmulas guardadas. Crea la primera abajo.</div>}
+      {!visible.length && <div className="growth-empty"><span aria-hidden="true">✦</span><h3>{items.length ? "Ninguna fórmula coincide." : "Tu próxima historia empieza aquí."}</h3><p>{items.length ? "Prueba otro nombre o categoría." : "Guarda una estructura para empezar tu biblioteca."}</p>{!!items.length && <button type="button" className="studio-text-action" onClick={() => { setQuery(""); setCategoryFilter(""); }}>Limpiar filtros</button>}</div>}
     </div>
-
-    <form className="mt-7 rounded-2xl border border-white/10 bg-[#121826] p-4 sm:p-5" onSubmit={submit}>
+    <aside className="formula-inspector" id="formula-inspector" aria-label="Detalle de la fórmula seleccionada">
+      <p className="studio-eyebrow">CUADERNO DE DIRECCIÓN</p>{selected ? <><span className="creative-chip mt-4">{categoryLabel(selected.category)}</span><h3 id="formula-inspector-title" tabIndex={-1}>{selected.name}</h3><FormulaDetails formula={selected} /><div className="formula-inspector-footer"><CopyButton text={selected.content} label="Copiar contenido guardado" /><p>La fórmula orienta la estructura. Su rendimiento dependerá de cada historia y su publicación.</p></div></> : <p className="creative-note mt-5">Aquí podrás leer el contenido completo y los pasos de una fórmula.</p>}
+    </aside>
+    </div>
+    <form id="formula-create" className="creative-compose" onSubmit={submit}>
       <div className="mb-4">
         <h3 className="text-base font-bold text-white">Nueva fórmula</h3>
         <p className="mt-1 text-xs text-slate-400">Escribe los pasos separados por punto y coma para guardarlos también como lista.</p>
@@ -185,7 +195,8 @@ export default function FormulasModule(){
           <textarea id="formula-content" rows={4} placeholder="Gancho directo; escalada; revelación; cierre" value={content} onChange={event => setContent(event.target.value)} required/>
         </div>
       </div>
-      <button type="submit" disabled={saving || mode === "cargando"} className="mt-4 rounded bg-amber-500 px-4 py-2 font-bold text-black">{saving ? "Guardando…" : "Guardar fórmula"}</button>
+      <button type="submit" disabled={saving} className="mt-4 rounded bg-amber-500 px-4 py-2 font-bold text-black">{saving ? "Guardando…" : "Guardar fórmula"}</button>
+      {content.trim() && <div className="formula-draft-preview"><p className="studio-eyebrow">VISTA PREVIA DE LOS PASOS</p><ol>{content.split(";").map(step => step.trim()).filter(Boolean).map((step,index) => <li key={index}><span>{String(index + 1).padStart(2,"0")}</span>{step}</li>)}</ol></div>}
     </form>
   </section>;
 }

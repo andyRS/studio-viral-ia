@@ -2,6 +2,7 @@
 import { prepararFicha } from "@/lib/imagenFicha";
 import { useEffect, useRef, useState } from "react";
 import ReferencePreview from "./ReferencePreview";
+import WorkspaceIntro, { WorkspaceLoading } from "./WorkspaceIntro";
 import { normBible, type CharacterBible } from "@/lib/personajes";
 import { useData } from "@/lib/DataContext";
 import { useDeleteSeries } from "@/lib/useDelete";
@@ -20,6 +21,10 @@ export default function CharactersModule({ focusCharacterId }: { focusCharacterI
   const series = data.series;
   const [newSeriesTitle, setNewSeriesTitle] = useState("");
   const [f, setF] = useState({ ...EMPTY });
+  const [query, setQuery] = useState("");
+  const [seriesFilter, setSeriesFilter] = useState("");
+  const [referenceFilter, setReferenceFilter] = useState("");
+  useEffect(() => { if (focusCharacterId) { setQuery(""); setSeriesFilter(""); setReferenceFilter(""); } }, [focusCharacterId]);
 
   useEffect(() => {
     if (!focusCharacterId) { focusedCharacterRef.current = null; return; }
@@ -29,7 +34,7 @@ export default function CharactersModule({ focusCharacterId }: { focusCharacterI
     card.focus({ preventScroll: true });
     card.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "center" });
     focusedCharacterRef.current = focusCharacterId;
-  }, [focusCharacterId, items]);
+  }, [focusCharacterId, items, query, seriesFilter, referenceFilter]);
 
   function deleteCharacter(character: { id: string; name: string }){
     if (window.confirm("¿Eliminar a «" + character.name + "»? Esta acción no se puede deshacer.")) void remove("characters", character.id);
@@ -66,24 +71,24 @@ export default function CharactersModule({ focusCharacterId }: { focusCharacterI
     void update("characters", c.id, { imageUrl: previous.imageUrl, referenceApprovedAt: new Date().toISOString(), referenceVersion: Number(c.referenceVersion || 0) + 1, referenceHistory: history });
   }
 
-  return <section>
-    <h2 className="text-xl font-bold">Personajes</h2>
-    <p className="text-xs text-slate-400 mt-1">{mode === "supabase" ? "Los cambios se guardan en tu cuenta." : "Modo local: los cambios se guardan en este navegador."}</p>
-
-    {series.map((s: any) => <div key={s.id} className="mt-4">
-      <div className="flex items-center gap-2"><h3 className="font-semibold text-amber-400">{s.title}</h3><button type="button" onClick={() => { void deleteSeries(s); }} className="ml-auto text-xs text-slate-400 hover:text-red-300">Eliminar serie</button></div>
-      {s.description && <p className="text-xs text-slate-400">{s.description}</p>}
-      <div className="grid gap-3 md:grid-cols-3 mt-2">
-        {items.filter(c => c.seriesId === s.id).map(c => <article key={c.id} id={"character-" + c.id} tabIndex={-1} aria-label={"Personaje " + c.name} className={"rounded-xl bg-[#121826] p-4 border border-slate-800 " + (focusCharacterId === c.id ? "ring-2 ring-[#598BFF]" : "")}>
-          <div className="flex justify-between"><b>{c.name}</b><span style={{ background: c.subtitleColor }} className="h-4 w-4 rounded-full inline-block"/></div>
-          <p className="text-xs text-slate-300 mt-2"><b>ES:</b> {c.visualES}<br/><b>EN:</b> {c.visualEN}<br/><b>Ropa:</b> {c.clothing}<br/><b>Habla:</b> {c.speechStyle}<br/><b>Subtítulo:</b> {c.subtitleColor}</p>
-          <ul className="text-xs text-amber-200 mt-2">{(c.pronunciations || []).map((p: string, i: number) => <li key={i}>• {p}</li>)}</ul>
-          {c.imageUrl && <ReferencePreview src={c.imageUrl} title={c.name} previous={c.referenceHistory?.at(-1)?.imageUrl} previousLabel={`Ficha aprobada v${c.referenceHistory?.at(-1)?.version || 1}`} />}
+  const orphan = (c: typeof items[number]) => !series.some(s => s.id === c.seriesId);
+  const visible = items.filter(c => (!seriesFilter || (seriesFilter === "__none" ? orphan(c) : c.seriesId === seriesFilter)) &&
+    (!referenceFilter || (referenceFilter === "approved" ? !!c.imageUrl && !!c.referenceApprovedAt : referenceFilter === "pending" ? !!c.imageUrl && !c.referenceApprovedAt : !c.imageUrl)) &&
+    `${c.name} ${c.visualES} ${c.visualEN} ${c.speechStyle}`.toLocaleLowerCase("es").includes(query.toLocaleLowerCase("es")));
+  const filtered = !!query || !!seriesFilter || !!referenceFilter;
+  const characterCard = (c: typeof items[number]) => <article key={c.id} id={"character-" + c.id} tabIndex={-1} aria-label={"Personaje " + c.name} className={"cast-card" + (focusCharacterId === c.id ? " cast-card-focused" : "")}>
+    <div className="cast-portrait">{c.imageUrl ? <ReferencePreview src={c.imageUrl} title={c.name} previous={c.referenceHistory?.at(-1)?.imageUrl} previousLabel={`Ficha aprobada v${c.referenceHistory?.at(-1)?.version || 1}`} /> : <div className="cast-portrait-empty"><span aria-hidden="true">{c.name.slice(0, 2).toLocaleUpperCase("es")}</span><p>Sin referencia visual</p></div>}<span className="cast-portrait-label">FICHA DE PERSONAJE</span></div>
+    <div className="cast-card-content"><div className="cast-card-heading"><h4>{c.name}</h4><span style={{ background: c.subtitleColor }} className="cast-subtitle-dot" aria-label={`Color de subtítulo ${c.subtitleColor}`} /></div>
+    <p className="cast-description">{c.visualES || c.visualEN || "Define su apariencia para mantener una identidad consistente."}</p>
           <p className="mt-2 text-xs font-semibold text-amber-200">{c.referenceApprovedAt ? `✓ Ficha maestra aprobada · v${c.referenceVersion || 1}` : c.imageUrl ? `Ficha v${c.referenceVersion || 1} pendiente de aprobación` : "Sin ficha visual aprobada"}</p>
           {c.imageUrl && <div className="mt-2 flex flex-wrap gap-2">
             <button type="button" onClick={() => { void update("characters", c.id, { referenceApprovedAt: new Date().toISOString() }); }} className="rounded-lg bg-emerald-400 px-3 py-1.5 text-xs font-bold text-slate-950">{c.referenceApprovedAt ? "Reafirmar aprobación" : "Aprobar ficha maestra"}</button>
             <a href={c.imageUrl} download={`${c.name.replace(/[^a-z0-9áéíóúñ]+/gi, "-")}-ficha-v${c.referenceVersion || 1}.png`} className="rounded-lg border border-white/15 px-3 py-1.5 text-xs text-slate-200">Descargar copia</a>
           </div>}
+
+    <details className="cast-card-details"><summary>Identidad y referencias <span aria-hidden="true">＋</span></summary><div>
+      <dl className="cast-identity"><div><dt>Visual ES</dt><dd>{c.visualES || "Sin definir"}</dd></div><div><dt>Visual EN</dt><dd>{c.visualEN || "Sin definir"}</dd></div><div><dt>Vestuario</dt><dd>{c.clothing || "Sin definir"}</dd></div><div><dt>Forma de hablar</dt><dd>{c.speechStyle || "Sin definir"}</dd></div></dl>
+      {!!c.pronunciations?.length && <ul className="mt-3 text-xs text-amber-200">{c.pronunciations.map((text, index) => <li key={index}>• {text}</li>)}</ul>}
           {!!c.referenceHistory?.length && <button type="button" onClick={() => restoreReference(c)} className="mt-2 text-xs text-sky-300 hover:text-sky-200">Restaurar última ficha aprobada (v{c.referenceHistory[c.referenceHistory.length - 1].version})</button>}
           <label htmlFor={"character-image-" + c.id} className="mt-2 block text-xs text-slate-300">Imagen de referencia de {c.name}</label>
           <input id={"character-image-" + c.id} type="file" accept="image/*" className="mt-1 text-xs" onChange={e => onImage(c, e.target.files?.[0])}/>
@@ -99,25 +104,21 @@ export default function CharactersModule({ focusCharacterId }: { focusCharacterI
             </select>
           </div>
           <BibliaPersonaje c={c} guardar={bible => update("characters", c.id, { bible })} />
-        </article>)}
-        {items.filter(c => c.seriesId === s.id).length === 0 && <p className="text-xs text-slate-500">Sin personajes en esta serie todavía.</p>}
-      </div>
-    </div>)}
 
-    {/* Personajes sin serie asignada (ej. recién migrados) */}
-    {items.some(c => !series.find((s: any) => s.id === c.seriesId)) && <div className="mt-4">
-      <h3 className="font-semibold text-amber-400">Sin serie asignada</h3>
-      <div className="grid gap-3 md:grid-cols-3 mt-2">
-        {items.filter(c => !series.find((s: any) => s.id === c.seriesId)).map(c => <article key={c.id} id={"character-" + c.id} tabIndex={-1} aria-label={"Personaje " + c.name} className={"rounded-xl bg-[#121826] p-4 border border-slate-800 " + (focusCharacterId === c.id ? "ring-2 ring-[#598BFF]" : "")}>
-          <b>{c.name}</b>
-          <p className="text-xs text-slate-300 mt-2"><b>ES:</b> {c.visualES}<br/><b>EN:</b> {c.visualEN}</p>
-          <button className="text-slate-400 hover:text-red-300 text-xs mt-2" onClick={() => deleteCharacter(c)}>Eliminar</button>
-        </article>)}
-      </div>
-    </div>}
-
+    </div></details></div>
+  </article>;
+  if (mode === "cargando") return <WorkspaceLoading label="Creative Studio / Personajes" />;
+  return <section className="growth-workspace creative-library characters-studio space-y-6">
+    <WorkspaceIntro eyebrow="Creative Studio / Identidad del elenco" title="Personajes que dejan huella." description="Una mirada, una voz, una identidad. Reúne las fichas y los rasgos que acompañarán a tus personajes en cada historia." index="01 / ELENCO">
+      <a className="studio-primary-action" href="#character-create">+ Nuevo personaje</a><p className="growth-source">{mode === "supabase" ? "Datos de tu cuenta" : "Datos de este navegador"}</p>
+    </WorkspaceIntro>
+    <div className="growth-summary" aria-label="Resumen del elenco"><div><span>PERSONAJES</span><strong>{items.length.toString().padStart(2,"0")}</strong><small>Identidades del estudio</small></div><div><span>FICHAS APROBADAS</span><strong>{items.filter(c => c.imageUrl && c.referenceApprovedAt).length}<em>/ {items.length}</em></strong><small>Referencias maestras aprobadas</small></div><div><span>POR REVISAR</span><strong>{items.filter(c => !c.imageUrl || !c.referenceApprovedAt).length}</strong><small>Sin imagen o sin aprobación</small></div></div>
+    <div className="creative-filterbar"><label>Buscar personaje<input type="search" value={query} onChange={e => setQuery(e.target.value)} placeholder="Nombre, apariencia o voz…" /></label><label>Filtrar serie<select value={seriesFilter} onChange={e => setSeriesFilter(e.target.value)}><option value="">Todas las series</option>{series.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}<option value="__none">Sin serie asignada</option></select></label><label>Estado de referencia<select value={referenceFilter} onChange={e => setReferenceFilter(e.target.value)}><option value="">Todos los estados</option><option value="approved">Ficha aprobada</option><option value="pending">Pendiente de aprobación</option><option value="missing">Sin imagen</option></select></label><span className="creative-result-count" aria-live="polite">{visible.length} {visible.length === 1 ? "personaje" : "personajes"}</span></div>
+    {series.filter(s => (!seriesFilter || s.id === seriesFilter) && (!filtered || visible.some(c => c.seriesId === s.id))).map(s => <section className="cast-series" key={s.id} aria-label={`Elenco de ${s.title}`}><header><div><p className="studio-eyebrow">UNIVERSO / {items.filter(c => c.seriesId === s.id).length} PERSONAJES</p><h3>{s.title}</h3>{s.description && <p className="creative-note">{s.description}</p>}</div><details className="creative-context-menu"><summary aria-label={`Opciones de la serie ${s.title}`}>···</summary><div><button type="button" onClick={() => { void deleteSeries(s); }}>Eliminar serie</button></div></details></header><div className="cast-gallery">{visible.filter(c => c.seriesId === s.id).map(characterCard)}</div>{!items.some(c => c.seriesId === s.id) && <p className="creative-note mt-4">Esta serie aún no tiene personajes. Añade el primero en el formulario.</p>}</section>)}
+    {visible.some(orphan) && <section className="cast-series" aria-label="Personajes sin serie"><header><div><p className="studio-eyebrow">POR ORGANIZAR</p><h3>Sin serie asignada</h3></div></header><div className="cast-gallery">{visible.filter(orphan).map(characterCard)}</div></section>}
+    {!visible.length && <div className="growth-empty"><span aria-hidden="true">◎</span><h3>{items.length ? "No hay personajes para esta búsqueda." : "Dale un rostro a tu próxima historia."}</h3><p>{items.length ? "Prueba otra serie o estado de referencia." : "Crea una serie y añade su elenco para construir la identidad visual."}</p>{filtered && <button type="button" className="studio-text-action" onClick={() => { setQuery(""); setSeriesFilter(""); setReferenceFilter(""); }}>Limpiar filtros</button>}</div>}
     <div className="mt-6 grid gap-4 md:grid-cols-2">
-      <form className="rounded-xl bg-[#121826] p-4 border border-slate-800 space-y-2" onSubmit={submit}>
+      <form id="character-create" className="creative-compose space-y-3" onSubmit={submit}>
         <h3 className="font-bold text-sm">Nuevo personaje</h3>
         <label htmlFor="new-character-name" className="field-label block">Nombre</label>
         <input id="new-character-name" placeholder="Nombre del personaje" value={f.name} onChange={e => setF({ ...f, name: e.target.value })} required/>
@@ -140,7 +141,7 @@ export default function CharactersModule({ focusCharacterId }: { focusCharacterI
         {series.length === 0 && <p className="text-xs text-amber-200">Crea una serie antes de guardar un personaje.</p>}
         <button type="submit" disabled={series.length === 0} className="rounded bg-amber-500 text-black font-bold px-4 py-2">Guardar personaje</button>
       </form>
-      <form className="rounded-xl bg-[#121826] p-4 border border-slate-800 space-y-2 self-start" onSubmit={e => { e.preventDefault(); void addSeries(); }}>
+      <form className="creative-compose creative-series-compose space-y-3 self-start" onSubmit={e => { e.preventDefault(); void addSeries(); }}>
         <h3 className="font-bold text-sm">Nueva serie</h3>
         <label htmlFor="new-series-title" className="field-label block">Título de la serie</label>
         <input id="new-series-title" placeholder="Ej.: La familia de Manguito" value={newSeriesTitle} onChange={e => setNewSeriesTitle(e.target.value)} required/>
