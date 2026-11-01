@@ -95,7 +95,7 @@ main textarea:focus-visible { border-color: rgba(34, 211, 238, .7); box-shadow: 
 /* ============================================================================
    Scene Director (editor de escenas del episodio)
    ========================================================================== */
-.sd { --sd-gap: .9rem; display: grid; gap: var(--sd-gap); color: var(--aurora-text); container-type: inline-size; container-name: director; }
+.sd { --sd-gap: .9rem; display: grid; grid-template-columns:minmax(0,1fr); min-width:0; gap: var(--sd-gap); color: var(--aurora-text); container-type: inline-size; container-name: director; }
 .sd-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
 .sd-views { display: inline-flex; padding: .2rem; border-radius: .8rem; border: 1px solid var(--aurora-line); background: var(--aurora-elevated); }
 .sd-views button { min-height: 2.25rem; padding: .35rem .8rem; border-radius: .6rem; font-size: .8rem; color: var(--aurora-text-2); }
@@ -210,6 +210,8 @@ main textarea:focus-visible { border-color: rgba(34, 211, 238, .7); box-shadow: 
 /* Responsive por ancho del propio director (vive en columnas de distinto ancho), no de la ventana */
 @container director (max-width: 1080px) { .sd-workspace { grid-template-columns: minmax(200px, 240px) minmax(0, 1fr); column-gap: var(--sd-gap); } .sd-divisor { display: none; } .sd-inspector { grid-column: 1 / -1; } .sd-pipeline { grid-template-columns: repeat(4, minmax(0, 1fr)); } .sd-step:nth-child(4n)::after { display: none; } }
 @container director (max-width: 640px) {
+  .sd-views { flex-wrap:wrap; max-width:100%; }
+  .sd-toolbar > * { min-width:0; }
   .sd-workspace { grid-template-columns: 1fr; }
   .sd-nav-list { display: flex; overflow-x: auto; max-height: none; scroll-snap-type: x mandatory; }
   .sd-nav-list > [role="listitem"] { flex: 0 0 16.5rem; scroll-snap-align: start; }
