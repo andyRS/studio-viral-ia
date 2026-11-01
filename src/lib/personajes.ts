@@ -18,6 +18,7 @@ export type Canon = {
   apariciones?: number[];      // clips donde aparece (número desde 1, del archivo original)
   soloEnApariciones?: boolean; // restricción: no aparece fuera de esas escenas (p. ej. anticipación final)
   reglas?: string[];           // reglas de continuidad que lo nombran
+  dialogoDramatizado?: boolean; // sus frases son dramatización (el texto no se las atribuye)
   ambiente?: string; estiloVisual?: string; consistencia?: string; referenciaBiblica?: string; notaFidelidad?: string;
 };
 

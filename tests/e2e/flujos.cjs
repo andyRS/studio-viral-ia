@@ -379,6 +379,14 @@ const ir = async (page, espacio, modulo) => {
       ok(!!pjs && pjs.length === 6 && !pjs.some(c => /narrador/i.test(c.name)) && pjs.every(c => c.bible && c.bible.canon), "Daniel: 6 fichas canónicas guardadas con su biblioteca (sin Narrador)");
       ok(!!ep && ep.output.scenes[14].visibleCharacters.includes("Varón vestido de lino") && !/9:16/.test(JSON.stringify(ep.output)), "Daniel: el Varón vestido de lino en la visión y todo en 16:9");
       ok(await page.getByText(/Revisión de continuidad · modo fidelidad · 20 clips originales → 20 escenas/).count() === 1, "Daniel: se muestra la revisión de continuidad");
+      // Revisión de dirección: propuesta sin IA, vista previa, aprobación como versión nueva (el guion no cambia).
+      await page.getByText("Dirección cinematográfica · revisión de escenas, cámara y beats").click();
+      await page.getByRole("button", { name: /Proponer revisión de dirección/ }).click(); await page.waitForTimeout(500);
+      ok(await page.getByText(/20 escenas.*montaje estimado/).count() === 1 && await page.getByRole("button", { name: /Descargar vista previa/ }).count() === 1, "Daniel: la revisión de dirección muestra la vista previa de las 20 escenas");
+      const versionesAntes = (await page.evaluate(id => JSON.parse(localStorage.getItem("estudio-viral:episodes")).find(e => e.id === id).versions.length, ep.id));
+      await page.getByRole("button", { name: /Aprobar y guardar revisión/ }).click(); await page.waitForTimeout(1500);
+      const ep2 = await page.evaluate(id => JSON.parse(localStorage.getItem("estudio-viral:episodes")).find(e => e.id === id), ep.id);
+      ok(ep2.versions.length === versionesAntes + 1 && ep2.output.scenes.every((x, i) => x.line === orig.clips[i][0][1]) && !!ep2.output.revisionDireccion, "Daniel: aprobar guarda una versión nueva con los mismos diálogos y la anterior en el historial");
       await ctx.close(); }
   } finally {
     await b.close();

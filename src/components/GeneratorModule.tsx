@@ -26,7 +26,7 @@ import type { StoryIdea } from "@/lib/ideas";
 import SceneDesk from "./SceneDesk";
 import StoryArchitect from "./StoryArchitect";
 import { EPIC_NOTICE, STYLES, type StyleKey } from "@/lib/knowledge";
-import { normalizarCapitulo, normalizarPersonajes, importarFiel, estiloDeTexto } from "@/lib/importacion";
+import { normalizarCapitulo, normalizarPersonajes, importarFiel, estiloDeTexto, redirigirEpisodio, vistaPreviaRevision } from "@/lib/importacion";
 import { adaptarPersonajesLocal, escenasDelGuion, templateSeries, templateNext } from "@/lib/story";
 import { fichaGenerica, isGenericName } from "@/lib/cast";
 import { aspectoDe, buildFlowBatch, conAspecto, escenasEnTexto, MAX_SCENES, MIN_SCENES, refreshPrompts, PROMPT_RULES_VERSION, sceneCountFor } from "@/lib/production";
@@ -805,6 +805,7 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
       </div>)}</div>
     </section>}
     {(out.validacion || out.adaptacion) && <RevisionImportacion out={out} />}
+    {scenes.length > 0 && !finished && onCambiar && <RevisionDireccion out={out} titulo={`${seriesTitle} · Episodio ${part}`} maestros={data.characters.filter((c: any) => c.seriesId === seriesId)} aspecto={aspecto || "9:16"} onAplicar={(propuesta: any) => onCambiar(propuesta, { anterior: out })} />}
     {promptsOutdated && !finished && <div className="mt-3 flex flex-wrap items-center gap-3 rounded-xl border border-sky-400/30 bg-sky-400/10 p-3 text-xs text-sky-100"><span className="flex-1 min-w-[220px]">{formatoViejo ? "Esta serie es de formato largo, pero los prompts de este episodio están en vertical 9:16. Actualízalos para pasar fichas, escenas y animación a horizontal 16:9 (el guion no cambia)." : <>Hay reglas nuevas para los prompts (ritmo viral: hablan desde el primer segundo, sin pausas y sin música dentro del clip). Este episodio tiene los prompts de una versión anterior.</>}</span><button type="button" onClick={refresh} disabled={refreshing} className="rounded-lg bg-sky-400 px-3 py-1.5 font-bold text-slate-950 hover:bg-sky-300 disabled:opacity-50">{refreshing ? "Actualizando…" : "Actualizar prompts"}</button></div>}
     {scenes.length > 0 && cast.length >= 2 && !referencesReady && <div className="mt-3 rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 text-xs text-amber-100">Faltan fichas maestras aprobadas: {missingMasters.join(", ")}. Súbelas y apruébalas en «1 · Personajes canónicos» antes de producir.</div>}
     {scenes.length > 0 && cast.length >= 2 && referencesReady && !snapshotValid && <div className="mt-3 rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 text-xs text-amber-100">La ficha maestra cambió desde que se creó este guion, o el episodio es anterior al control de versiones. Regenera el episodio para alinear prompts y personajes.</div>}
@@ -1333,5 +1334,46 @@ function RevisionImportacion({ out }: { out: any }) {
     <summary className="cursor-pointer text-sm font-semibold">Revisión de continuidad · {a.modo === "creativa" ? "adaptación creativa" : "modo fidelidad"} · {a.original ? `${a.original} clips originales → ${a.escenas} escenas · ` : ""}{errores.length ? `${errores.length} error(es)` : "sin errores"}, {problemas.length - errores.length} aviso(s){a.cambios?.length ? ` · ${a.cambios.length} cambio(s)` : ""}</summary>
     {!!problemas.length && <ul className="mt-2 space-y-1">{problemas.map((p, i) => <li key={i}><b>{p.nivel === "error" ? "Error" : "Aviso"}:</b> {p.mensaje}</li>)}</ul>}
     {!!lista.length && <><p className="mt-3 font-semibold">{a.modo === "creativa" ? "Cambios respecto al original" : "Notas de la importación"}</p><ul className="mt-1 space-y-1">{lista.map((x: string, i: number) => <li key={i}>{x}</li>)}</ul></>}
+  </details>;
+}
+
+// Revisión de dirección cinematográfica de un episodio guardado: se calcula sin IA ni créditos, se revisa como
+// vista previa textual y solo se guarda si se aprueba (como versión nueva; la anterior queda en el historial).
+function RevisionDireccion({ out, titulo, maestros, aspecto, onAplicar }: { out: any; titulo: string; maestros: any[]; aspecto: "9:16" | "16:9"; onAplicar: (p: any) => Promise<any> }) {
+  const [rev, setRev] = useState<ReturnType<typeof redirigirEpisodio> | null>(null);
+  const [estado, setEstado] = useState(""); const [guardando, setGuardando] = useState(false);
+  const style = (out?.seriesBible?.style || (out?.cast?.some((c: any) => c.fruit) ? "frutinovela" : "cine90")) as StyleKey;
+  function proponer() { try { setRev(redirigirEpisodio(out, maestros, style, aspecto)); setEstado(""); } catch (e: any) { setEstado(`No se pudo calcular: ${e?.message || e}`); } }
+  async function aprobar() {
+    if (!rev) return; setGuardando(true);
+    try { await onAplicar(rev.propuesta); setEstado("Revisión guardada como versión nueva. La anterior quedó en el historial del episodio. No se generó ninguna imagen ni vídeo."); setRev(null); }
+    catch (e: any) { setEstado(`No se guardó: ${e?.message || e}`); } finally { setGuardando(false); }
+  }
+  const md = rev ? vistaPreviaRevision(titulo, rev.filas, rev.duraciones, rev.validacion) : "";
+  const errores = rev ? rev.validacion.filter(p => p.nivel === "error").length : 0;
+  const cambiosPresencia = rev ? rev.filas.filter(f => f.antes.visibles.join(",") !== f.despues.visibles.join(",")).length : 0;
+  return <details className="mt-3 rounded-xl border border-amber-300/30 bg-amber-300/[.05] p-3 text-xs text-amber-50">
+    <summary className="cursor-pointer text-sm font-semibold">Dirección cinematográfica · revisión de escenas, cámara y beats</summary>
+    <p className="mt-2 text-slate-300">Propone plano, cámara, imagen fija, acción de vídeo, quién está en cuadro, beat y duración para cada escena, mirando toda la secuencia. No cambia diálogos, hablantes, orden ni fichas, y no gasta créditos: primero revisas la vista previa y después decides.</p>
+    {!rev && <button type="button" onClick={proponer} className="mt-2 rounded-lg bg-amber-400 px-3 py-2 text-xs font-bold text-slate-950">✦ Proponer revisión de dirección</button>}
+    {rev && <div className="mt-3 space-y-2">
+      <p role="status"><b>{rev.filas.length} escenas</b> · {cambiosPresencia} con cambios de quién está en cuadro · montaje estimado ~{rev.duraciones.montaje} s · {rev.duraciones.noCaben.length ? <b>{rev.duraciones.noCaben.length} frase(s) no caben en su toma ({rev.duraciones.noCaben.map(f => f.n).join(", ")})</b> : "todas las frases caben"} · revisión: {errores ? `${errores} error(es)` : "sin errores"}</p>
+      <ol className="max-h-96 space-y-2 overflow-auto pr-1">{rev.filas.map(f => <li key={f.n} className="rounded-lg border border-white/10 bg-black/20 p-2">
+        <b>{f.n}. {f.despues.title}</b> — <span className="text-slate-300">{f.speaker}: «{f.line}»</span>
+        <div className="mt-1 text-slate-300"><b>Beat:</b> {f.despues.goal}</div>
+        <div className="text-slate-300"><b>En cuadro:</b> {f.despues.visibles.join(", ") || "nadie"}{f.antes.visibles.join(",") !== f.despues.visibles.join(",") && <span className="text-amber-200"> (antes: {f.antes.visibles.join(", ") || "nadie"})</span>}</div>
+        <div className="text-slate-300"><b>{f.despues.shotType}.</b> {f.despues.camera}</div>
+        <div className="text-slate-300"><b>Imagen:</b> {f.despues.visualAction}</div>
+        <div className="text-slate-300"><b>Vídeo:</b> {f.despues.videoAction}</div>
+        {!f.duracion.cabe && <div className="text-amber-200"><b>Duración:</b> ~{f.duracion.locucion} s de locución en una toma de {f.duracion.toma} s. {f.duracion.propuesta}</div>}
+        {f.despues.fidelityNote && <div className="text-slate-400"><b>Fidelidad:</b> {f.despues.fidelityNote}</div>}
+      </li>)}</ol>
+      <div className="flex flex-wrap gap-2">
+        <DownloadText text={md} filename="revision-direccion.md" label="Descargar vista previa (.md)" />
+        <button type="button" disabled={guardando} onClick={() => { void aprobar(); }} className="rounded-lg bg-amber-400 px-3 py-2 text-xs font-bold text-slate-950 disabled:opacity-60">{guardando ? "Guardando…" : "Aprobar y guardar revisión"}</button>
+        <button type="button" onClick={() => setRev(null)} className="rounded-lg border border-white/15 px-3 py-2 text-xs">Descartar</button>
+      </div>
+    </div>}
+    {estado && <p role="status" className="mt-2 text-cyan-100">{estado}</p>}
   </details>;
 }

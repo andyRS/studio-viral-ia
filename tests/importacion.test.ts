@@ -66,7 +66,7 @@ ok(JSON.stringify(r.episode.guionJson.tarjetas.map((t: any) => t.antes)) === "[0
 ok(escenas.every(s => s.visualAction && s.videoAction && s.camera && s.shotType), "12 · todas las escenas tienen acción visual, acción de vídeo, plano y cámara");
 const llegada = escenas[10];
 ok(/se abren/.test(llegada.visualAction) && /Grúa/.test(llegada.camera) && /CAMERA: Grúa/.test(llegada.animationPrompt) && /ACTION: /.test(llegada.animationPrompt), "12b · la llegada de Miguel tiene revelación progresiva, grúa y efectos en el prompt de vídeo");
-ok(new Set(escenas.filter(s => s.title === "Oración perseverante").map(s => s.visualAction)).size >= 3, "12c · los momentos repetidos (oración) varían de toma");
+ok(new Set(escenas.map(s => s.visualAction)).size === escenas.length, "12c · ninguna escena repite la imagen de otra (los momentos repetidos varían de toma)");
 ok(r.episode.validacion.filter((p: any) => p.nivel === "error").length === 0, "validador: sin errores en el caso de Daniel");
 
 // --- Casos generales: personajes silenciosos, narradores, anticipación y apariciones incompletas. ---

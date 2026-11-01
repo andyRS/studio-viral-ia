@@ -16,6 +16,8 @@ const REAL_LOOK: Record<string, { img: string; vid: string; es: string }> = {
 };
 const guardOf = (style: StyleKey) => style === "epica" ? EPIC_GUARD_EN : BIBLE_GUARD_EN;
 const seconds = (style: StyleKey) => style === "epica" ? 5 : 8;
+// Segundos que dura cada toma generada (los prompts de vídeo la piden así).
+export const segundosClip = seconds;
 const look = (style: StyleKey) => REAL_LOOK[style] || REAL_LOOK.cine90;
 const bibleImg = (style: StyleKey) => isBibleStyle(style) ? ` Modest, covered clothing, nothing suggestive. ${guardOf(style)}.` : "";
 const bibleVid = (style: StyleKey) => isBibleStyle(style)
@@ -161,8 +163,8 @@ interface Ctx {
 }
 
 // Dirección de escena (importación cinematográfica): lo estático va a la imagen y el movimiento al vídeo.
-export type Direccion = { visualAction?: string; videoAction?: string; shotType?: string; camera?: string; lighting?: string; atmosphere?: string; vfx?: string; expression?: string; conflict?: string; continuity?: string };
-const CAMPOS_DIRECCION = ["visualAction", "videoAction", "shotType", "camera", "lighting", "atmosphere", "vfx", "expression", "conflict", "continuity"] as const;
+export type Direccion = { visualAction?: string; videoAction?: string; shotType?: string; camera?: string; lighting?: string; atmosphere?: string; vfx?: string; expression?: string; conflict?: string; continuity?: string; vocalTone?: string; fidelityNote?: string };
+const CAMPOS_DIRECCION = ["visualAction", "videoAction", "shotType", "camera", "lighting", "atmosphere", "vfx", "expression", "conflict", "continuity", "vocalTone", "fidelityNote"] as const;
 function direccionDe(r: any): Direccion {
   return Object.fromEntries(CAMPOS_DIRECCION.map(k => [k, clean(r?.[k])]).filter(([, v]) => v)) as Direccion;
 }
@@ -326,7 +328,7 @@ function animationPrompt(s: { setting: string; speaker: string; line: string; em
   const shot = pickShot(s, (member ? 1 : 0) + others.length, i);
   const setting = tidy(s.setting), location = tidy(s.location || "");
   if (!isFruitStyle(style)) {
-    const voice = narrator ? `Off-screen narrator voice; nobody moves their lips.` : `Only ${member!.name} speaks; lip sync only for ${member!.name}. Voice: ${member!.voice}.`;
+    const voice = narrator ? `Off-screen narrator voice${direccionDe(s).vocalTone ? ` (${direccionDe(s).vocalTone})` : ""}; nobody moves their lips.` : `Only ${member!.name} speaks; lip sync only for ${member!.name}. Voice: ${member!.voice}.`;
     return `Usa Seedance 2.5. ${look(style).vid}, vertical 9:16, ${seconds(style)} seconds. Animate from the scene image as the first frame.
 References: image 1 = scene${member ? `; image 2 = character sheet of ${member.name}` : others.length ? others.map((o, k) => `; image ${k + 2} = character sheet of ${o.name}`).join("") : ""}.
 CHARACTERS: ${member ? `${member.name}: ${member.visualEN || member.visualES}; outfit: ${member.clothing}. Real people.` : others.length ? `${others.map(o => `${o.name}: ${o.visualEN || o.visualES}; outfit: ${o.clothing}`).join(". ")}. Real people, identical to their sheets; nobody speaks on camera.` : `${EMPTY_EN}. Nobody appears at any moment.`}

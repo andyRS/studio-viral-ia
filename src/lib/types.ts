@@ -33,6 +33,8 @@ export interface Scene { n:number; durationSec:8; setting:string; imagePromptFlo
   // descripción estática para la imagen y acción/movimiento para el vídeo.
   visibleCharacters?:string[]; visualAction?:string; videoAction?:string; shotType?:string; camera?:string;
   lighting?:string; atmosphere?:string; vfx?:string; expression?:string; conflict?:string; continuity?:string;
+  vocalTone?:string;     // el Narrador: tono de la voz en off (nunca un gesto)
+  fidelityNote?:string;  // qué es texto y qué es representación cinematográfica
 }
 export interface ScenePhone { type:"whatsapp"|"llamada"|"videollamada"|"nota_de_voz"; contact?:string; messages?:string[] }
 export interface Formula { id:string; name:string; category:string; content:string; structure:string[] }
