@@ -6,7 +6,7 @@ import { jsonrepair } from "jsonrepair";
 import { BIBLE_BANK, EPIC_BANK, EPIC_NOTICE, CHRISTIAN_RULES, FRUIT_CAST_RULES, MANUAL_VIRAL, STYLES, type StyleKey } from "./knowledge";
 import { templateHookVariants, type HookVariant } from "./hooks";
 import { castNeedsRepair, isFruitStyle, norm, normalizeCast, templateCast, type CastMember } from "./cast";
-import { buildProduction, NARRATOR, sceneCountFor, templateScenes } from "./production";
+import { aspectoDe, buildProduction, conAspecto, NARRATOR, sceneCountFor, templateScenes } from "./production";
 import { christianSafe, templateIdeas, type IdeasRequest, type StoryIdea } from "./ideas";
 
 export const styleKey = (s?: string): StyleKey => ((s as StyleKey) in STYLES ? (s as StyleKey) : "frutinovela");
@@ -92,7 +92,9 @@ function miPedido(input: any, style: StyleKey, duration: number, count: number, 
 - Estilo: ${STYLES[style].label}
 - Idea: ${String(input.idea || input.wish || "").trim() || "decide tú lo que más enganche"}
 - Tipo: ${tipo}
-- Duración del vídeo montado: unos ${duration} s (${count} escenas; cada clip se genera de 8 s y el montaje lo recorta a su frase y reacción)
+- Duración del vídeo montado: unos ${Math.round(count * 4.5)} s (${count} escenas; cada clip se genera de 8 s y el montaje lo recorta a su frase y reacción)
+- CANTIDAD DE ESCENAS: exactamente ${count}. Si la idea o las notas mencionan otra cantidad de escenas, tomas o segundos, ignórala: manda esta configuración.
+- Formato de imagen: ${aspectoDe(input.formato) === "16:9" ? "horizontal 16:9 (serie larga para Facebook/YouTube): compón los planos a lo ancho" : "vertical 9:16"}
 - Notas: ${String(input.notes || "").trim() || "ninguna"}`;
 }
 
@@ -191,8 +193,7 @@ function fallbackNotice(error: unknown) {
 // Un texto de la IA solo pasa a producción si respeta el metraje y tiene una
 // progresión real. El generador no debe etiquetar como guion terminado una
 // respuesta recortada o una frase repetida en casi todas las escenas.
-function validateEpisode(episode: ReturnType<typeof buildProduction>, duration: number) {
-  const expected = sceneCountFor(duration);
+function validateEpisode(episode: ReturnType<typeof buildProduction>, expected: number) {
   // 1 o 2 escenas de más o de menos no son un error (la IA a veces junta o parte una): solo se rechaza si se desvía mucho.
   if (Math.abs(episode.scenes.length - expected) > 2) throw new Error(`el guion tenía ${episode.scenes.length} escenas en vez de ${expected}`);
   if (episode.scenes[episode.scenes.length - 1]?.speaker !== NARRATOR) throw new Error("faltó el cierre del narrador");
@@ -204,7 +205,8 @@ function validateEpisode(episode: ReturnType<typeof buildProduction>, duration: 
 }
 
 // ---------- HISTORIA NUEVA ----------
-export async function generateSeries(input: any) {
+export async function generateSeries(input: any) { return conAspecto(await generateSeriesBase(input), aspectoDe(input?.formato)); }
+async function generateSeriesBase(input: any) {
   const startedAt = Date.now();
   const style = styleKey(input.style);
   const duration = Number(input.duration || 90);
@@ -212,7 +214,7 @@ export async function generateSeries(input: any) {
   if (!idea) throw new Error("Escribe primero la idea concreta de la historia.");
   if (!process.env.LLM_API_KEY) return { ...templateSeries(input), notice: "El servidor no tiene clave de IA: se usó la plantilla local." };
   try {
-    const count = sceneCountFor(duration);
+    const count = sceneCountFor(duration, input.scenes);
     const type = String(input.replica || "").trim() ? "replica" : "nueva";
     const system = `${styleRules(style)}${extraContext(input)}\n\n${sceneBrief(style, count)}\n\n${miPedido(input, style, duration, count, type)}\n\nTAREA: crea una SERIE NUEVA a partir del pedido y escribe su EPISODIO 1 (Parte 1). Elenco de 3 a 6 personajes.
 Responde SOLO JSON: {"series":{"title":"","logline":"","world":"","tone":""},"characters":[${CAST_FIELDS(style)}],"episode":{"title":"","summary":"3-4 frases con el cliffhanger final","hook":["línea 1","línea 2"],"coverText":"","description":"","hashtags":[],${FICHA_SCHEMA},${BIBLE_SCHEMA(style)}${PUBLISH_SCHEMA},${SCENES_SCHEMA}}}`;
@@ -224,9 +226,9 @@ Responde SOLO JSON: {"series":{"title":"","logline":"","world":"","tone":""},"ch
     const characters = normalizeCast(chars, style).slice(0, 6);
     const episodeRaw = await ensureNarratorEnding(renameSpeakers(parsed.episode || parsed, parsed.characters, characters), idea, style, Math.min(25000, 150000 - (Date.now() - startedAt)));
     const title = String(parsed.series?.title || idea).trim().slice(0, 100);
-    const episode = buildProduction(episodeRaw, { style, duration, characters, idea, chosenHook: input.chosenHook, seriesTitle: title, partNumber: 1 });
+    const episode = buildProduction(episodeRaw, { style, duration, scenes: count, characters, idea, chosenHook: input.chosenHook, seriesTitle: title, partNumber: 1 });
     const mode = providerMode();
-    try { validateEpisode(episode, duration); }
+    try { validateEpisode(episode, count); }
     catch (qualityError) {
       const issue = qualityError instanceof Error ? qualityError.message : String(qualityError);
       return { mode: "gemini-borrador", notice: `Gemini escribió el guion, pero ${issue}. Se guardó como borrador para revisión; no se enviará a producción.`, series: { title, logline: String(parsed.series?.logline || idea).trim(), world: String(parsed.series?.world || ""), tone: String(parsed.series?.tone || ""), style }, characters, episode: { ...episode, mode: "gemini-borrador", qualityIssues: [issue] } };
@@ -237,25 +239,27 @@ Responde SOLO JSON: {"series":{"title":"","logline":"","world":"","tone":""},"ch
   }
 }
 
-export function templateSeries(input: any) {
+export function templateSeries(input: any) { return conAspecto(templateSeriesBase(input), aspectoDe(input?.formato)); }
+function templateSeriesBase(input: any) {
   const style = styleKey(input.style);
   const idea = String(input.idea || "Nueva historia").trim();
   const duration = Number(input.duration || 90);
   const characters = templateCast(idea, style);
-  const raw = templateScenes(idea, characters, style, sceneCountFor(duration));
-  const episode = buildProduction(raw, { style, duration, characters, idea, chosenHook: input.chosenHook, seriesTitle: idea.slice(0, 60), partNumber: 1 });
+  const raw = templateScenes(idea, characters, style, sceneCountFor(duration, input.scenes));
+  const episode = buildProduction(raw, { style, duration, scenes: input.scenes, characters, idea, chosenHook: input.chosenHook, seriesTitle: idea.slice(0, 60), partNumber: 1 });
   return { mode: "plantilla-local", series: { title: idea.slice(0, 60), logline: idea, world: "", tone: "", style }, characters, episode: { ...episode, mode: "plantilla-local" } };
 }
 
 // ---------- CONTINUAR UNA SERIE ----------
-export async function generateNextEpisode(input: any) {
+export async function generateNextEpisode(input: any) { return conAspecto(await generateNextEpisodeBase(input), aspectoDe(input?.formato)); }
+async function generateNextEpisodeBase(input: any) {
   const startedAt = Date.now();
   const style = styleKey(input.style);
   const duration = Number(input.duration || 90);
   if (!process.env.LLM_API_KEY) return { ...templateNext(input), notice: "El servidor no tiene clave de IA: se usó la plantilla local." };
   const existing = normalizeCast(input.characters, style);
   try {
-    const count = sceneCountFor(duration);
+    const count = sceneCountFor(duration, input.scenes);
     const castSheet = existing.map(c => isFruitStyle(style)
       ? `- ${c.name} (${c.role}): piel de ${c.fruit} — ${c.headES}. Ropa: ${c.clothing}. Voz: ${c.voice}.`
       : `- ${c.name} (${c.role}): ${c.visualES}. Ropa: ${c.clothing}. Voz: ${c.voice}.`).join("\n");
@@ -274,9 +278,9 @@ Responde SOLO JSON: {"episode":{"title":"","summary":"","hook":["",""],"coverTex
     const newCharacters = normalizeCast(newRows, style, { taken: existing });
     const characters = [...existing, ...newCharacters];
     const episodeRaw = await ensureNarratorEnding(parsed.episode || parsed, String(input.wish || input.series?.title || ""), style, Math.min(25000, 150000 - (Date.now() - startedAt)));
-    const episode = buildProduction(episodeRaw, { style, duration, characters, idea: String(input.wish || input.series?.title || ""), chosenHook: input.chosenHook, seriesTitle: String(input.series?.title || "Serie"), partNumber: Number(input.partNumber || 2), previousSummary: String((input.history || []).slice(-1)[0]?.summary || "") });
+    const episode = buildProduction(episodeRaw, { style, duration, scenes: count, characters, idea: String(input.wish || input.series?.title || ""), chosenHook: input.chosenHook, seriesTitle: String(input.series?.title || "Serie"), partNumber: Number(input.partNumber || 2), previousSummary: String((input.history || []).slice(-1)[0]?.summary || "") });
     const mode = providerMode();
-    try { validateEpisode(episode, duration); }
+    try { validateEpisode(episode, count); }
     catch (qualityError) {
       const issue = qualityError instanceof Error ? qualityError.message : String(qualityError);
       return { mode: "gemini-borrador", notice: `Gemini escribió el episodio, pero ${issue}. Se guardó como borrador para revisión; no se enviará a producción.`, episode: { ...episode, mode: "gemini-borrador", qualityIssues: [issue] }, newCharacters };
@@ -287,15 +291,16 @@ Responde SOLO JSON: {"episode":{"title":"","summary":"","hook":["",""],"coverTex
   }
 }
 
-export function templateNext(input: any) {
+export function templateNext(input: any) { return conAspecto(templateNextBase(input), aspectoDe(input?.formato)); }
+function templateNextBase(input: any) {
   const style = styleKey(input.style);
   const duration = Number(input.duration || 90);
   const characters = normalizeCast(input.characters, style);
   const cast = characters.length >= 2 ? characters : templateCast(String(input.series?.title || ""), style);
-  const raw = templateScenes(String(input.wish || ""), cast, style, sceneCountFor(duration));
+  const raw = templateScenes(String(input.wish || ""), cast, style, sceneCountFor(duration, input.scenes));
   const part = Number(input.partNumber || 2);
   const episode = buildProduction({ ...raw, title: `Episodio ${part}`, summary: input.wish || "Continuación (plantilla local)." },
-    { style, duration, characters: cast, idea: String(input.wish || input.series?.title || ""), chosenHook: input.chosenHook, seriesTitle: String(input.series?.title || "Serie"), partNumber: part, previousSummary: String((input.history || []).slice(-1)[0]?.summary || "") });
+    { style, duration, scenes: input.scenes, characters: cast, idea: String(input.wish || input.series?.title || ""), chosenHook: input.chosenHook, seriesTitle: String(input.series?.title || "Serie"), partNumber: part, previousSummary: String((input.history || []).slice(-1)[0]?.summary || "") });
   return { mode: "plantilla-local", episode: { ...episode, mode: "plantilla-local" }, newCharacters: [] as CastMember[] };
 }
 

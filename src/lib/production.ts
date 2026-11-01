@@ -83,7 +83,34 @@ const clean = (v: unknown) => String(v ?? "").replace(/\s+/g, " ").trim();
 // La duración pedida es la del vídeo montado: 88 s ≈ 20 escenas (como los virales: una frase cada 3-4 s).
 export const EDIT_SECONDS = 4.5;
 export const MAX_SCENES = 30;
-export const sceneCountFor = (duration: number) => Math.min(MAX_SCENES, Math.max(12, Math.round((Number(duration) || 90) / EDIT_SECONDS)));
+export const MIN_SCENES = 8;
+// Cantidad de escenas: la elegida a mano (si la hay) manda; si no, sale de la duración.
+export const sceneCountFor = (duration: number, escenas?: number) => {
+  const elegidas = Math.round(Number(escenas) || 0);
+  if (elegidas) return Math.min(MAX_SCENES, Math.max(MIN_SCENES, elegidas));
+  return Math.min(MAX_SCENES, Math.max(12, Math.round((Number(duration) || 90) / EDIT_SECONDS)));
+};
+// Cantidad de escenas o tomas que pide el propio texto de la idea («20 tomas», «28 escenas»), para avisar si choca.
+export function escenasEnTexto(texto: string): number | null {
+  const m = String(texto || "").match(/\b(\d{1,2})\s+(?:tomas|escenas|clips)\b/i);
+  return m ? Number(m[1]) : null;
+}
+
+// Formato de imagen: la serie larga (Facebook/YouTube) va en horizontal 16:9; la corta en vertical 9:16.
+// Los prompts se escriben en 9:16 y, para una serie larga, se pasan a 16:9 (fichas, escenas, animación, Dola).
+export type Aspecto = "9:16" | "16:9";
+export const aspectoDe = (formato?: unknown): Aspecto => formato === "largo" || formato === "16:9" ? "16:9" : "9:16";
+const horizontal = (t: string) => t
+  .replace(/Pantalla partida de videollamada vertical: arriba (.+?) y abajo (.+?),/g, "Pantalla partida de videollamada horizontal: a la izquierda $1 y a la derecha $2,")
+  .replace(/vertical 9:16/gi, "horizontal 16:9").replace(/\b9:16\b/g, "16:9")
+  .replace(/\bvertical\s+16:9/gi, "horizontal 16:9");
+export function conAspecto<T>(v: T, aspecto: Aspecto): T {
+  if (aspecto !== "16:9") return v;
+  const map = (x: any): any => typeof x === "string" ? horizontal(x) : Array.isArray(x) ? x.map(map)
+    : x && typeof x === "object" ? Object.fromEntries(Object.entries(x).map(([k, y]) => [k, map(y)])) : x;
+  const r = map(v);
+  return (r && typeof r === "object" && !Array.isArray(r) && "scenes" in r ? { ...r, aspecto } : r) as T;
+}
 
 // Mantiene el gancho y el cierre; los recortes salen del desarrollo.
 export function selectShortScenes<T>(scenes: T[], limit: number): T[] {
@@ -127,6 +154,7 @@ export function stripForbidden(text: string) {
 interface Ctx {
   style: StyleKey; duration: number; characters: CastMember[]; idea: string;
   chosenHook?: string[] | null; seriesTitle?: string; partNumber?: number; previousSummary?: string;
+  scenes?: number;   // escenas elegidas a mano (si no, salen de la duración)
 }
 
 function findSpeaker(name: unknown, cast: CastMember[]) {
@@ -346,7 +374,7 @@ function buildDolaPrompt(dolaScenes: { n: number; setting: string; speaker: stri
 // Construye todo el paquete de producción del episodio a partir de lo que devolvió la IA.
 export function buildProduction(raw: any, ctx: Ctx) {
   const { style, characters: cast } = ctx;
-  const target = sceneCountFor(ctx.duration);
+  const target = sceneCountFor(ctx.duration, ctx.scenes);
   const byName = new Map(cast.map(c => [c.name, c]));
   let base = rawScenes(raw)
     .map((r: any) => ({

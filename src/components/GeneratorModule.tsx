@@ -27,7 +27,7 @@ import StoryArchitect from "./StoryArchitect";
 import { EPIC_NOTICE, STYLES, type StyleKey } from "@/lib/knowledge";
 import { templateSeries, templateNext } from "@/lib/story";
 import { isGenericName } from "@/lib/cast";
-import { buildFlowBatch, refreshPrompts, PROMPT_RULES_VERSION, sceneCountFor } from "@/lib/production";
+import { aspectoDe, buildFlowBatch, conAspecto, escenasEnTexto, MAX_SCENES, MIN_SCENES, refreshPrompts, PROMPT_RULES_VERSION, sceneCountFor } from "@/lib/production";
 import { seriesSignals } from "@/lib/seriesSignals";
 import { stylePublish, formatDescription, sinLlamadas, viralHashtags } from "@/lib/platforms";
 import { profileText } from "@/lib/profiles";
@@ -129,6 +129,10 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
   const [formato, setFormato] = useState<"corto" | "largo">("corto");
   const [clipIds, setClipIds] = useState<string[]>([]);
   const [duration, setDuration] = useState(88);
+  // Escenas elegidas a mano (0 = automático según la duración). Mandan sobre lo que diga el texto de la idea.
+  const [escenas, setEscenas] = useState(0);
+  const nEscenas = sceneCountFor(duration, escenas);
+  const aspectoSerie = (sid?: string) => aspectoDe(data.series.find((x: any) => x.id === sid)?.format);
   const [notes, setNotes, notesB] = useBorrador("generador:notas", "");
   // «Usar esta idea»: rellena la idea y deja en las notas lo que la IA debe respetar (base bíblica,
   // gancho, objeto, giro y elenco sugeridos). Las notas van a «MI PEDIDO» del prompt maestro.
@@ -243,7 +247,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
         const ep = data.episodes.find((e: any) => e.seriesId === x.id);
         return [x.title, ep?.output?.bible?.story].filter(Boolean).join(" = ");
       });
-      const body = { idea: idea_, style, duration, account, notes: notes_, learnings, chosenHook, replica: kind_ === "replica" ? replica : "", accountProfile: profileFor(account?.id), usadas };
+      const body = { idea: idea_, style, duration, scenes: nEscenas, formato, account, notes: notes_, learnings, chosenHook, replica: kind_ === "replica" ? replica : "", accountProfile: profileFor(account?.id), usadas };
       const res = await call("/api/series", body, () => templateSeries(body)); if (!res) return;
       const d = res.data;
       // Lo generado se aparta antes de guardar: si un guardado falla a mitad, se reanuda sin volver a generar.
@@ -290,7 +294,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
       const bible = eps[0]?.output?.seriesBible || { style: "frutinovela", logline: current.description };
       const body = {
         // Si no se pide nada, se sigue el plan guardado de la serie para esa parte (p. ej. «Parte 6: …»).
-        series: { title: current.title, logline: current.description }, bible, style: bible.style, partNumber: part, wish: wish.trim() || String(bible?.plan?.[part] || ""), duration, account: data.accounts.find((a: any) => a.id === current.accountId) || account, learnings, chosenHook,
+        series: { title: current.title, logline: current.description }, bible, style: bible.style, partNumber: part, wish: wish.trim() || String(bible?.plan?.[part] || ""), duration, scenes: nEscenas, formato: current.format, account: data.accounts.find((a: any) => a.id === current.accountId) || account, learnings, chosenHook,
         accountProfile: profileFor(current.accountId),
         // Continuidad: lo que el plan guarda para la parte siguiente no se abre en esta.
         nextPlan: String(bible?.plan?.[part + 1] || ""),
@@ -380,6 +384,9 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
 
             <div><label htmlFor="generator-duration" className="field-label block">Duración del vídeo montado</label>
               <select id="generator-duration" value={duration} onChange={e => setDuration(Number(e.target.value))}>{DURATIONS.map(d => <option key={d} value={d}>{d} s · {sceneCountFor(d)} escenas</option>)}</select></div>
+            <div><label htmlFor="generator-scenes" className="field-label block">Escenas</label>
+              <select id="generator-scenes" aria-label="Cantidad de escenas" value={escenas} onChange={e => setEscenas(Number(e.target.value))}><option value={0}>Automático · {sceneCountFor(duration)} escenas</option>{Array.from({ length: MAX_SCENES - MIN_SCENES + 1 }, (_, k) => MIN_SCENES + k).map(n => <option key={n} value={n}>{n} escenas · ~{Math.round(n * 4.5)} s</option>)}</select></div>
+            <AvisoEscenas texto={`${idea} ${notes}`} escenas={nEscenas} onUsar={setEscenas} />
           </div>
           <div><label htmlFor="generator-notes" className="field-label block">Notas opcionales</label>
             <input id="generator-notes" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Ej.: que la abuela se llame Doña Guanábana, que pase en Navidad…" /></div>
@@ -388,7 +395,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
         </div>
         <aside className="production-brief" aria-label="Resumen de producción">
           <div className="brief-cover"><span className="studio-eyebrow cinematic-gold">CUADERNO / NUEVA PRODUCCIÓN</span><span className="brief-cover-symbol" aria-hidden="true">✦</span><h3>{styleChosen ? STYLES[style].label : "Una historia por descubrir."}</h3><p>{idea.trim() || "Tu premisa aparecerá aquí mientras le das forma."}</p></div>
-          <dl><div><dt>Canal</dt><dd>{data.accounts.find(a => a.id === accountId)?.name || "Por elegir"}</dd></div><div><dt>Proyecto</dt><dd>{formato === "largo" ? "Serie de formato largo" : "Serie de clips cortos"}</dd></div><div><dt>Duración por clip</dt><dd>{duration} segundos</dd></div><div><dt>Escenas por clip</dt><dd>{sceneCountFor(duration)}</dd></div></dl>
+          <dl><div><dt>Canal</dt><dd>{data.accounts.find(a => a.id === accountId)?.name || "Por elegir"}</dd></div><div><dt>Proyecto</dt><dd>{formato === "largo" ? "Serie de formato largo" : "Serie de clips cortos"}</dd></div><div><dt>Duración por clip</dt><dd>{duration} segundos</dd></div><div><dt>Escenas por clip</dt><dd>{nEscenas}</dd></div><div><dt>Imagen</dt><dd>{formato === "largo" ? "Horizontal 16:9" : "Vertical 9:16"}</dd></div></dl>
           <div className="brief-readiness"><p className="studio-eyebrow">ANTES DEL PRIMER PLANO</p><p data-ready={!!accountId}><span aria-hidden="true">{accountId ? "✓" : "○"}</span> Canal seleccionado</p><p data-ready={styleChosen}><span aria-hidden="true">{styleChosen ? "✓" : "○"}</span> Identidad visual definida</p><p data-ready={!!idea.trim() || kind === "replica" && !!replica.trim()}><span aria-hidden="true">{idea.trim() || kind === "replica" && replica.trim() ? "✓" : "○"}</span> Premisa escrita</p></div>
           <p className="brief-mode">{mode === "supabase" ? "La creación usará el servicio de IA configurado." : "Modo local: se creará un borrador con plantilla, sin IA."}</p>
         </aside></div></div>
@@ -461,6 +468,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
                 <div className="mt-3 flex flex-wrap items-center gap-3">
                   <label htmlFor="generator-next-duration" className="sr-only">Duración del próximo episodio</label>
                   <select id="generator-next-duration" value={duration} onChange={e => setDuration(Number(e.target.value))} className="w-auto">{DURATIONS.map(d => <option key={d} value={d}>{d} s · {sceneCountFor(d)} escenas</option>)}</select>
+                  <select id="generator-next-scenes" aria-label="Cantidad de escenas" value={escenas} onChange={e => setEscenas(Number(e.target.value))} className="w-auto"><option value={0}>Automático · {sceneCountFor(duration)} escenas</option>{Array.from({ length: MAX_SCENES - MIN_SCENES + 1 }, (_, k) => MIN_SCENES + k).map(n => <option key={n} value={n}>{n} escenas · ~{Math.round(n * 4.5)} s</option>)}</select>
                   <button disabled={loading} onClick={continueStory} className="rounded-lg bg-amber-500 px-5 py-2.5 font-bold text-slate-950 hover:bg-amber-400 disabled:opacity-60">{loading ? "Escribiendo…" : `Crear episodio ${current.eps.length + 1} →`}</button>
                 </div>
               </section>
@@ -489,7 +497,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
         )}
       </>}
 
-      {view === "resultado" && result && <Result
+      {view === "resultado" && result && <Result aspecto={aspectoSerie(result.seriesId)}
         episode={result.episode} episodeId={result.episodeId} seriesId={result.seriesId} part={result.part} seriesTitle={data.series.find((s: any) => s.id === result.seriesId)?.title} initialTab={openTab || focusTab}
         status={data.episodes.find((e: any) => e.id === result.episodeId)?.status}
         onFinish={async () => { if (result.episodeId && !isFinished(data.episodes.find((e: any) => e.id === result.episodeId))) await update("episodes", result.episodeId, { status: FINISHED }); }}
@@ -510,7 +518,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
           if (!result.episodeId) throw new Error("El episodio aún no está guardado");
           const firstBible = data.episodes.find((e: any) => e.seriesId === result.seriesId && e.output?.seriesBible?.style)?.output?.seriesBible;
           const st = (result.episode?.seriesBible?.style || firstBible?.style || (result.episode?.cast?.some((x: any) => x.fruit) ? "frutinovela" : "cine90")) as StyleKey;
-          const output = refreshPrompts(siguiente, st);
+          const output = conAspecto(refreshPrompts(siguiente, st), aspectoSerie(result.seriesId));
           const ep = data.episodes.find((e: any) => e.id === result.episodeId) as any;
           await update("episodes", result.episodeId, { output, versions: [...(Array.isArray(ep?.versions) ? ep.versions : []), c.anterior || result.episode].slice(-10) });
           if (c.mapa) {
@@ -524,7 +532,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
           const r = moverEscenaCorta(result.episode, desde, hasta); if (!r || !result.episodeId) return;
           const firstBible = data.episodes.find((e: any) => e.seriesId === result.seriesId && e.output?.seriesBible?.style)?.output?.seriesBible;
           const st = (result.episode?.seriesBible?.style || firstBible?.style || (result.episode?.cast?.some((c: any) => c.fruit) ? "frutinovela" : "cine90")) as StyleKey;
-          const output = refreshPrompts(r.out, st);
+          const output = conAspecto(refreshPrompts(r.out, st), aspectoSerie(result.seriesId));
           const ep = data.episodes.find((e: any) => e.id === result.episodeId) as any;
           try {
             await update("episodes", result.episodeId, { output, versions: [...(Array.isArray(ep?.versions) ? ep.versions : []), result.episode].slice(-10) });
@@ -541,7 +549,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
           // El acento (y la forma de hablar) que se edita en Personajes manda sobre la copia del episodio.
           const masters = data.characters.filter((c: any) => c.seriesId === result.seriesId);
           const cast = (result.episode?.cast || []).map((c: any) => { const m = masters.find((x: any) => x.name.toLowerCase() === String(c.name).toLowerCase()); return m?.speechStyle ? { ...c, speechStyle: m.speechStyle } : c; });
-          const output = refreshPrompts({ ...result.episode, cast }, st);
+          const output = conAspecto(refreshPrompts({ ...result.episode, cast }, st), aspectoSerie(result.seriesId));
           if (result.episodeId) await update("episodes", result.episodeId, { output });
           setResult({ ...result, episode: output });
           setNotice("Prompts actualizados con las reglas nuevas. El guion y los personajes no cambiaron; vuelve a enviar el lote a Flow si ya lo habías enviado.");
@@ -613,7 +621,7 @@ function DownloadText({ text, filename, label }: { text: string; filename: strin
 const Field = ({ label, value }: { label: string; value?: string }) => value ? <div><dt className="inline font-semibold text-slate-200">{label}: </dt><dd className="inline text-slate-300">{value}</dd></div> : null;
 const RefChips = ({ refs }: { refs?: string[] }) => <p className="mt-2 text-[11px] text-sky-200">Referencias a seleccionar (fuera del prompt): {(refs || []).length ? (refs || []).map(r => <span key={r} className="ml-1 rounded-full bg-sky-400/15 px-2 py-0.5">{r}</span>) : <span className="text-slate-400">ninguna</span>}</p>;
 
-function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialTab, status, onFinish, onUnlock, onAcceptDraft, backLabel, onBack, onNext, onRecreate, onDelete, onRefreshPrompts, onMoveScene, onCambiar }: any) {
+function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialTab, status, aspecto, onFinish, onUnlock, onAcceptDraft, backLabel, onBack, onNext, onRecreate, onDelete, onRefreshPrompts, onMoveScene, onCambiar }: any) {
   type Tab = "guion" | "elenco" | "imagenes" | "animacion" | "mesa" | "redes" | "plataformas" | "archivos";
   const { data, update, userId } = useData();
   const cast: any[] = Array.isArray(out.cast) ? out.cast : [];
@@ -647,7 +655,9 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
   const snapshotValid = !!out.referenceVersions && master.every((c, i) => Number(c?.referenceVersion || 1) === Number(out.referenceVersions[String(cast[i].name).toLowerCase()]));
   const productionReady = referencesReady && snapshotValid;
   const episodeStyle: string = out.seriesBible?.style || (/escribe am[eé]n/i.test(scenes.at(-1)?.line || "") ? "cristiana" : cast.some(c => c.fruit) ? "frutinovela" : "cine90");
-  const promptsOutdated = scenes.length > 0 && Number(out.promptsVersion || 1) < PROMPT_RULES_VERSION;
+  // Serie larga con prompts aún en vertical (creados antes del 16:9): también se ofrece actualizarlos.
+  const formatoViejo = aspecto === "16:9" && scenes.length > 0 && !/16:9/.test(String(scenes[0]?.imagePromptFlow || ""));
+  const promptsOutdated = scenes.length > 0 && (Number(out.promptsVersion || 1) < PROMPT_RULES_VERSION || formatoViejo);
   const [refreshing, setRefreshing] = useState(false);
   async function refresh() { setRefreshing(true); try { await onRefreshPrompts?.(); } finally { setRefreshing(false); } }
   const referenceSignature = master.map(c => `${c?.id || "missing"}:${c?.referenceVersion || 0}`).join("|");
@@ -707,7 +717,7 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
         <div className="mt-3 flex flex-wrap gap-2"><CopyButton text={p.text} label="Copiar texto" /><CopyButton text={p.hashtags} label="Copiar hashtags" /></div>
       </div>)}</div>
     </section>}
-    {promptsOutdated && !finished && <div className="mt-3 flex flex-wrap items-center gap-3 rounded-xl border border-sky-400/30 bg-sky-400/10 p-3 text-xs text-sky-100"><span className="flex-1 min-w-[220px]">Hay reglas nuevas para los prompts (ritmo viral: hablan desde el primer segundo, sin pausas y sin música dentro del clip). Este episodio tiene los prompts de una versión anterior.</span><button type="button" onClick={refresh} disabled={refreshing} className="rounded-lg bg-sky-400 px-3 py-1.5 font-bold text-slate-950 hover:bg-sky-300 disabled:opacity-50">{refreshing ? "Actualizando…" : "Actualizar prompts"}</button></div>}
+    {promptsOutdated && !finished && <div className="mt-3 flex flex-wrap items-center gap-3 rounded-xl border border-sky-400/30 bg-sky-400/10 p-3 text-xs text-sky-100"><span className="flex-1 min-w-[220px]">{formatoViejo ? "Esta serie es de formato largo, pero los prompts de este episodio están en vertical 9:16. Actualízalos para pasar fichas, escenas y animación a horizontal 16:9 (el guion no cambia)." : <>Hay reglas nuevas para los prompts (ritmo viral: hablan desde el primer segundo, sin pausas y sin música dentro del clip). Este episodio tiene los prompts de una versión anterior.</>}</span><button type="button" onClick={refresh} disabled={refreshing} className="rounded-lg bg-sky-400 px-3 py-1.5 font-bold text-slate-950 hover:bg-sky-300 disabled:opacity-50">{refreshing ? "Actualizando…" : "Actualizar prompts"}</button></div>}
     {scenes.length > 0 && cast.length >= 2 && !referencesReady && <div className="mt-3 rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 text-xs text-amber-100">Faltan fichas maestras aprobadas: {missingMasters.join(", ")}. Súbelas y apruébalas en «1 · Personajes canónicos» antes de producir.</div>}
     {scenes.length > 0 && cast.length >= 2 && referencesReady && !snapshotValid && <div className="mt-3 rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 text-xs text-amber-100">La ficha maestra cambió desde que se creó este guion, o el episodio es anterior al control de versiones. Regenera el episodio para alinear prompts y personajes.</div>}
     {scenes.length > 0 && cast.length >= 2 && <nav className="production-journey" aria-label="Estado guardado de la producción">
@@ -853,7 +863,7 @@ function CanalPicker({ accounts, accountId, onAccount, formato, onFormato, largo
         <div className="mt-1 flex flex-wrap gap-2">{([["corto", "Corto · 9:16 (Reels, TikTok, Shorts)"], ["largo", "Largo · 16:9 (Facebook, YouTube)"]] as const).map(([k, l]) =>
           <button key={k} type="button" disabled={k === "largo" && !largoPosible} aria-pressed={formato === k} onClick={() => onFormato(k)} className={`rounded-full border px-3 py-1.5 text-xs disabled:opacity-40 ${formato === k ? "border-amber-400/60 bg-amber-400/10 text-amber-100" : "border-white/10 text-slate-300"}`}>{l}</button>)}</div>
         {!largoPosible && <p className="mt-1 text-[11px] text-slate-500">El formato largo es para canales de Facebook o YouTube.</p>}
-        {formato === "largo" && <p className="mt-1 text-[11px] text-slate-400">Se guarda como serie larga. El guion por actos y el montaje 16:9 llegan en las fases siguientes; por ahora se escribe por partes.</p>}
+        {formato === "largo" && <p className="mt-1 text-[11px] text-slate-400">Serie larga: las fichas de personajes, las imágenes de escena y los prompts de animación salen en horizontal 16:9. Si ya tenías episodios, abre cada uno y pulsa «Actualizar prompts» para pasarlos a 16:9.</p>}
       </div>
       {otras.length > 0 && <div><p className="text-xs text-slate-300">Clips para otras cuentas <span className="text-slate-500">(opcional)</span></p>
         <div className="mt-1 space-y-1">{otras.map((a: any) => <label key={a.id} className="flex items-center gap-2 text-xs text-slate-300"><input type="checkbox" className="w-auto" checked={clipIds.includes(a.id)} onChange={e => onClipIds(e.target.checked ? [...clipIds, a.id] : clipIds.filter(x => x !== a.id))} />{a.name} · {a.platform}</label>)}</div></div>}
@@ -1088,4 +1098,15 @@ function NuevaCuenta({ estilo, onCreada, onCancelar }: { estilo?: string; onCrea
     </div>
     {estado.error && <p role="alert" className="text-xs text-rose-200 sm:col-span-2">{estado.error}</p>}
   </div>;
+}
+
+// Aviso cuando el texto de la idea pide otra cantidad de escenas o tomas que la configuración.
+function AvisoEscenas({ texto, escenas, onUsar }: { texto: string; escenas: number; onUsar: (n: number) => void }) {
+  const pedidas = escenasEnTexto(texto);
+  if (!pedidas || pedidas === escenas) return null;
+  const valida = pedidas >= MIN_SCENES && pedidas <= MAX_SCENES;
+  return <p role="status" className="rounded-lg border border-amber-400/25 bg-amber-400/10 p-3 text-xs text-amber-100 sm:col-span-2">
+    Tu texto pide {pedidas} escenas o tomas, pero la configuración tiene {escenas}. Se generarán {escenas}: manda la configuración.
+    {valida && <> <button type="button" className="underline" onClick={() => onUsar(pedidas)}>Usar {pedidas}</button></>}
+  </p>;
 }
