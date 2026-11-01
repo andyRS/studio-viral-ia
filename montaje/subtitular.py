@@ -368,9 +368,10 @@ if ANTERIOR:
         RECAP_PIEZAS = [(max(0.0, fin - 11.0), fin)]
     RECAP_S = round(sum(e0 - s0 for s0, e0 in RECAP_PIEZAS), 2)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from tiempos import avisos_clip, config_clip, corte_j_seguro, limites_clip
+from tiempos import avisos_clip, config_clip, corte_j_seguro, limites_clip, voz_al_inicio
 offsets, words_per_clip, recortes, t = [], [], [], RECAP_S
 VOZ_FIN = []          # final de la voz de cada clip (segundos del clip), para no pisarla con un corte J
+VOZ_SPAN = []         # duración real de la voz de cada clip (de la primera a la última palabra)
 AVISOS_TIEMPO = []
 for ci, clip in enumerate(clips):
     progreso(5 + 55 * ci / len(clips), f"Escuchando el clip {ci + 1} de {len(clips)} con Whisper")
@@ -402,7 +403,8 @@ for ci, clip in enumerate(clips):
     if RECORTAR and primera is not None:
         a, b = limites_clip(primera, ultima, D, cfg)
     VOZ_FIN.append(ultima)
-    for aviso in avisos_clip(ci, primera, ultima, D, a, b, cfg):
+    VOZ_SPAN.append((ultima - primera) if primera is not None else 0.0)
+    for aviso in avisos_clip(ci, primera, ultima, D, a, b, cfg, empieza_con_voz=voz_al_inicio(x[: 16000]) if primera is not None else None):
         AVISOS_TIEMPO.append(aviso)
         progreso(5 + 55 * (ci + 1) / len(clips), f"Aviso: {aviso}")
     for x in best:
@@ -1210,6 +1212,9 @@ try:
         nota -= min(15, 5 * len(negros))
         avisos.append({"tipo": "negro", "texto": f"Pantalla negra en {', '.join(mmss(x) for x in negros[:5])}",
                        "arreglo": "Revisa ese clip: una imagen negra hace que la gente se vaya."})
+    # Perfil de revisión: película (16:9, YouTube/Facebook) o viral (vertical, TikTok/Reels/Shorts).
+    PELICULA = HORIZ
+    MIN_RITMO = 1.5 if PELICULA else 1.9
     lentos, mudos = [], []
     for ci in range(len(clips)):
         if not G["clips"][ci]:
@@ -1217,14 +1222,19 @@ try:
         palabras = len(words_per_clip[ci]) if ci < len(words_per_clip) else 0
         if palabras == 0:
             mudos.append(ci + 1)
-        elif DUR_CLIP[ci] > 2.5 and palabras / DUR_CLIP[ci] < 1.9:
-            lentos.append((ci + 1, palabras / DUR_CLIP[ci], DUR_CLIP[ci]))
+        else:
+            # Ritmo de habla sobre el tramo hablado (no sobre el clip: en el montaje cinematográfico se conserva acción
+            # tras la voz). En película (16:9) la narración solemne va más despacio que en los virales.
+            habla = VOZ_SPAN[ci] if ci < len(VOZ_SPAN) and VOZ_SPAN[ci] > 0.5 else DUR_CLIP[ci]
+            if habla > 2.5 and palabras / habla < MIN_RITMO:
+                lentos.append((ci + 1, palabras / habla, habla))
     if lentos:
         nota -= min(20, 3 * len(lentos))
-        avisos.append({"tipo": "lento", "texto": "Frases lentas en los clips " + ", ".join(f"{c} ({v:.1f} palabras/s, {d:.1f} s)" for c, v, d in lentos[:8]),
-                       "arreglo": "Sube el Ritmo a «Rápido» o regenera esos clips: en los virales se dicen 2,5-3 palabras por segundo."})
+        avisos.append({"tipo": "lento", "texto": "Frases lentas en los clips " + ", ".join(f"{c} ({v:.1f} palabras/s en {d:.1f} s de voz)" for c, v, d in lentos[:8]),
+                       "arreglo": ("Regenera esos clips con una locución más fluida: en cine la narración va a ~2 palabras por segundo." if PELICULA
+                                   else "Sube el Ritmo a «Rápido» o regenera esos clips: en los virales se dicen 2,5-3 palabras por segundo.")})
     else:
-        bien.append("Ritmo de habla ágil en todos los clips.")
+        bien.append("Ritmo de habla natural en todos los clips." if PELICULA else "Ritmo de habla ágil en todos los clips.")
     if mudos:
         nota -= min(20, 5 * len(mudos))
         avisos.append({"tipo": "sin_voz", "texto": "No se oyó la voz en los clips " + ", ".join(map(str, mudos[:10])),
@@ -1266,7 +1276,7 @@ try:
     if not G.get("gancho") and not APERTURA_TITULO:
         nota -= 10
         avisos.append({"tipo": "gancho", "texto": "Sin texto de gancho en los primeros 3 s.", "arreglo": "Añade el gancho (2 líneas) en el guion."})
-    if total > 90:
+    if total > 90 and not PELICULA:
         avisos.append({"tipo": "duracion", "texto": f"Dura {mmss(total)}: largo para TikTok y Shorts.",
                        "arreglo": "Usa las versiones por red: TikTok en partes y Shorts de menos de 60 s."})
     # Volumen final medido (EBU R128): lo que piden TikTok, Instagram y Facebook (-14 LUFS, picos < -1 dBTP).

@@ -55,12 +55,31 @@ def limites_clip(primera, ultima, D, cfg):
     return a, b
 
 
-def avisos_clip(ci, primera, ultima, D, a, b, cfg):
+def voz_al_inicio(muestras, sr=16000, ventana=0.02):
+    """¿La voz ya suena fuerte en los primeros 60 ms del clip? (frase cortada al principio).
+    Whisper suele dar 0,0 s a la primera palabra aunque haya silencio delante: se mira la energía real del audio."""
+    n = int(sr * ventana)
+    if n <= 0 or len(muestras) < sr * 0.5:
+        return False
+    rms = []
+    for i in range(0, len(muestras) - n, n):
+        tramo = muestras[i:i + n]
+        rms.append((sum(float(v) * float(v) for v in tramo) / n) ** 0.5)
+    if not rms:
+        return False
+    ref = sorted(rms)[int(len(rms) * 0.9)]
+    if ref < 0.01:
+        return False
+    return sum(rms[:3]) / 3 > 0.45 * ref
+
+
+def avisos_clip(ci, primera, ultima, D, a, b, cfg, empieza_con_voz=None):
     """Problemas detectables con los tiempos reales de un clip."""
     out = []
     if ultima is not None and D - ultima < 0.15:
         out.append(f"Clip {ci + 1}: la voz llega hasta el final del clip ({ultima:.1f} de {D:.1f} s): la frase puede estar cortada.")
-    if primera is not None and primera < 0.05:
+    corta_inicio = empieza_con_voz if empieza_con_voz is not None else (primera is not None and primera < 0.05)
+    if primera is not None and corta_inicio:
         out.append(f"Clip {ci + 1}: la voz empieza en el primer fotograma: puede faltar el inicio de la frase.")
     if cfg.get("modo") == "accion" and ultima is not None:
         margen = float(cfg.get("margen") if cfg.get("margen") is not None else MARGEN_ACCION)
