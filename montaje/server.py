@@ -18,7 +18,8 @@ Montaje en segundo plano, con progreso en vivo (lo que usa la app):
 
 Solo en el PC (modo local):
   GET  /              página «Herramientas del PC»: comprimir un vídeo para revisarlo o mandarlo
-  POST /comprimir     (multipart: video, calidad=revisar|ligero|redes|mejorar; cabecera X-Montaje-Local) -> mp4
+  POST /comprimir     (multipart: video, calidad=revisar|ligero|redes|mejorar|chat[&mb=29]; cabecera X-Montaje-Local) -> mp4
+                      (chat -> {"id"}: un mp4 de menos de mb MB o, si es muy largo, un .zip con partes de menos de mb MB cada una)
                       (también lo usa la app: Crear > Herramientas)
   POST /quitar-marca  (multipart: video, zonas=[{x,y,w,h}] en píxeles, metodo=borrar|difuminar|tapar|recortar) -> mp4
                       metodo=borrar_ia -> {"id"}: la IA (LaMa) redibuja el fondo; progreso y vídeo en /trabajos/{id}
@@ -98,7 +99,7 @@ def autorizado(authorization: str) -> bool:
 @app.get("/salud")
 def salud():
     # «carpeta»: desde dónde corre el montaje del PC (para ver si es la copia actualizada).
-    return {"ok": True, "local": LOCAL, "gpu": GPU, "musica": True, "musica_modo": True, "anterior": True, "recorte": True, "portada": True, "pavo_720": True, "comprimir": LOCAL, "mejorar": LOCAL, "quitar_marca": LOCAL, "logo_propio": True, "dos_logos": True, "borrar_ia": LOCAL, "pro": True, "versiones": True, "revision": True, "velocidad": True, "resumen": True, "pantallas": True, "horizontal": True, "recortes": True, "subtitulos": True, "tiempos": True, "apertura": True, "transiciones": True, "unir": LOCAL, **({"carpeta": os.path.dirname(HERE)} if LOCAL else {})}
+    return {"ok": True, "local": LOCAL, "gpu": GPU, "musica": True, "musica_modo": True, "anterior": True, "recorte": True, "portada": True, "pavo_720": True, "comprimir": LOCAL, "comprimir_chat": LOCAL, "mejorar": LOCAL, "quitar_marca": LOCAL, "logo_propio": True, "dos_logos": True, "borrar_ia": LOCAL, "pro": True, "versiones": True, "revision": True, "velocidad": True, "resumen": True, "pantallas": True, "horizontal": True, "recortes": True, "subtitulos": True, "tiempos": True, "apertura": True, "transiciones": True, "unir": LOCAL, **({"carpeta": os.path.dirname(HERE)} if LOCAL else {})}
 
 
 # ---------- Trabajos en segundo plano ----------
@@ -275,7 +276,9 @@ def video_trabajo(jid: str, v: int = 1):
         if not job.get("out2"):
             raise HTTPException(404, "Este montaje no tiene segunda versión")
         return FileResponse(job["out2"], media_type="video/mp4", filename="episodio_montado_2.mp4")
-    return FileResponse(job["out"], media_type="video/mp4", filename="episodio_montado.mp4")
+    if job["out"].endswith(".zip"):   # «Para el chat» en varias partes
+        return FileResponse(job["out"], media_type="application/zip", filename=os.path.basename(job["out"]))
+    return FileResponse(job["out"], media_type="video/mp4", filename=job.get("nombre") or "episodio_montado.mp4")
 
 
 @app.get("/trabajos/{jid}/extra/{k}")
@@ -335,13 +338,87 @@ CALIDADES = {
     "redes": (1080, 21, "160k"),    # buena calidad para publicar, pero más ligero que el original
     "mejorar": (1080, 16, "192k"),  # sube a 1080 (o 1920 de alto) con escalado fino, limpia ruido y da nitidez
 }
-MAX_COMPRIMIR = 4 * 1024 * 1024 * 1024
+MAX_COMPRIMIR = 16 * 1024 * 1024 * 1024   # una película en 4K puede pasar de 4 GB
+
+
+def _duracion(path):
+    r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path], capture_output=True, text=True)
+    return float(r.stdout.strip() or 0)
+
+
+def _ejecutar_chat(job, src, work, nombre, objetivo_mb):
+    """«Para el chat»: cualquier vídeo en archivos de menos de `objetivo_mb` (uno solo, o varias partes en un .zip)."""
+    import zipfile
+    from compresion import plan_chat, reajuste
+    with CUPO:
+        try:
+            _avisar(job, estado="montando", paso="Midiendo el vídeo", pct=1)
+            partes = plan_chat(_duracion(src), objetivo_mb)
+            maximo = objetivo_mb * 1024 * 1024
+            nv = os.environ.get("VIDEO_ENCODER") == "h264_nvenc"
+            salidas = []
+            for i, pt in enumerate(partes):
+                out = os.path.join(work, f"{nombre}-chat" + (f"-parte{i + 1:02d}de{len(partes):02d}" if len(partes) > 1 else "") + ".mp4")
+                v = pt["video_kbps"]
+                for intento in range(3):
+                    _avisar(job, pct=int(2 + 96 * i / len(partes)), paso=f"Comprimiendo parte {i + 1} de {len(partes)}" if len(partes) > 1 else "Comprimiendo",
+                            log=(job["log"] + [f"Parte {i + 1}: {pt['alto']}p, {v} kbps" + (" (reajuste)" if intento else "")])[-40:])
+                    alto = pt["alto"]
+                    vf = f"scale='if(lt(iw,ih),min({alto},iw),-2)':'if(lt(iw,ih),-2,min({alto},ih))',fps='min(30,source_fps)'"
+                    venc = ["-c:v", "h264_nvenc", "-preset", "p6", "-rc", "vbr", "-multipass", "fullres", "-b:v", f"{v}k", "-maxrate", f"{int(v * 1.3)}k", "-bufsize", f"{v * 2}k"] if nv \
+                        else ["-c:v", "libx264", "-preset", "medium", "-b:v", f"{v}k", "-maxrate", f"{int(v * 1.3)}k", "-bufsize", f"{v * 2}k"]
+                    cmd = ["ffmpeg", "-v", "error", "-y", "-ss", str(pt["inicio"]), "-t", str(pt["dur"]), "-i", src, "-map", "0:v:0", "-map", "0:a:0?", "-vf", vf,
+                           *venc, "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", f"{pt['audio_kbps']}k", "-ac", str(pt["canales"]), "-movflags", "+faststart", out]
+                    r = subprocess.run(cmd, capture_output=True, text=True)
+                    if r.returncode != 0 and nv:   # NVENC ocupado o sin multipass: con el procesador
+                        nv = False
+                        continue
+                    if r.returncode != 0:
+                        raise RuntimeError("ffmpeg: " + (r.stderr or "")[-300:])
+                    peso = os.path.getsize(out)
+                    if peso <= maximo:
+                        break
+                    v = reajuste(v, peso, maximo)
+                else:
+                    raise RuntimeError(f"la parte {i + 1} no baja de {objetivo_mb} MB")
+                salidas.append(out)
+            if len(salidas) == 1:
+                final = salidas[0]
+            else:
+                final = os.path.join(work, f"{nombre}-chat-{len(salidas)}-partes.zip")
+                with zipfile.ZipFile(final, "w", zipfile.ZIP_STORED) as z:   # el mp4 ya va comprimido
+                    for f in salidas:
+                        z.write(f, os.path.basename(f))
+            _avisar(job, estado="listo", pct=100, out=final, nombre=os.path.basename(final),
+                    paso="Listo" if len(salidas) == 1 else f"Listo: {len(salidas)} partes de menos de {objetivo_mb} MB (en un .zip)")
+        except Exception as e:
+            _avisar(job, estado="error", error=f"No se pudo comprimir para el chat: {e}")
+        finally:
+            job["terminado"] = time.time()
+    time.sleep(RETENER_SEGUNDOS)
+    shutil.rmtree(work, ignore_errors=True)
+    TRABAJOS.pop(job["id"], None)
 
 
 @app.post("/comprimir")
-async def comprimir(video: UploadFile = File(...), calidad: str = "revisar", x_montaje_local: str = Header(default="")):
+async def comprimir(video: UploadFile = File(...), calidad: str = "revisar", mb: int = 29, x_montaje_local: str = Header(default="")):
     if not LOCAL or not x_montaje_local:
         raise HTTPException(403, "Solo disponible en el montaje de este PC")
+    if calidad == "chat":
+        # Trabajo en segundo plano (una película tarda): responde con el id, como el borrado con IA.
+        work = tempfile.mkdtemp(prefix="chat_")
+        nombre = os.path.splitext(os.path.basename(video.filename or "video"))[0][:80] or "video"
+        src = os.path.join(work, "entrada")
+        try:
+            await save_upload(video, src, MAX_COMPRIMIR)
+        except Exception:
+            shutil.rmtree(work, True); raise
+        jid = uuid.uuid4().hex
+        job = {"id": jid, "estado": "en cola", "pct": 0, "paso": "Vídeo recibido", "log": ["Vídeo recibido"], "seq": 0, "error": "",
+               "out": "", "cond": threading.Condition(), "terminado": 0}
+        TRABAJOS[jid] = job
+        threading.Thread(target=_ejecutar_chat, args=(job, src, work, nombre, max(5, min(500, mb))), daemon=True).start()
+        return {"id": jid}
     alto, crf, audio = CALIDADES.get(calidad, CALIDADES["revisar"])
     work = tempfile.mkdtemp(prefix="comprimir_")
     nombre = os.path.splitext(os.path.basename(video.filename or "video"))[0][:80] or "video"
@@ -423,7 +500,8 @@ a.dl{display:inline-block;margin-top:10px;color:var(--blue);font-weight:700}
 <div id="drop" tabindex="0" role="button"><b>Arrastra aquí el vídeo</b><span id="nom">o haz clic para elegirlo</span></div>
 <input id="file" type="file" accept="video/*" hidden>
 <div class="opts">
-<label><input type="radio" name="q" value="revisar" checked><span><b>Para revisar</b> (recomendado)<small>540p · unos 10-15 MB por minuto. Para mandarlo al chat.</small></span></label>
+<label><input type="radio" name="q" value="chat" checked><span><b>Para el chat</b> (recomendado)<small>Menos de 30 MB, por largo que sea. Una película sale en varias partes de menos de 30 MB (en un .zip).</small></span></label>
+<label><input type="radio" name="q" value="revisar"><span><b>Para revisar</b><small>540p · unos 10-15 MB por minuto. Para mandarlo al chat.</small></span></label>
 <label><input type="radio" name="q" value="ligero"><span><b>Lo más ligero</b><small>360p · si «Para revisar» aún pesa mucho.</small></span></label>
 <label><input type="radio" name="q" value="redes"><span><b>Calidad para redes</b><small>1080p · se ve igual de bien y pesa menos que el original.</small></span></label>
 <label><input type="radio" name="q" value="mejorar"><span><b>Mejorar calidad</b><small>Sube a 1080p con escalado fino, quita ruido y da nitidez. Pesa más.</small></span></label>
@@ -446,11 +524,17 @@ $("go").onclick=()=>{if(!f)return;const q=document.querySelector("input[name=q]:
  $("go").disabled=true;$("bar").style.display="block";$("fill").style.width="0";$("estado").textContent="Subiendo al montaje del PC…";
  x.upload.onprogress=e=>{if(e.lengthComputable)$("fill").style.width=(e.loaded/e.total*100)+"%"};
  x.upload.onload=()=>{$("estado").textContent="Comprimiendo con "+("__GPU__"==="sin GPU"?"el procesador":"la GPU")+"… (un minuto de vídeo tarda unos segundos)"};
- x.onload=()=>{$("go").disabled=false;$("bar").style.display="none";
-  if(x.status!==200){x.response.text().then(t=>{$("estado").textContent="No se pudo: "+t.slice(0,300)});return}
-  const name=f.name.replace(/\.[^.]+$/,"")+"-"+q+".mp4";const url=URL.createObjectURL(x.response);
-  $("estado").innerHTML="✓ Listo: "+mb(f.size)+" → <b>"+mb(x.response.size)+"</b>";
+ const fin=b=>{$("go").disabled=false;$("bar").style.display="none";const zip=b.type.includes("zip");
+  const name=f.name.replace(/\.[^.]+$/,"")+"-"+q+(zip?"-partes.zip":".mp4");const url=URL.createObjectURL(b);
+  $("estado").innerHTML="✓ Listo: "+mb(f.size)+" → <b>"+mb(b.size)+"</b>"+(zip?" en varias partes de menos de 30 MB: descomprime el .zip y súbelas en orden":"");
   const a=document.createElement("a");a.href=url;a.download=name;a.className="dl";a.textContent="Descargar "+name;$("estado").append(document.createElement("br"),a);a.click()};
+ x.onload=async()=>{
+  if(x.status!==200){$("go").disabled=false;$("bar").style.display="none";x.response.text().then(t=>{$("estado").textContent="No se pudo: "+t.slice(0,300)});return}
+  if(!x.response.type.includes("json"))return fin(x.response);
+  try{const {id}=JSON.parse(await x.response.text());let seq=-1,st;
+   while(true){st=await (await fetch("/trabajos/"+id+"?desde="+seq)).json();seq=st.seq;$("estado").textContent=st.paso||"Comprimiendo…";$("fill").style.width=(st.pct||0)+"%";if(st.estado==="listo"||st.estado==="error")break}
+   if(st.estado==="error")throw new Error(st.error);fin(await (await fetch("/trabajos/"+id+"/video")).blob())}
+  catch(e){$("go").disabled=false;$("bar").style.display="none";$("estado").textContent="No se pudo: "+(e.message||e)}};
  x.onerror=()=>{$("go").disabled=false;$("estado").textContent="Se cortó la conexión con el montaje del PC. ¿Sigue abierta la ventana negra?"};
  x.send(fd)};
 </script></body></html>"""

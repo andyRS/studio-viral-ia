@@ -60,6 +60,17 @@ class Tiempos(unittest.TestCase):
         fi, fo = fundidos_audio(5.0, 0.05, 4.9, True)                                   # voz pegada a los bordes: no se toca
         self.assertLessEqual(fi, 0.05); self.assertLessEqual(4.9 + 0.05, 5.0 - fo + 1e-9)
 
+    def test_plan_chat(self):
+        from compresion import plan_chat, presupuesto_kbit
+        corto = plan_chat(120)                                     # episodio de 2 min: un solo archivo, buena calidad
+        self.assertEqual(len(corto), 1); self.assertGreaterEqual(corto[0]["alto"], 720)
+        peli = plan_chat(95 * 60)                                  # película de 95 min: partes de menos de 29 MB
+        self.assertGreater(len(peli), 1)
+        self.assertAlmostEqual(sum(p["dur"] for p in peli), 95 * 60, places=1)
+        for p in peli:
+            self.assertGreaterEqual(p["video_kbps"], 300)
+            self.assertLessEqual((p["video_kbps"] + p["audio_kbps"]) * p["dur"], presupuesto_kbit(29) + 1)
+
 
 if __name__ == "__main__":
     unittest.main()

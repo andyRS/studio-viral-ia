@@ -9,6 +9,7 @@ const PC_URL = "http://127.0.0.1:8765";
 type Zona = { x: number; y: number; w: number; h: number };
 
 const CALIDADES = [
+  { id: "chat", label: "Para el chat (menos de 30 MB)", desc: "Cualquier vídeo, por largo que sea: calcula la calidad según la duración. Una película entera sale en varias partes de menos de 30 MB (en un .zip)." },
   { id: "revisar", label: "Para revisar", desc: "540p · unos 10-15 MB por minuto. Para mandarlo al chat o por WhatsApp." },
   { id: "ligero", label: "Lo más ligero", desc: "360p · si «Para revisar» aún pesa mucho." },
   { id: "redes", label: "Calidad para redes", desc: "1080p · se ve igual de bien y pesa menos que el original." },
@@ -71,7 +72,9 @@ function useTrabajo() {
         if (!v.ok) throw new Error(`no se pudo descargar (HTTP ${v.status}); está guardado 30 min en el PC`);
         blob = await v.blob();
       }
-      descargar(blob, `${file.name.replace(/\.[^.]+$/, "")}-${suffix}.mp4`);
+      const zip = blob.type.includes("zip");
+      descargar(blob, `${file.name.replace(/\.[^.]+$/, "")}-${suffix}${zip ? "-partes.zip" : ".mp4"}`);
+      if (zip) { setMsg(`✓ Listo: ${mb(file.size)} → ${mb(blob.size)} en varias partes de menos de 30 MB. Descomprime el .zip y sube las partes en orden.`); return; }
       setMsg(`✓ Listo: ${mb(file.size)} → ${mb(blob.size)}. Se descargó solo.`);
     } catch (e: any) { setMsg("No se pudo: " + (e?.message || e)); }
     finally { setBusy(false); }
@@ -100,7 +103,7 @@ function FilePick({ file, onFile, disabled }: { file: File | null; onFile: (f: F
 
 function Comprimir({ disabled }: { disabled: boolean }) {
   const [file, setFile] = useState<File | null>(null);
-  const [q, setQ] = useState("revisar");
+  const [q, setQ] = useState("chat");
   const t = useTrabajo();
   return <section id="tool-compress" className="tool-station studio-panel p-5">
     <p className="studio-eyebrow">01 / OPTIMIZAR</p><h3 className="text-lg font-semibold">Comprimir o mejorar la calidad</h3>
