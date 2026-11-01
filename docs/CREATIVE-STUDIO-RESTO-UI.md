@@ -36,6 +36,7 @@ Comprobado en navegador:
 - PC sin conectar, opciones de calidad seleccionables y procesamiento deshabilitado. No se probó procesamiento de archivos con el servicio GPU.
 - Los cinco módulos cargados a 390×844 y 320×740: ancho del documento igual al viewport útil (380 y 310 px). El tablero mantiene su desplazamiento interno. Personajes con biblia abierta también se comprobó a 320 px.
 - El inspector de fórmula recibe foco en móvil (`formula-inspector-title`). Se restableció el viewport al terminar.
+- El espacio externo de Dola tiene foco y desplazamiento vertical propios para acceder con teclado a su ayuda cuando el contenido supera el alto disponible.
 
 Capturas con registros ficticios y fórmulas iniciales del repositorio: [Personajes](previews/creative-characters.jpg), [galería](previews/creative-cast-gallery.jpg), [Fórmulas](previews/creative-formulas.jpg), [Fórmulas en móvil](previews/creative-formulas-mobile.jpg), [Producción](previews/creative-production.jpg), [Herramientas](previews/creative-tools.jpg), [Dola](previews/creative-dola.jpg).
 

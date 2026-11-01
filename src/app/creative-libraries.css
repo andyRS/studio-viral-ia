@@ -81,7 +81,7 @@
 .dola-episode-picker select { display:block; width:100%; margin-top:.6rem; }
 .dola-step { border:1px solid var(--line); background:linear-gradient(140deg,#152a35,#101e28); }
 .dola-step > p:first-child { color:#94c7d5; }
-.dola-external-canvas { min-height:0; box-shadow:0 25px 55px -30px #000; }
+.dola-external-canvas { min-height:0; overflow-y:auto; box-shadow:0 25px 55px -30px #000; }
 .dola-external-canvas > div:first-child { min-height:48px; flex-wrap:wrap; background:#122833; }
 .dola-external-canvas > p { background:#10212c; line-height:1.7; }
 .dola-external-canvas iframe { min-height:350px; }

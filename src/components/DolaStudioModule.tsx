@@ -114,7 +114,7 @@ export default function DolaStudioModule({ onNavigate }: { onNavigate?: (module:
   );
 
   const dolaPanel = (
-    <div className="dola-external-canvas flex h-full min-h-[70vh] flex-col overflow-hidden rounded-xl border border-white/10 bg-black">
+    <div role="region" aria-label="Espacio externo de Dola" tabIndex={0} className="dola-external-canvas flex h-full min-h-[70vh] flex-col overflow-hidden rounded-xl border border-white/10 bg-black">
       <div className="flex items-center gap-2 border-b border-white/10 bg-[#0d1220] px-3 py-2 text-xs">
         <span aria-hidden="true" className="h-2.5 w-2.5 rounded-full border border-cyan-200/50" />
         <span className="flex-1 truncate text-slate-300">Dola · espacio externo</span>
