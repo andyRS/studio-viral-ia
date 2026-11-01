@@ -425,7 +425,8 @@ export default function MontajePanel({ guion, title, filesOverride, style = "fru
       </div>
       {/* Montaje en vivo: el clip que está procesando el servidor, con su subtítulo, y el registro de pasos. */}
       <div className="flex flex-wrap gap-3">
-        <div className="relative h-64 w-36 shrink-0 overflow-hidden rounded-lg bg-black">
+        {/* Monitor con la forma del vídeo final: 16:9 en el proyecto horizontal, 9:16 en el vertical. */}
+        <div className={`relative shrink-0 overflow-hidden rounded-lg bg-black ${horizontal ? "aspect-video w-full max-w-md" : "h-64 w-36"}`} data-formato={horizontal ? "16:9" : "9:16"}>
           {monitorUrl ? <video key={monitorUrl} src={monitorUrl} autoPlay muted loop playsInline className="h-full w-full object-cover" />
             : <div className="flex h-full items-center justify-center p-2 text-center text-[11px] text-slate-500">{live?.estado === "en cola" ? "En cola…" : "Preparando…"}</div>}
           {monitorClip >= 0 && <span className="absolute left-1 top-1 rounded bg-black/70 px-1.5 text-[10px] font-bold text-amber-300">CLIP {monitorClip + 1}/{files.length}</span>}
