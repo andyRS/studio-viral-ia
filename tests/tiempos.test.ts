@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { importarFiel, redirigirEpisodio } from "../src/lib/importacion";
 import { aplicarTiempos, planTiempos } from "../src/lib/tiempos";
 import { vozEnMuestras } from "../src/lib/medirAudio";
-import { refreshPrompts } from "../src/lib/production";
+import { conAspecto, refreshPrompts } from "../src/lib/production";
 import { clasificarFrase, type Fuente } from "../src/lib/fuentes";
 
 let checks = 0;
@@ -63,5 +63,16 @@ ok(JSON.stringify(nuevo.cast) === JSON.stringify(guardado.cast), "los seis perso
 const fuente: Fuente = JSON.parse(readFileSync("src/data/fuentes/daniel-10-rv1909.json", "utf8"));
 const c18 = clasificarFrase(orig.clips[17][0][1], fuente);
 ok(c18.clase === "parafrasis" && c18.refs.join() === "Daniel 10:12,Daniel 10:20", "10 · escena 18: paráfrasis de Daniel 10:12 y 10:20 (Persia/persas se reconocen)");
+
+// Formato del episodio: un episodio en 16:9 sigue en 16:9 en cualquier camino que rehaga los prompts,
+// aunque la serie figure como corta (caso real: tomas de 8 s aprobadas → prompt «vertical 9:16, 8 seconds»).
+ok(ep.aspecto === "16:9", "formato · el episodio importado guarda su formato (16:9)");
+const rehecho: any = conAspecto(refreshPrompts(aplicarTiempos(ep, [{ n: 1, toma: 8, margen: 0.8 }], "cinematografico"), "epica"), ep.aspecto);   // como hace la app: el formato del episodio
+ok(/horizontal 16:9, 8 seconds/.test(rehecho.scenes[0].animationPrompt) && !/9:16/.test(JSON.stringify(rehecho.scenes)), "formato · con tomas de 8 s aprobadas el prompt dice «horizontal 16:9, 8 seconds», nunca 9:16");
+const soloRefresh: any = refreshPrompts({ ...ep, scenes: ep.scenes.map((s: any) => ({ ...s, tomaSeg: 8 })) }, "epica");
+ok(!/9:16/.test(JSON.stringify(soloRefresh.scenes)), "formato · Actualizar prompts conserva 16:9 por sí solo (el formato es del episodio)");
+const vertical: any = refreshPrompts(conAspecto(ep, "9:16"), "epica");
+ok(vertical.aspecto === "9:16" && /vertical 9:16/.test(vertical.scenes[0].animationPrompt) && !/16:9/.test(JSON.stringify(vertical.scenes)) && !/16:9/.test(JSON.stringify(vertical.cast)), "formato · cambiar el episodio a vertical rehace escenas y fichas en 9:16");
+ok(conAspecto({ scenes: [{ imagePromptFlow: "vertical 9:16" }] }, "9:16").scenes[0].imagePromptFlow === "vertical 9:16", "formato · una serie corta no se toca");
 
 console.log(`${checks} comprobaciones de tiempos correctas.`);

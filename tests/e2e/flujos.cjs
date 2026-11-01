@@ -406,6 +406,15 @@ const ir = async (page, espacio, modulo) => {
       await page.getByRole("button", { name: "Restaurar versión anterior" }).click(); await page.waitForTimeout(1500);
       const ep5 = await page.evaluate(id => JSON.parse(localStorage.getItem("estudio-viral:episodes")).find(e => e.id === id), ep.id);
       ok(!/Blocking/.test(ep5.output.scenes[10].imagePromptFlow) && ep5.output.scenes.every((x, i) => x.line === orig.clips[i][0][1]), "Daniel: restaurar vuelve a la versión anterior");
+      // Formato del episodio: pasar a vertical y volver a 16:9; nunca queda una mezcla.
+      page.once("dialog", d => d.accept());
+      await page.getByLabel("Formato de imagen del episodio").selectOption("9:16"); await page.waitForTimeout(1500);
+      let ep6 = await page.evaluate(id => JSON.parse(localStorage.getItem("estudio-viral:episodes")).find(e => e.id === id), ep.id);
+      ok(ep6.output.aspecto === "9:16" && !/16:9/.test(JSON.stringify(ep6.output.scenes)), "Daniel: el selector pasa todo el episodio a vertical 9:16");
+      page.once("dialog", d => d.accept());
+      await page.getByLabel("Formato de imagen del episodio").selectOption("16:9"); await page.waitForTimeout(1500);
+      ep6 = await page.evaluate(id => JSON.parse(localStorage.getItem("estudio-viral:episodes")).find(e => e.id === id), ep.id);
+      ok(ep6.output.aspecto === "16:9" && !/9:16/.test(JSON.stringify(ep6.output.scenes)) && ep6.output.scenes.every((x, i) => x.line === orig.clips[i][0][1]), "Daniel: y de vuelta a horizontal 16:9, sin tocar los diálogos");
       await ctx.close(); }
   } finally {
     await b.close();

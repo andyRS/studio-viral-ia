@@ -106,8 +106,19 @@ const horizontal = (t: string) => t
   .replace(/Pantalla partida de videollamada vertical: arriba (.+?) y abajo (.+?),/g, "Pantalla partida de videollamada horizontal: a la izquierda $1 y a la derecha $2,")
   .replace(/vertical 9:16/gi, "horizontal 16:9").replace(/\b9:16\b/g, "16:9")
   .replace(/\bvertical\s+16:9/gi, "horizontal 16:9");
+// Vuelta a vertical (episodio que se cambia de 16:9 a 9:16): solo toca lo que se pasó a horizontal.
+const vertical = (t: string) => t
+  .replace(/Pantalla partida de videollamada horizontal: a la izquierda (.+?) y a la derecha (.+?),/g, "Pantalla partida de videollamada vertical: arriba $1 y abajo $2,")
+  .replace(/horizontal 16:9/g, "vertical 9:16");
 export function conAspecto<T>(v: T, aspecto: Aspecto): T {
-  if (aspecto !== "16:9") return v;
+  const objeto = (r: any) => (r && typeof r === "object" && !Array.isArray(r) && "scenes" in r);
+  if (aspecto !== "16:9") {
+    // Solo si el episodio estaba marcado en 16:9 se devuelve a vertical; lo demás (series cortas) queda igual.
+    if (!objeto(v) || (v as any).aspecto !== "16:9") return v;
+    const mapV = (x: any): any => typeof x === "string" ? vertical(x) : Array.isArray(x) ? x.map(mapV)
+      : x && typeof x === "object" ? Object.fromEntries(Object.entries(x).map(([k, y]) => [k, mapV(y)])) : x;
+    return { ...mapV(v), aspecto: "9:16" } as T;
+  }
   const map = (x: any): any => typeof x === "string" ? horizontal(x) : Array.isArray(x) ? x.map(map)
     : x && typeof x === "object" ? Object.fromEntries(Object.entries(x).map(([k, y]) => [k, map(y)])) : x;
   const r = map(v);
@@ -620,5 +631,7 @@ export function refreshPrompts(out: any, style: StyleKey) {
   // Saltos de tiempo para el montaje también en episodios guardados antes de existir las tarjetas.
   const tarjetas = scenes.map((s: any, i: number) => ({ antes: i, texto: timeJump(`${s.transition || ""} ${s.setting || ""}`) })).filter((t: any) => t.antes > 0 && t.texto);
   const guionJson = out?.guionJson ? { ...out.guionJson, ...(tarjetas.length ? { tarjetas } : {}), ...phoneMontage(scenes) } : out?.guionJson;
-  return { ...out, guionJson, scenes, editDuration: out?.tiemposMontaje?.montaje ?? out?.revisionDireccion?.montajeEstimado ?? Math.round(scenes.length * EDIT_SECONDS), prompts: scenes.map((s: any) => s.animationPrompt), dolaPrompt: scenes.length ? buildDolaPrompt(dolaScenes, cast, style, total, dolaDuration) : out?.dolaPrompt, promptsVersion: PROMPT_RULES_VERSION };
+  const res = { ...out, guionJson, scenes, editDuration: out?.tiemposMontaje?.montaje ?? out?.revisionDireccion?.montajeEstimado ?? Math.round(scenes.length * EDIT_SECONDS), prompts: scenes.map((s: any) => s.animationPrompt), dolaPrompt: scenes.length ? buildDolaPrompt(dolaScenes, cast, style, total, dolaDuration) : out?.dolaPrompt, promptsVersion: PROMPT_RULES_VERSION };
+  // El formato es del episodio: si es horizontal, los prompts nuevos salen en 16:9 en cualquier camino.
+  return out?.aspecto === "16:9" ? conAspecto(res, "16:9") : res;
 }

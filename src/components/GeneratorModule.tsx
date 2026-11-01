@@ -143,6 +143,8 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
   const [escenas, setEscenas] = useState(0);
   const nEscenas = sceneCountFor(duration, escenas);
   const aspectoSerie = (sid?: string) => aspectoDe(data.series.find((x: any) => x.id === sid)?.format);
+  // Formato de imagen del episodio: el suyo propio si lo tiene (p. ej. importado en 16:9); si no, el de la serie.
+  const aspectoEp = (ep: any, sid?: string): "16:9" | "9:16" => ep?.aspecto === "16:9" || ep?.aspecto === "9:16" ? ep.aspecto : aspectoSerie(sid);
   const [notes, setNotes, notesB] = useBorrador("generador:notas", "");
   // «Usar esta idea»: rellena la idea y deja en las notas lo que la IA debe respetar (base bíblica,
   // gancho, objeto, giro y elenco sugeridos). Las notas van a «MI PEDIDO» del prompt maestro.
@@ -369,7 +371,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
         ...llegan.filter(n => !(result.episode?.cast || []).some((c: any) => c.name.toLowerCase() === n.name.toLowerCase()))];
       if (result.episodeId) {
         const ep = data.episodes.find((e: any) => e.id === result.episodeId) as any;
-        const output = conAspecto(refreshPrompts({ ...result.episode, cast }, st), aspectoSerie(result.seriesId));
+        const output = conAspecto(refreshPrompts({ ...result.episode, cast }, st), aspectoEp(result.episode, result.seriesId));
         await update("episodes", result.episodeId, { output, versions: [...(Array.isArray(ep?.versions) ? ep.versions : []), result.episode].slice(-10) });
         setResult(r => (r ? { ...r, episode: output } : r));
       }
@@ -594,7 +596,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
         )}
       </>}
 
-      {view === "resultado" && result && <Result aspecto={aspectoSerie(result.seriesId)} onImportarPersonajes={importarPersonajes} onAdaptarGuion={adaptarEpisodio} adaptando={loading}
+      {view === "resultado" && result && <Result aspecto={aspectoEp(result.episode, result.seriesId)} onImportarPersonajes={importarPersonajes} onAdaptarGuion={adaptarEpisodio} adaptando={loading}
         episode={result.episode} episodeId={result.episodeId} seriesId={result.seriesId} part={result.part} seriesTitle={data.series.find((s: any) => s.id === result.seriesId)?.title} initialTab={openTab || focusTab}
         status={data.episodes.find((e: any) => e.id === result.episodeId)?.status}
         onFinish={async () => { if (result.episodeId && !isFinished(data.episodes.find((e: any) => e.id === result.episodeId))) await update("episodes", result.episodeId, { status: FINISHED }); }}
@@ -615,7 +617,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
           if (!result.episodeId) throw new Error("El episodio aún no está guardado");
           const firstBible = data.episodes.find((e: any) => e.seriesId === result.seriesId && e.output?.seriesBible?.style)?.output?.seriesBible;
           const st = (result.episode?.seriesBible?.style || firstBible?.style || (result.episode?.cast?.some((x: any) => x.fruit) ? "frutinovela" : "cine90")) as StyleKey;
-          const output = conAspecto(refreshPrompts(siguiente, st), aspectoSerie(result.seriesId));
+          const output = conAspecto(refreshPrompts(siguiente, st), aspectoEp(siguiente, result.seriesId));
           const ep = data.episodes.find((e: any) => e.id === result.episodeId) as any;
           await update("episodes", result.episodeId, { output, versions: [...(Array.isArray(ep?.versions) ? ep.versions : []), c.anterior || result.episode].slice(-10) });
           if (c.mapa) {
@@ -629,7 +631,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
           const r = moverEscenaCorta(result.episode, desde, hasta); if (!r || !result.episodeId) return;
           const firstBible = data.episodes.find((e: any) => e.seriesId === result.seriesId && e.output?.seriesBible?.style)?.output?.seriesBible;
           const st = (result.episode?.seriesBible?.style || firstBible?.style || (result.episode?.cast?.some((c: any) => c.fruit) ? "frutinovela" : "cine90")) as StyleKey;
-          const output = conAspecto(refreshPrompts(r.out, st), aspectoSerie(result.seriesId));
+          const output = conAspecto(refreshPrompts(r.out, st), aspectoEp(r.out, result.seriesId));
           const ep = data.episodes.find((e: any) => e.id === result.episodeId) as any;
           try {
             await update("episodes", result.episodeId, { output, versions: [...(Array.isArray(ep?.versions) ? ep.versions : []), result.episode].slice(-10) });
@@ -646,7 +648,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
           // El acento (y la forma de hablar) que se edita en Personajes manda sobre la copia del episodio.
           const masters = data.characters.filter((c: any) => c.seriesId === result.seriesId);
           const cast = (result.episode?.cast || []).map((c: any) => { const m = masters.find((x: any) => x.name.toLowerCase() === String(c.name).toLowerCase()); return m?.speechStyle ? { ...c, speechStyle: m.speechStyle } : c; });
-          const output = conAspecto(refreshPrompts({ ...result.episode, cast }, st), aspectoSerie(result.seriesId));
+          const output = conAspecto(refreshPrompts({ ...result.episode, cast }, st), aspectoEp(result.episode, result.seriesId));
           if (result.episodeId) await update("episodes", result.episodeId, { output });
           setResult({ ...result, episode: output });
           setNotice("Prompts actualizados con las reglas nuevas. El guion y los personajes no cambiaron; vuelve a enviar el lote a Flow si ya lo habías enviado.");
@@ -753,7 +755,7 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
   const productionReady = referencesReady && snapshotValid;
   const episodeStyle: string = out.seriesBible?.style || (/escribe am[eé]n/i.test(scenes.at(-1)?.line || "") ? "cristiana" : cast.some(c => c.fruit) ? "frutinovela" : "cine90");
   // Serie larga con prompts aún en vertical (creados antes del 16:9): también se ofrece actualizarlos.
-  const formatoViejo = aspecto === "16:9" && scenes.length > 0 && !/16:9/.test(String(scenes[0]?.imagePromptFlow || ""));
+  const formatoViejo = aspecto === "16:9" && scenes.some((s: any) => /9:16/.test(`${s.imagePromptFlow || ""} ${s.animationPrompt || ""}`));
   const promptsOutdated = scenes.length > 0 && (Number(out.promptsVersion || 1) < PROMPT_RULES_VERSION || formatoViejo);
   const [refreshing, setRefreshing] = useState(false);
   async function refresh() { setRefreshing(true); try { await onRefreshPrompts?.(); } finally { setRefreshing(false); } }
@@ -780,7 +782,7 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
         <h2 className="text-xl font-bold">{out.title || `Episodio ${part}`}</h2>
         {out.summary && <p className="mt-1 text-sm text-slate-400">{out.summary}</p>}
       </div>
-      <span className="flex items-center gap-3">{finished && <span className="rounded-full border border-emerald-400/40 bg-emerald-400/10 px-3 py-1 text-xs font-semibold text-emerald-200">🔒 Terminado</span>}{!finished && scenes.length > 0 && <button type="button" onClick={refresh} disabled={refreshing} title="Rehace los prompts de imagen, animación y Dola con las reglas actuales, sin IA y sin tocar el guion" className="text-xs text-slate-400 hover:text-amber-300 disabled:opacity-50">{refreshing ? "Actualizando…" : "Actualizar prompts"}</button>}{episodeId && !finished && <button type="button" onClick={onDelete} className="text-xs text-slate-400 hover:text-red-300">Eliminar episodio</button>}
+      <span className="flex items-center gap-3">{finished && <span className="rounded-full border border-emerald-400/40 bg-emerald-400/10 px-3 py-1 text-xs font-semibold text-emerald-200">🔒 Terminado</span>}{!finished && scenes.length > 0 && onCambiar && <label className="flex items-center gap-1 text-xs text-slate-300">Imagen <select aria-label="Formato de imagen del episodio" className="w-auto py-1 text-xs" value={aspecto || "9:16"} onChange={e => { const v = e.target.value; if (v !== aspecto && window.confirm(`Se rehacen todos los prompts en ${v === "16:9" ? "horizontal 16:9" : "vertical 9:16"} (sin IA; la versión actual queda en el historial). ¿Continuar?`)) void onCambiar(v === "16:9" ? { ...out, aspecto: "16:9" } : conAspecto(out, "9:16"), { anterior: out }); }}><option value="16:9">Horizontal 16:9</option><option value="9:16">Vertical 9:16</option></select></label>}{!finished && scenes.length > 0 && <button type="button" onClick={refresh} disabled={refreshing} title="Rehace los prompts de imagen, animación y Dola con las reglas actuales, sin IA y sin tocar el guion" className="text-xs text-slate-400 hover:text-amber-300 disabled:opacity-50">{refreshing ? "Actualizando…" : "Actualizar prompts"}</button>}{episodeId && !finished && <button type="button" onClick={onDelete} className="text-xs text-slate-400 hover:text-red-300">Eliminar episodio</button>}
       <button onClick={onNext} className="rounded bg-amber-500 px-4 py-2 text-sm font-bold">Crear episodio {part + 1} →</button></span>
     </div>
     <div className={`mt-4 rounded-xl border p-4 text-sm ${fromAI ? "border-emerald-400/25 bg-emerald-400/[.07] text-emerald-100" : "border-amber-400/30 bg-amber-400/[.08] text-amber-100"}`}>
