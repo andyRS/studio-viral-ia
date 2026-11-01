@@ -95,3 +95,7 @@ La implementación por etapas y sus límites se documentan en [ETAPAS-CREATIVE-S
 ## Intelligence Hub y Publish & Grow
 
 La siguiente capa se documenta en [INTELLIGENCE-PUBLISH-DESIGN.md](INTELLIGENCE-PUBLISH-DESIGN.md). Rendimiento añade lectura interactiva de barras y navegación de secciones; el laboratorio organiza transcripción, guía y estructuras guardadas. Calendario incorpora navegación semanal, filtros, agenda y formulario contextual. Cuentas ofrece directorio y perfiles por secciones. Se conservan datos y handlers anteriores, sin nuevas migraciones, conexiones ni persistencia.
+
+## Bibliotecas y acabado de Creative Studio
+
+[CREATIVE-STUDIO-RESTO-UI.md](CREATIVE-STUDIO-RESTO-UI.md) documenta la galería de Personajes, el catálogo con inspector de Fórmulas, la mesa Dola, el tablero de Producción y las estaciones de Herramientas. Comparten petróleo, cyan/hielo y dorado, foco visible, estados de carga y composición adaptable. Sus validaciones y guardados existentes se conservan.

@@ -3,6 +3,7 @@
 // Todo corre en el montaje de este PC («Montar en mi PC»): el vídeo no sale a internet y no hay límite de tamaño.
 import { useEffect, useRef, useState, type PointerEvent as RPointerEvent } from "react";
 import LogoPicker, { FRUTI, defaultLogo, logoFile, rememberLogo } from "./LogoPicker";
+import WorkspaceIntro from "./WorkspaceIntro";
 
 const PC_URL = "http://127.0.0.1:8765";
 type Zona = { x: number; y: number; w: number; h: number };
@@ -81,7 +82,7 @@ function useTrabajo() {
 function Estado({ t }: { t: ReturnType<typeof useTrabajo> }) {
   if (!t.busy && !t.msg) return null;
   return <div role="status" aria-live="polite" className="mt-3 text-xs text-slate-200">
-    {t.busy && <div className="mb-2 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-[#FF9F1C] transition-[width]" style={{ width: `${t.pct < 100 ? t.pct : 100}%` }} /></div>}
+    {t.busy && <><p className="mb-2 text-xs text-slate-300">{t.pct < 100 ? `Transferencia al PC · ${t.pct}%` : "Transferencia completada · procesando"}</p><div role="progressbar" aria-label="Transferencia del archivo al PC" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(t.pct,100)} className="mb-2 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-[#F5BC69] transition-[width]" style={{ width: `${t.pct < 100 ? t.pct : 100}%` }} /></div></>}
     {t.msg}{t.busy && t.pct >= 100 ? ` (${t.secs} s)` : ""}
   </div>;
 }
@@ -90,9 +91,9 @@ function FilePick({ file, onFile, disabled }: { file: File | null; onFile: (f: F
   const [over, setOver] = useState(false);
   return <label onDragOver={e => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)}
     onDrop={e => { e.preventDefault(); setOver(false); const f = e.dataTransfer.files?.[0]; if (f) onFile(f); }}
-    className={`flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed px-4 py-6 text-center text-sm transition ${over ? "border-[#FF9F1C] bg-[#FF9F1C]/[.07]" : "border-white/20 hover:border-white/35"}`}>
+    className={`tool-file-pick flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed px-4 py-6 text-center text-sm transition ${over ? "border-[#F5BC69] bg-[#F5BC69]/[.07]" : "border-white/20 hover:border-white/35"}`}>
     <input type="file" accept="video/*" className="sr-only" disabled={disabled} onChange={e => onFile(e.target.files?.[0] || null)} />
-    <b className="text-slate-100">{file ? file.name : "Arrastra aquí el vídeo"}</b>
+    <span className="tool-file-icon" aria-hidden="true">↥</span><b className="text-slate-100">{file ? file.name : "Arrastra aquí el vídeo"}</b>
     <span className="text-xs text-slate-400">{file ? mb(file.size) : "o haz clic para elegirlo"}</span>
   </label>;
 }
@@ -101,18 +102,18 @@ function Comprimir({ disabled }: { disabled: boolean }) {
   const [file, setFile] = useState<File | null>(null);
   const [q, setQ] = useState("revisar");
   const t = useTrabajo();
-  return <section className="studio-panel p-5">
-    <h3 className="text-lg font-semibold">Comprimir o mejorar la calidad</h3>
+  return <section id="tool-compress" className="tool-station studio-panel p-5">
+    <p className="studio-eyebrow">01 / OPTIMIZAR</p><h3 className="text-lg font-semibold">Comprimir o mejorar la calidad</h3>
     <p className="mt-1 text-sm text-slate-400">Para mandar un episodio a revisar, por WhatsApp, o subir un clip de 720p a 1080p antes de publicar.</p>
     <div className="mt-4"><FilePick file={file} onFile={setFile} disabled={t.busy} /></div>
-    <div className="mt-3 grid gap-2 sm:grid-cols-2">
-      {CALIDADES.map(c => <label key={c.id} className={`flex cursor-pointer gap-2 rounded-xl border p-3 text-sm ${q === c.id ? "border-[#598BFF] bg-[#598BFF]/10" : "border-white/10"}`}>
+    <div className="tool-quality-grid mt-3 grid gap-2 sm:grid-cols-2" role="group" aria-label="Calidad de salida">
+      {CALIDADES.map(c => <label key={c.id} className={`flex cursor-pointer gap-2 rounded-xl border p-3 text-sm ${q === c.id ? "border-[#36B8C4] bg-[#36B8C4]/10" : "border-white/10"}`}>
         <input type="radio" name="calidad" className="mt-1 w-auto" checked={q === c.id} onChange={() => setQ(c.id)} disabled={t.busy} />
         <span><b>{c.label}</b><span className="block text-xs text-slate-400">{c.desc}</span></span>
       </label>)}
     </div>
     <button type="button" disabled={disabled || !file || t.busy} onClick={() => { const fd = new FormData(); fd.append("video", file!); t.run(`/comprimir?calidad=${q}`, fd, file!, q); }}
-      className="mt-4 w-full rounded-xl bg-[#FF9F1C] px-4 py-2.5 text-sm font-bold text-[#090D16] disabled:opacity-50">{t.busy ? "Procesando…" : q === "mejorar" ? "Mejorar calidad" : "Comprimir"}</button>
+      className="mt-4 w-full rounded-xl bg-[#F5BC69] px-4 py-2.5 text-sm font-bold text-[#090D16] disabled:opacity-50">{t.busy ? "Procesando…" : q === "mejorar" ? "Mejorar calidad" : "Comprimir"}</button>
     <Estado t={t} />
   </section>;
 }
@@ -146,8 +147,8 @@ function QuitarMarca({ disabled }: { disabled: boolean }) {
   const norm = (a: { x: number; y: number }, b: { x: number; y: number }): Zona => ({ x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y) });
   const pct = (z: Zona) => ({ left: `${(z.x / dim!.w) * 100}%`, top: `${(z.y / dim!.h) * 100}%`, width: `${(z.w / dim!.w) * 100}%`, height: `${(z.h / dim!.h) * 100}%` });
 
-  return <section className="studio-panel p-5">
-    <h3 className="text-lg font-semibold">Quitar marca de agua</h3>
+  return <section id="tool-watermark" className="tool-station studio-panel p-5">
+    <p className="studio-eyebrow">02 / RETOCAR</p><h3 className="text-lg font-semibold">Quitar marca de agua</h3>
     <p className="mt-1 text-sm text-slate-400">Elige el vídeo, pausa donde se vea el logo y dibuja un recuadro encima (puedes marcar varios). El vídeo sale completo, con la misma calidad y el mismo audio.</p>
     <div className="mt-4"><FilePick file={file} onFile={setFile} disabled={t.busy} /></div>
     {url && <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,320px)_1fr]">
@@ -159,7 +160,7 @@ function QuitarMarca({ disabled }: { disabled: boolean }) {
           onPointerUp={e => { if (start.current) { const z = norm(start.current, punto(e)); start.current = null; setDraft(null); if (z.w > 6 && z.h > 6) setZonas(zs => [...zs, z].slice(0, 6)); } }}>
           <video ref={vref} src={url} className="pointer-events-none h-full w-full object-contain" muted playsInline preload="metadata"
             onLoadedMetadata={e => { const v = e.currentTarget; setDim({ w: v.videoWidth, h: v.videoHeight }); setDur(v.duration || 0); const p = Math.min(1, (v.duration || 0) / 2); setPos(p); v.currentTime = p; }} />
-          {dim && zonas.map((z, i) => <div key={i} className="pointer-events-none absolute border-2 border-[#FF9F1C] bg-[#FF9F1C]/20" style={pct(z)} />)}
+          {dim && zonas.map((z, i) => <div key={i} className="pointer-events-none absolute border-2 border-[#F5BC69] bg-[#F5BC69]/20" style={pct(z)} />)}
           {dim && draft && <div className="pointer-events-none absolute border-2 border-dashed border-white bg-white/10" style={pct(draft)} />}
         </div>
         {dur > 0 && <label className="mx-auto mt-2 block max-w-[320px] text-[11px] text-slate-400">Buscar el momento del logo: {pos.toFixed(1)} s
@@ -170,7 +171,7 @@ function QuitarMarca({ disabled }: { disabled: boolean }) {
         <p className="text-sm text-slate-300">{zonas.length ? `${zonas.length} ${zonas.length === 1 ? "zona marcada" : "zonas marcadas"}` : "Dibuja un recuadro sobre el logo arrastrando encima del vídeo."}
           {zonas.length > 0 && <button type="button" onClick={() => setZonas([])} disabled={t.busy} className="ml-2 text-xs text-slate-400 underline hover:text-rose-300">Borrar zonas</button>}</p>
         <div className="grid gap-2">
-          {METODOS.map(m => <label key={m.id} className={`flex cursor-pointer gap-2 rounded-xl border p-3 text-sm ${metodo === m.id ? "border-[#598BFF] bg-[#598BFF]/10" : "border-white/10"}`}>
+          {METODOS.map(m => <label key={m.id} className={`flex cursor-pointer gap-2 rounded-xl border p-3 text-sm ${metodo === m.id ? "border-[#36B8C4] bg-[#36B8C4]/10" : "border-white/10"}`}>
             <input type="radio" name="metodo" className="mt-1 w-auto" checked={metodo === m.id} onChange={() => setMetodo(m.id)} disabled={t.busy} />
             <span><b>{m.label}</b><span className="block text-xs text-slate-400">{m.desc}</span></span>
           </label>)}
@@ -178,7 +179,7 @@ function QuitarMarca({ disabled }: { disabled: boolean }) {
         {metodo === "tapar" && <div className="rounded-xl border border-white/10 p-3"><p className="mb-2 text-xs font-semibold text-slate-300">Logo que tapa la marca</p><LogoPicker value={logo} onChange={id => { setLogo(id); rememberLogo("herramientas", id); }} disabled={t.busy} /></div>}
         <button type="button" disabled={disabled || !zonas.length || t.busy}
           onClick={async () => { const fd = new FormData(); fd.append("video", file!); fd.append("zonas", JSON.stringify(zonas.map(z => ({ x: Math.round(z.x), y: Math.round(z.y), w: Math.round(z.w), h: Math.round(z.h) })))); fd.append("metodo", metodo); const lf = metodo === "tapar" ? await logoFile(logo) : null; if (lf) fd.append("logo", lf); t.run("/quitar-marca", fd, file!, "sin-marca"); }}
-          className="w-full rounded-xl bg-[#FF9F1C] px-4 py-2.5 text-sm font-bold text-[#090D16] disabled:opacity-50">{t.busy ? "Procesando…" : "Quitar marca"}</button>
+          className="w-full rounded-xl bg-[#F5BC69] px-4 py-2.5 text-sm font-bold text-[#090D16] disabled:opacity-50">{t.busy ? "Procesando…" : "Quitar marca"}</button>
         <Estado t={t} />
       </div>
     </div>}
@@ -194,11 +195,14 @@ export default function ToolsModule() {
   }
   useEffect(() => { check(); }, []);
   const ready = !!caps?.comprimir && !!caps?.quitar_marca && !!caps?.logo_propio && !!caps?.borrar_ia;
-  return <div className="space-y-5">
-    <section className="studio-panel p-5">
+  return <section className="growth-workspace creative-library tools-studio space-y-6">
+    <WorkspaceIntro eyebrow="Creative Studio / Acabado local" title="El último detalle también cuenta." description="Prepara el peso, la calidad y el acabado de tus clips con las herramientas del montaje local." index="01 / HERRAMIENTAS">
+      <a href="#tool-compress" className="studio-primary-action">Preparar un vídeo ↘</a><p className="growth-source">Procesamiento con el montaje de tu PC</p>
+    </WorkspaceIntro>
+    <section className="tool-connection studio-panel p-5" aria-label="Estado del montaje del PC">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-xl font-semibold">Herramientas del PC</h2>
+          <p className="studio-eyebrow">ESTACIÓN DE TRABAJO</p><h3 className="mt-2 text-lg font-semibold">Tu PC, en la mesa de acabado.</h3>
           <p className="mt-1 text-sm text-slate-400">Usan el montaje de tu PC y su tarjeta gráfica: el vídeo no sale a internet y no hay límite de tamaño.</p>
         </div>
         <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${ready ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300" : "border-amber-400/30 bg-amber-400/10 text-amber-200"}`}>
@@ -211,7 +215,8 @@ export default function ToolsModule() {
         <button type="button" onClick={check} className="ml-2 font-semibold underline">Volver a comprobar</button>
       </div>}
     </section>
+    <nav className="creative-jump-nav" aria-label="Herramientas de acabado"><a href="#tool-compress"><span>01</span><div><strong>Comprimir y mejorar</strong><small>Calidad y peso del archivo</small></div><b aria-hidden="true">↗</b></a><a href="#tool-watermark"><span>02</span><div><strong>Retocar una marca</strong><small>Selección de zonas y método</small></div><b aria-hidden="true">↗</b></a></nav>
     <Comprimir disabled={!ready} />
     <QuitarMarca disabled={!ready} />
-  </div>;
+  </section>;
 }

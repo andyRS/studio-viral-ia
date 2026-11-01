@@ -86,7 +86,7 @@ function ModuleView({ id, focus, onOpenEpisode, onNavigate, onCreate, onEpisode 
     case "calendario": return <CalendarModule focusEntryId={focus?.kind === "Publicación programada" ? focus.id : undefined} />;
     case "metricas": return <MetricsModule focusMetricId={focus?.kind === "Publicación medida" ? focus.id : undefined} />;
     case "virales": return <ViralAnalyzerModule />;
-    case "dola": return <DolaStudioModule />;
+    case "dola": return <DolaStudioModule onNavigate={onNavigate} />;
     case "herramientas": return <ToolsModule />;
     default: return <DropshippingModule />;
   }
