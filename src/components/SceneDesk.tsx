@@ -184,14 +184,14 @@ export default function SceneDesk({ episodeId, scenes, guion, title, referencesR
   return <div className="review-studio space-y-4">
     <header className="review-studio-heading"><div><p className="studio-eyebrow cinematic-gold">SALA DE REVISIÓN / MONTAJE</p><h3>Cada plano cuenta.</h3><p>Revisa la continuidad, aprueba las tomas y prepara tu entrega.</p></div><div className="review-stats"><span><strong>{approved}/{scenes.length}</strong> aprobadas</span><span><strong>{ordered.length}/{scenes.length}</strong> clips en sesión</span></div></header>
     {/* Subir todo de una vez: abierto mientras el episodio no tiene archivos; se puede soltar sobre la barra aunque esté cerrada. */}
-    <details className="review-import" open={!ordered.length && !Object.keys(images).length ? true : undefined}><summary onDragOver={e => { e.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={e => { e.preventDefault(); setDragging(false); assignAll(e.dataTransfer.files); }}><span>Archivos del episodio</span><span>{Object.keys(images).length} imágenes · {ordered.length} clips</span><strong>{ordered.length ? "Subir y organizar ＋" : "Subir todos los clips ＋"}</strong></summary>
+    <details className="review-import" data-dragging={dragging} open={!ordered.length && !Object.keys(images).length ? true : undefined}><summary onDragOver={e => { e.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={e => { e.preventDefault(); setDragging(false); assignAll(e.dataTransfer.files); }}><span>Archivos del episodio<small>Puedes soltar archivos sobre esta barra</small></span><span>{Object.keys(images).length} imágenes · {ordered.length} clips</span><strong>{ordered.length ? "Subir y organizar ＋" : "Subir todos los clips ＋"}</strong></summary>
     <div className="rounded-2xl border border-white/10 bg-[#151C2B] p-4">
       <div className="flex flex-wrap items-center gap-3"><div><h3 className="font-bold text-white">Mesa de escenas</h3><p className="mt-1 text-xs text-slate-300">{approved}/{scenes.length} aprobadas · {ordered.length}/{scenes.length} clips en esta sesión</p></div><span className="ml-auto rounded-full bg-white/10 px-3 py-1 text-xs text-slate-200">s01 → s{String(scenes.length).padStart(2, "0")}</span></div>
       <label onDragOver={e => { e.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={e => { e.preventDefault(); setDragging(false); assignAll(e.dataTransfer.files); }}
         className={`mt-3 flex cursor-pointer flex-col items-center gap-1 rounded-xl border-2 border-dashed px-4 py-5 text-center ${dragging ? "border-amber-300 bg-amber-400/15" : "border-amber-400/40 bg-amber-400/[.06]"}`}>
         <b className="text-sm text-amber-100">Subir todo de una vez</b>
         <span className="text-xs text-slate-300">Arrastra aquí los clips y las imágenes del episodio (o haz clic). Cada uno va a su escena por el número del nombre: s01, 001, [003], escena 4, 05_manzanita…</span>
-        <input className="sr-only" type="file" accept="video/*,image/*" multiple onChange={e => { assignAll(e.target.files); e.target.value = ""; }} />
+        <input className="sr-only" type="file" aria-label="Subir clips e imágenes del episodio" accept="video/*,image/*" multiple onChange={e => { assignAll(e.target.files); e.target.value = ""; }} />
       </label>
       {guardados && <p className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-slate-400" role="status">
         {guardados.recuperados > 0 && <b className="text-emerald-300">Recuperados {guardados.recuperados} archivo(s) que subiste antes.</b>}
@@ -214,7 +214,7 @@ export default function SceneDesk({ episodeId, scenes, guion, title, referencesR
           <button type="button" onClick={() => setUnplaced(prev => prev.filter((_, k) => k !== i))} className="text-slate-400 hover:text-red-300">Descartar</button>
         </div>)}
       </div>}
-      <p className="mt-2 text-xs text-slate-400">La revisión se guarda en tu cuenta; los archivos de vídeo se mantienen en esta sesión y tendrás que subirlos de nuevo si cierras la página.</p>
+      <p className="mt-2 text-xs text-slate-400">La revisión y los archivos tienen guardados distintos. Los avisos de esta mesa indican qué archivos conserva este navegador.</p>
       {!referencesReady && <p className="mt-2 text-xs font-semibold text-amber-200">Aprueba primero todas las fichas maestras del elenco.</p>}
       {message && <p role="status" className="mt-2 text-xs text-amber-200">{message}</p>}
     </div></details>
