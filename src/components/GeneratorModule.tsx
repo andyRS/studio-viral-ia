@@ -26,7 +26,7 @@ import type { StoryIdea } from "@/lib/ideas";
 import SceneDesk from "./SceneDesk";
 import StoryArchitect from "./StoryArchitect";
 import { EPIC_NOTICE, STYLES, type StyleKey } from "@/lib/knowledge";
-import { adaptarPersonajesLocal, escenasDelGuion, templateSeries, templateNext } from "@/lib/story";
+import { adaptarPersonajesLocal, capituloDeJson, escenasDelGuion, importarCapitulo, templateSeries, templateNext } from "@/lib/story";
 import { isGenericName } from "@/lib/cast";
 import { aspectoDe, buildFlowBatch, conAspecto, escenasEnTexto, MAX_SCENES, MIN_SCENES, refreshPrompts, PROMPT_RULES_VERSION, sceneCountFor } from "@/lib/production";
 import { seriesSignals } from "@/lib/seriesSignals";
@@ -156,6 +156,9 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
   const [kind, setKind] = useState<TipoPedido>("nueva");
   // «Adaptar guion»: el texto completo de un guion escrito en otra IA (pegado o subido).
   const [guionOtro, setGuionOtro, guionOtroB] = useBorrador("generador:guion-externo", "");
+  const [personajesOtro, setPersonajesOtro, personajesOtroB] = useBorrador("generador:personajes-externos", "");
+  // Capítulo con la estructura del estudio (capitulo.json): se importa tal cual, sin IA.
+  const capitulo = useMemo(() => kind === "adaptar" ? capituloDeJson(guionOtro) : null, [kind, guionOtro]);
   const [replica, setReplica] = useBorrador("generador:replica", "");
   // Continuar
   const [seriesId, setSeriesId] = useState("");
@@ -241,7 +244,8 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
   async function createStory(override?: { idea: string; notes: string }) {
     const idea_ = override?.idea ?? idea, notes_ = override?.notes ?? notes, kind_ = override ? "nueva" : kind;
     if (!canal) { setNotice("Elige primero el canal de la serie (red y cuenta): cada serie nace anclada a un canal."); return; }
-    if (!styleChosen && !override) { setNotice("Elige primero el estilo de la historia."); return; }
+    const estiloCapitulo = kind_ === "adaptar" ? (capitulo?.episodio?.seriesBible?.style || capitulo?.serie?.style) : "";
+    if (!styleChosen && !override && !estiloCapitulo) { setNotice("Elige primero el estilo de la historia."); return; }
     if (kind_ === "adaptar" && !guionOtro.trim()) { setNotice("Pega o sube el guion que escribió la otra IA."); return; }
     if (kind_ !== "adaptar" && !idea_.trim() && !(kind_ === "replica" && replica.trim())) { setNotice(kind === "replica" ? "Describe el viral que quieres replicar." : "Escribe la idea de la historia o elige una de las sugerencias."); return; }
     setLoading(true); setNotice(""); setAuthError(false);
@@ -251,14 +255,16 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
         const ep = data.episodes.find((e: any) => e.seriesId === x.id);
         return [x.title, ep?.output?.bible?.story].filter(Boolean).join(" = ");
       });
-      const body = { idea: idea_, style, duration, scenes: kind_ === "adaptar" && !escenas ? sceneCountFor(duration, escenasDelGuion(guionOtro) || 0) : nEscenas, formato, account, notes: notes_, learnings, chosenHook, replica: kind_ === "replica" ? replica : "", guionExterno: kind_ === "adaptar" ? guionOtro : "", accountProfile: profileFor(account?.id), usadas };
-      const res = await call("/api/series", body, () => templateSeries(body)); if (!res) return;
+      const body = { idea: idea_, style: styleChosen ? style : (estiloCapitulo || style), personajesExternos: kind_ === "adaptar" ? personajesOtro : "", duration, scenes: kind_ === "adaptar" && !escenas ? sceneCountFor(duration, escenasDelGuion(guionOtro) || 0) : nEscenas, formato, account, notes: notes_, learnings, chosenHook, replica: kind_ === "replica" ? replica : "", guionExterno: kind_ === "adaptar" ? guionOtro : "", accountProfile: profileFor(account?.id), usadas };
+      const res = kind_ === "adaptar" && capitulo
+        ? (() => { const d = importarCapitulo(body); return { data: d, note: d.notice }; })()
+        : await call("/api/series", body, () => templateSeries(body)); if (!res) return;
       const d = res.data;
       // Lo generado se aparta antes de guardar: si un guardado falla a mitad, se reanuda sin volver a generar.
       const p: CreacionPendiente = {
         id: `${Date.now()}`, at: new Date().toISOString(), titulo: d.series?.title || idea_.slice(0, 60),
-        serie: { title: d.series?.title || idea_.slice(0, 60), description: d.series?.logline || idea_, accountId: canal.id, format: formato, clipAccountIds: clipIds, style },
-        personajes: d.characters || [], episodio: { ep: d.episode, bible: { style, logline: d.series?.logline, world: d.series?.world, tone: d.series?.tone } }, hecho: { personajes: [] },
+        serie: { title: d.series?.title || idea_.slice(0, 60), description: d.series?.logline || idea_, accountId: canal.id, format: formato, clipAccountIds: clipIds, style: d.series?.style || style },
+        personajes: d.characters || [], episodio: { ep: d.episode, bible: { style: d.series?.style || style, logline: d.series?.logline, world: d.series?.world, tone: d.series?.tone } }, hecho: { personajes: [] },
       };
       apartar(p, userId);
       await terminarCreacion(p, res.note);
@@ -280,7 +286,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
         },
         guardarEpisodio: (sid, ep, bible) => saveEpisode(sid, 1, ep, bible),
       }, q => apartar(q, userId));
-      borrarPendiente(userId); setPendiente(null); ideaB.limpiar(); notesB.limpiar(); guionOtroB.limpiar();
+      borrarPendiente(userId); setPendiente(null); ideaB.limpiar(); notesB.limpiar(); guionOtroB.limpiar(); personajesOtroB.limpiar();
       setSeriesId(r.seriesId); setResult({ episode: r.output, episodeId: r.episodeId, seriesId: r.seriesId, part: 1 }); setView("resultado"); setNotice(nota); setChosenHook(null);
     } catch (error: any) {
       setPendiente(leerPendiente(userId));
@@ -430,8 +436,9 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
           <div>
             {kind === "replica" && <div className="mb-3"><label htmlFor="generator-replica" className="field-label block">Describe el viral</label>
               <textarea id="generator-replica" className="aurora-field" value={replica} onChange={e => setReplica(e.target.value)} placeholder="Qué pasa en el vídeo, su gancho, quién humilla a quién, qué objeto revela el giro… Se copia la estructura y la emoción, nunca los personajes ni el texto." /></div>}
-            {kind === "adaptar" && <div className="mb-3"><SubirGuion id="generator-guion-externo" valor={guionOtro} onValor={setGuionOtro} />
-              <p className="mt-1 text-xs text-slate-400">La IA conserva la historia, los personajes y el sentido de los diálogos, y lo pasa al formato de la app: {!escenas && escenasDelGuion(guionOtro) ? `las ${sceneCountFor(duration, escenasDelGuion(guionOtro) || 0)} escenas del guion` : `${nEscenas} escenas`}, fichas de personajes y prompts{formato === "largo" ? " en 16:9" : ""}. La idea de abajo es opcional (para indicar ajustes).</p></div>}
+            <CapituloDeOtraIA activo={kind === "adaptar"} onActivar={() => setKind("adaptar")} onQuitar={() => { setKind("nueva"); setGuionOtro(""); setPersonajesOtro(""); }}
+              capitulo={guionOtro} onCapitulo={setGuionOtro} personajes={personajesOtro} onPersonajes={setPersonajesOtro}
+              resumen={capitulo ? `Estructura del estudio detectada: ${capitulo.episodio.scenes.length} escenas. Se importa tal cual, sin gastar IA${capitulo.episodio?.seriesBible?.style ? "" : " (elige el estilo)"}.` : guionOtro.trim() ? `Formato de otra IA: se adaptará con IA a ${!escenas && escenasDelGuion(guionOtro) ? `las ${sceneCountFor(duration, escenasDelGuion(guionOtro) || 0)} escenas del guion` : `${nEscenas} escenas`}${formato === "largo" ? " en 16:9" : ""}.` : ""} />
             {/* Compositor Aurora: la idea, el tipo de pedido (real) y el estado de la generación (real). */}
             <div className={`aurora-border p-3 ${loading ? "creation-energy" : ""}`} data-estado={loading ? "generando" : /^(No se pudo|La historia «)/.test(notice) || authError ? "error" : undefined} data-spotlight="creacion">
               <label htmlFor="generator-idea" className="field-label block">{kind === "replica" ? "Idea para adaptarlo a RD" : kind === "adaptar" ? "Ajustes para la adaptación (opcional)" : "Idea de la historia"}</label>
@@ -890,7 +897,10 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
           {cast.length > 0 && <DownloadText text={episodeMarkdown(out, seriesTitle, part)} filename={`produccion-ep${part}.md`} label="Descargar producción completa (.md)" />}
           {scenes.length > 0 && <DownloadText text={lote.full} filename={`lote-flow-ep${part}.txt`} label="Descargar escenas para Flow (.txt)" />}
           <DownloadJson data={out.platformAdaptations || []} filename="adaptaciones-plataformas.json" />
+          <DownloadJson data={capituloParaExportar(out, seriesTitle, cast, master)} filename={`capitulo-ep${part}.json`} />
+          {cast.length > 0 && <DownloadJson data={{ formato: "estudio-viral/personajes", personajes: personajesParaExportar(cast, master) }} filename="personajes.json" />}
         </div>
+        <p className="text-xs text-slate-500">capitulo.json y personajes.json tienen la estructura del estudio: sirven de plantilla para pedir capítulos a otra IA y se suben en «Nueva historia → Subir capítulo de otra IA» sin gastar IA.</p>
         <p className="text-xs text-slate-500">guion.json es el archivo para el montaje con subtitular.py. El .md trae la ficha del episodio, el guion por escenas, las 3 fases y el paquete de redes.</p>
       </div>}
       {tab === "mesa" && productionReady && <SceneDesk key={episodeId} onDownloaded={onFinish} publish={pack} cover={{ serie: seriesTitle, frase: (out.cover?.lines || out.guionJson?.gancho || []).slice(0, 2), parte: part }} music={{ series: seriesTitle, logline: out.seriesBible?.logline, episodeTitle: out.title, summary: out.summary, closing: cliffhangerOf(out) }} recap={recap} episodeId={episodeId} scenes={scenes} guion={out.guionJson || {}} title={`${seriesTitle || "serie"} ${part}`} referencesReady={referencesReady} referenceSignature={referenceSignature} style={episodeStyle} part={part} />}
@@ -1242,4 +1252,29 @@ function ImportarPersonajes({ onImportar, ocupado }: { onImportar: (t: string) =
       <button type="button" disabled={ocupado} onClick={() => { void enviar(); }} className="rounded-lg bg-cyan-400 px-4 py-2 text-sm font-bold text-slate-950 disabled:opacity-60">{ocupado ? "Adaptando…" : "✦ Adaptar personajes"}</button>
     </div>
   </details>;
+}
+
+// «Nueva historia» → capítulo (y personajes canónicos) hechos en otra IA, en JSON o texto.
+function CapituloDeOtraIA({ activo, onActivar, onQuitar, capitulo, onCapitulo, personajes, onPersonajes, resumen }: { activo: boolean; onActivar: () => void; onQuitar: () => void; capitulo: string; onCapitulo: (v: string) => void; personajes: string; onPersonajes: (v: string) => void; resumen: string }) {
+  if (!activo) return <div className="mb-3 flex flex-wrap items-center gap-3 rounded-xl border border-cyan-300/25 bg-cyan-300/[.05] p-3">
+    <span className="flex-1 min-w-[220px] text-sm text-slate-200"><b className="text-cyan-100">¿Ya tienes el capítulo hecho en otra IA?</b> Súbelo en JSON (o texto) con sus personajes canónicos y se crea la historia desde ahí.</span>
+    <button type="button" onClick={onActivar} className="rounded-lg border border-cyan-300/50 px-3 py-2 text-sm font-semibold text-cyan-100 hover:bg-cyan-300/10">📄 Subir capítulo de otra IA</button>
+  </div>;
+  return <div className="mb-3 space-y-3 rounded-xl border border-cyan-300/30 bg-cyan-300/[.04] p-3">
+    <div className="flex items-center gap-2"><b className="text-sm text-cyan-100">Capítulo de otra IA</b><button type="button" onClick={onQuitar} className="ml-auto text-xs text-slate-400 hover:text-white">Quitar y volver a Historia nueva</button></div>
+    <SubirGuion id="generator-guion-externo" etiqueta="Capítulo (JSON o texto)" valor={capitulo} onValor={onCapitulo} ayuda="Sube el capitulo.json (estructura del estudio) o el guion de otra IA en JSON o texto." />
+    <SubirGuion id="generator-personajes-externos" etiqueta="Personajes canónicos (JSON o texto, opcional)" valor={personajes} onValor={onPersonajes} ayuda="Sube personajes.json o pega las fichas (nombre, apariencia, ropa, voz…). Si no, se toman del capítulo." />
+    {resumen && <p role="status" className="text-xs text-cyan-100">{resumen}</p>}
+    <p className="text-xs text-slate-400">Luego pulsa «Crear serie y episodio 1». La idea de abajo es opcional (ajustes para la adaptación).</p>
+  </div>;
+}
+
+// Exportar con la estructura del estudio (se vuelve a importar tal cual en «Subir capítulo de otra IA»).
+const CAMPOS_PERSONAJE = ["name", "role", "fruit", "fruitEmoji", "headES", "visualES", "visualEN", "clothing", "voice", "speechStyle", "subtitleColor", "pronunciations", "flowPrompt"];
+function personajesParaExportar(cast: any[], master: any[]) {
+  return cast.map((c: any, i: number) => { const m = { ...c, ...(master[i] || {}) }; return Object.fromEntries(CAMPOS_PERSONAJE.filter(k => m[k] !== undefined && m[k] !== "").map(k => [k, m[k]])); });
+}
+function capituloParaExportar(out: any, seriesTitle: string, cast: any[], master: any[]) {
+  const { referenceVersions: _r, versions: _v, ...episodio } = out || {};
+  return { formato: "estudio-viral/capitulo", series: { title: seriesTitle, style: out?.seriesBible?.style }, episode: { ...episodio, cast: personajesParaExportar(cast || [], master || []) }, characters: personajesParaExportar(cast || [], master || []) };
 }

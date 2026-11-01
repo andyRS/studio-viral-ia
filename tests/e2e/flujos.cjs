@@ -313,7 +313,7 @@ const ir = async (page, espacio, modulo) => {
       await page.getByRole("button", { name: /Épica/ }).first().click();
       await page.getByRole("button", { name: /Historia nueva/ }).first().click();
       await page.getByRole("menuitemradio", { name: /Adaptar guion de otra IA/ }).click();
-      await page.getByLabel("Subir archivo: Guion de otra IA").setInputFiles({ name: "guion.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify({ escenas: [{ dialogos: [{ personaje: "Daniel", texto: "Hola" }] }] })) });
+      await page.getByLabel("Subir archivo: Capítulo (JSON o texto)").setInputFiles({ name: "guion.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify({ escenas: [{ dialogos: [{ personaje: "Daniel", texto: "Hola" }] }] })) });
       await page.waitForTimeout(300);
       ok((await page.locator("#generator-guion-externo").inputValue()).includes("\"personaje\": \"Daniel\"") && await page.getByText(/Cargado «guion.json»/).count() === 1, "se puede subir el guion en JSON");
       await page.locator("#generator-guion-externo").fill("ESCENA 1 — EXT. RÍO\nDANIEL: Señor, ¿por qué callas?\nMENSAJERO: Fui enviado desde el primer día.\nMIGUEL: Yo pelearé contra Persia.\nNarrador: La guerra apenas comienza.");
@@ -331,6 +331,27 @@ const ir = async (page, espacio, modulo) => {
       const pjs = await page.evaluate(() => JSON.parse(localStorage.getItem("estudio-viral:characters") || "[]"));
       const dan = pjs.find(c => c.name.toUpperCase() === "DANIEL"), gab = pjs.find(c => c.name === "Gabriel");
       ok(!!dan && /barba blanca/.test(dan.visualES) && /lino gris/.test(dan.clothing) && !!gab && /16:9/.test(gab.flowPrompt || ""), "importar personajes de otra IA actualiza los existentes y añade los nuevos (fichas 16:9)");
+      await ctx.close(); }
+    // 13. Nueva historia desde capitulo.json + personajes.json (estructura del estudio): se importa sin IA.
+    { const { ctx, page } = await abrir(b);
+      await ir(page, "Creative Studio", "Generador");
+      await page.getByRole("button", { name: /Crear$/ }).first().click(); await page.waitForTimeout(900);
+      await page.getByLabel("Canal de la serie").selectOption({ label: "＋ Conectar una cuenta nueva…" }); await page.waitForTimeout(300);
+      await page.locator("#nueva-cuenta-nombre").fill("Canal Importar");
+      await page.getByRole("button", { name: "Conectar y usar esta cuenta" }).click(); await page.waitForTimeout(600);
+      await page.getByRole("button", { name: /Subir capítulo de otra IA/ }).click();
+      const escenas = ["¿Por qué callas, Señor?", "Fui enviado desde el primer día.", "El príncipe de Persia me resistió.", "Miguel vino a ayudarme."].map((line, i) => ({ n: i + 1, speaker: i % 2 ? "Gabriel" : "Daniel", line, setting: "orilla del río Tigris", emotion: "fe" }));
+      escenas.push({ n: 5, speaker: "Narrador", line: "Desde el primer día, Dios escuchó.", setting: "río al amanecer", emotion: "esperanza" });
+      await page.getByLabel("Subir archivo: Capítulo (JSON o texto)").setInputFiles({ name: "capitulo.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify({ formato: "estudio-viral/capitulo", series: { title: "Daniel importado", style: "epica" }, episode: { title: "Los 21 días", seriesBible: { style: "epica" }, scenes: escenas } })) });
+      await page.getByLabel("Subir archivo: Personajes canónicos (JSON o texto, opcional)").setInputFiles({ name: "personajes.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify({ personajes: [{ name: "Daniel", visualES: "anciano de barba blanca", clothing: "túnica gris" }, { name: "Gabriel", visualES: "ángel alto", clothing: "túnica blanca" }] })) });
+      await page.waitForTimeout(300);
+      ok(await page.getByText(/Estructura del estudio detectada: 5 escenas/).count() === 1, "se detecta el capitulo.json del estudio");
+      await page.getByRole("button", { name: /Crear serie y episodio 1/ }).click(); await page.waitForTimeout(2500);
+      const ser = await page.evaluate(() => JSON.parse(localStorage.getItem("estudio-viral:series") || "[]").find(x => x.title === "Daniel importado"));
+      const ep = ser && await page.evaluate(id => JSON.parse(localStorage.getItem("estudio-viral:episodes") || "[]").find(e => e.seriesId === id), ser.id);
+      const pjs = ser && await page.evaluate(id => JSON.parse(localStorage.getItem("estudio-viral:characters") || "[]").filter(c => c.seriesId === id), ser.id);
+      ok(!!ep && ep.output.scenes.map(x => x.line).join("|") === escenas.map(x => x.line).join("|") && ser.style === "epica", "el capítulo se importa tal cual (mismos diálogos, estilo del archivo)");
+      ok(!!pjs && pjs.length === 2 && /barba blanca/.test(pjs.find(c => c.name === "Daniel")?.visualES || ""), "los personajes canónicos se crean desde personajes.json");
       await ctx.close(); }
   } finally {
     await b.close();

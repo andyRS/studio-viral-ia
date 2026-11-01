@@ -1,7 +1,7 @@
 // Generador: cantidad de escenas elegida y formato 16:9 de las series largas. npm test
 import assert from "node:assert/strict";
 import { buildProduction, escenasEnTexto, sceneCountFor, MAX_SCENES, NARRATOR } from "../src/lib/production";
-import { adaptarPersonajesLocal, personajesSinIA, escenasDelGuion, escenasDeJson, guionExternoSinIA, templateSeries, templateNext } from "../src/lib/story";
+import { capituloDeJson, importarCapitulo, adaptarPersonajesLocal, personajesSinIA, escenasDelGuion, escenasDeJson, guionExternoSinIA, templateSeries, templateNext } from "../src/lib/story";
 let checks = 0;
 const ok = (c: boolean, m: string) => { assert.ok(c, m); checks++; console.log(`ok · ${m}`); };
 
@@ -59,4 +59,13 @@ const pj3 = personajesSinIA("DANIEL: anciano de barba blanca y túnica gris\nMIG
 ok(pj3.map(p => p.name).join() === "DANIEL,MIGUEL", "personajes en líneas «NOMBRE: descripción»");
 const pjL = adaptarPersonajesLocal({ texto: "DANIEL: anciano de barba blanca\nMIGUEL: arcángel de armadura dorada", style: "epica", formato: "largo" });
 ok(pjL.characters.length === 2 && pjL.characters.every((c: any) => /16:9/.test(c.flowPrompt) && /barba blanca|armadura/.test(c.visualES)), "sin IA, las fichas se adaptan al elenco con prompt 16:9");
+// capitulo.json con la estructura del estudio: se importa tal cual, sin IA.
+const base = templateSeries({ idea: "Daniel ora 21 días", style: "epica", duration: 88 });
+const capJson = JSON.stringify({ formato: "estudio-viral/capitulo", series: { title: "Daniel: la guerra de los 21 días", style: "epica" }, episode: base.episode, characters: base.characters });
+ok(!!capituloDeJson(capJson) && capituloDeJson(JSON.stringify({ escenas: [] })) === null, "se reconoce un capitulo.json del estudio");
+const imp = importarCapitulo({ guionExterno: capJson, formato: "largo", duration: 88 });
+ok(imp.series.title === "Daniel: la guerra de los 21 días" && imp.series.style === "epica" && imp.episode.scenes.map((x: any) => x.line).join("|") === base.episode.scenes.map((x: any) => x.line).join("|"), "importar conserva título, estilo y diálogos escena por escena");
+ok(!/9:16/.test(JSON.stringify(imp.episode)) && imp.characters.length === base.characters.length, "importar en serie larga pasa todo a 16:9 y conserva el elenco");
+const conPj = importarCapitulo({ guionExterno: capJson, personajesExternos: JSON.stringify({ personajes: [{ nombre: base.characters[0].name, apariencia: "anciano de barba blanca", vestuario: "túnica gris" }] }) });
+ok(conPj.characters.length === 1 && /barba blanca/.test(conPj.characters[0].visualES), "los personajes canónicos subidos aparte mandan sobre los del capítulo");
 console.log(`${checks} comprobaciones del generador correctas.`);

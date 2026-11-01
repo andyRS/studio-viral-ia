@@ -294,12 +294,13 @@ async function generateSeriesBase(input: any) {
   try {
     const count = sceneCountFor(duration, input.scenes);
     const type = externo ? "adaptacion" : String(input.replica || "").trim() ? "replica" : "nueva";
-    const system = `${styleRules(style)}${extraContext(input)}\n\n${sceneBrief(style, count)}\n\n${miPedido(input, style, duration, count, type)}\n\n${externo ? `${adaptarReglas(count)}\n\n` : ""}TAREA: crea una SERIE NUEVA a partir del pedido${externo ? " (el guion recibido es su episodio 1: el elenco son sus personajes)" : ""} y escribe su EPISODIO 1 (Parte 1). Elenco de 3 a 6 personajes.
+    const system = `${styleRules(style)}${extraContext(input)}\n\n${sceneBrief(style, count)}\n\n${miPedido(input, style, duration, count, type)}\n\n${externo ? `${adaptarReglas(count)}\n\n` : ""}${String(input.personajesExternos || "").trim() ? `PERSONAJES CANÓNICOS YA DEFINIDOS (otra IA; úsalos con estos nombres y no cambies su apariencia): ${String(input.personajesExternos).slice(0, 12000)}\n\n` : ""}TAREA: crea una SERIE NUEVA a partir del pedido${externo ? " (el guion recibido es su episodio 1: el elenco son sus personajes)" : ""} y escribe su EPISODIO 1 (Parte 1). Elenco de 3 a 6 personajes.
 Responde SOLO JSON: {"series":{"title":"","logline":"","world":"","tone":""},"characters":[${CAST_FIELDS(style)}],"episode":{"title":"","summary":"3-4 frases con el cliffhanger final","hook":["línea 1","línea 2"],"coverText":"","description":"","hashtags":[],${FICHA_SCHEMA},${BIBLE_SCHEMA(style)}${PUBLISH_SCHEMA},${SCENES_SCHEMA}}}`;
     const parsed = await askJson(system, JSON.stringify({ idea, duracionSegundos: duration, cuentaPrincipal: input.account?.name, notas: input.notes, ...(externo ? { guionExterno: externo } : {}) }));
     // Elenco sin fruta o con nombres genéricos: primero se le pide a la IA solo el elenco
     // (llamada corta); lo que siga faltando lo completa el código en normalizeCast.
-    let chars = parsed.characters;
+    const fijos = String(input.personajesExternos || "").trim() ? personajesSinIA(String(input.personajesExternos)) : [];
+    let chars = fijos.length ? fijos : parsed.characters;
     if (isFruitStyle(style) && castNeedsRepair(chars, style)) chars = await repairCast(chars, style, idea, Math.min(25000, 120000 - (Date.now() - startedAt)));
     const characters = normalizeCast(chars, style).slice(0, 6);
     const episodeRaw = await ensureNarratorEnding(renameSpeakers(parsed.episode || parsed, parsed.characters, characters), idea, style, Math.min(25000, 150000 - (Date.now() - startedAt)));
@@ -326,7 +327,8 @@ function templateSeriesBase(input: any) {
   const count = sceneCountFor(duration, input.scenes);
   const delGuion = externo ? guionExternoSinIA(externo, count) : [];
   const nombres = Array.from(new Set(delGuion.map(e => e.speaker).filter(n => !/^narrador$/i.test(n)))).slice(0, 6);
-  const characters = nombres.length ? normalizeCast(nombres.map(name => ({ name })), style) : templateCast(idea, style);
+  const fijos = String(input.personajesExternos || "").trim() ? personajesSinIA(String(input.personajesExternos)) : [];
+  const characters = fijos.length ? normalizeCast(fijos, style) : nombres.length ? normalizeCast(nombres.map(name => ({ name })), style) : templateCast(idea, style);
   const raw = delGuion.length ? { title: "Episodio 1", summary: externo.slice(0, 300), scenes: delGuion } : templateScenes(idea, characters, style, count);
   const episode = buildProduction(raw, { style, duration, scenes: input.scenes, characters, idea, chosenHook: input.chosenHook, seriesTitle: idea.slice(0, 60), partNumber: 1 });
   return { mode: "plantilla-local", series: { title: idea.slice(0, 60), logline: idea, world: "", tone: "", style }, characters, episode: { ...episode, mode: "plantilla-local" } };
@@ -528,4 +530,37 @@ ${existentes.length ? `- La serie ya tiene a: ${existentes.join(", ")}. Si el te
     const local = adaptarPersonajesLocal(input);
     return { ...local, notice: `La IA no respondió (${error instanceof Error ? error.message : String(error)}). Se leyeron las fichas tal cual.` };
   }
+}
+
+// ---------- IMPORTAR UN CAPÍTULO CON LA ESTRUCTURA DEL ESTUDIO ----------
+// capitulo.json (el que descarga Archivos, o el que otra IA escriba con esa estructura): se importa tal cual,
+// sin IA. Sus escenas, ficha, gancho y redes se conservan; los prompts se rehacen con las reglas actuales.
+export function capituloDeJson(texto: string): any | null {
+  let d: any; try { d = JSON.parse(String(texto || "")); } catch { return null; }
+  const ep = d?.episode || d?.episodio || d?.capitulo || d?.output || d;
+  const escenas = Array.isArray(ep?.scenes) ? ep.scenes : null;
+  if (!escenas?.length || !escenas.every((s: any) => s && typeof s === "object" && typeof s.line === "string" && typeof s.speaker === "string")) return null;
+  return { episodio: ep, serie: d?.series || d?.serie || null, personajes: d?.characters || d?.personajes || ep?.cast || null };
+}
+export function importarCapitulo(input: any) {
+  const cap = capituloDeJson(String(input?.guionExterno || ""));   // entero: el recorte de 60 000 es solo para la IA
+  if (!cap) throw new Error("El JSON no tiene la estructura de capítulo del estudio (scenes con speaker y line).");
+  const ep = cap.episodio;
+  const style = styleKey(input.style || ep?.seriesBible?.style || cap.serie?.style);
+  const duration = Number(input.duration || 90);
+  const externos = String(input.personajesExternos || "").trim();
+  const filas = externos ? personajesSinIA(externos) : Array.isArray(cap.personajes) ? cap.personajes : [];
+  const hablantes = Array.from(new Set(ep.scenes.map((s: any) => String(s.speaker)).filter((n: string) => n && !/^narrador/i.test(n))));
+  const characters = normalizeCast(filas.length ? filas : hablantes.map(name => ({ name })), style).slice(0, 12);
+  const raw = { ...ep, scenes: ep.scenes.map((s: any) => ({ ...s, onScreen: s.onScreen || s.characters || [], link: s.link || s.nextLink })) };
+  const title = String(cap.serie?.title || ep.seriesTitle || ep.title || "Serie importada").slice(0, 100);
+  const count = Math.min(30, ep.scenes.length);
+  const episode = buildProduction(raw, { style, duration, scenes: count, characters, idea: String(ep.summary || title), seriesTitle: title, partNumber: Number(ep.partNumber || 1) });
+  const extra = Object.fromEntries(["seriesBible", "ficha", "social", "platformAdaptations", "hook", "coverText"].filter(k => ep[k] !== undefined && (episode as any)[k] === undefined).map(k => [k, ep[k]]));
+  return conAspecto({
+    mode: "importado",
+    notice: `Capítulo importado tal cual (${episode.scenes.length} escenas, ${characters.length} personajes), sin usar IA.${ep.scenes.length > 30 ? " Traía más de 30 escenas: se conservaron gancho, cierre y las más importantes." : ""}`,
+    series: { title, logline: String(cap.serie?.logline || ep.summary || ""), world: String(cap.serie?.world || ""), tone: String(cap.serie?.tone || ""), style },
+    characters, episode: { ...extra, ...episode, mode: "importado" },
+  }, aspectoDe(input?.formato));
 }
