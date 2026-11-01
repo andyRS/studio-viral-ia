@@ -246,6 +246,9 @@ export function beatDe(c: ClipOriginal, visibles: string[]): Beat {
   return "dialogo";
 }
 
+// Peso dramático del momento (0–1): cuánto tiempo de acción visual pide además de la voz.
+export function pesoMomento(c: ClipOriginal, visibles: string[] = []) { const beat = beatDe(c, visibles); return { beat, peso: V[beat].peso }; }
+
 export type DireccionEscena = { setting: string; location: string; visualAction: string; videoAction: string; shotType: string; camera: string; lighting: string; atmosphere: string; vfx: string; expression: string; conflict: string; continuity: string; sfx: string; music: string; title: string; goal: string; vocalTone: string; fidelityNote: string; intensity: number; quitarDeCuadro?: string[] };
 
 type Variante = { clave?: RegExp; shot: string; cam: string; vis: string; vid: string; luz?: string; vfx?: string; expr?: string; obj: string; titulo: string; conB?: boolean; sinB?: boolean; lapso?: boolean };

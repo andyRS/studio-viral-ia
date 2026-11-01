@@ -28,6 +28,10 @@ import StoryArchitect from "./StoryArchitect";
 import { EPIC_NOTICE, STYLES, type StyleKey } from "@/lib/knowledge";
 import { normalizarCapitulo, normalizarPersonajes, importarFiel, estiloDeTexto, redirigirEpisodio, vistaPreviaRevision } from "@/lib/importacion";
 import { ETIQUETA_CLASE, fuenteDeTexto, fuenteSugerida, type Fuente } from "@/lib/fuentes";
+import { aplicarTiempos, planTiempos, type Medicion, type ModoMontaje } from "@/lib/tiempos";
+import { medirClip } from "@/lib/medirAudio";
+import { cargarArchivos } from "@/lib/archivosTrabajo";
+import { segundosClip } from "@/lib/production";
 import { adaptarPersonajesLocal, escenasDelGuion, templateSeries, templateNext } from "@/lib/story";
 import { fichaGenerica, isGenericName } from "@/lib/cast";
 import { aspectoDe, buildFlowBatch, conAspecto, escenasEnTexto, MAX_SCENES, MIN_SCENES, refreshPrompts, PROMPT_RULES_VERSION, sceneCountFor } from "@/lib/production";
@@ -807,6 +811,7 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
     </section>}
     {(out.validacion || out.adaptacion) && <RevisionImportacion out={out} />}
     {scenes.length > 0 && !finished && onCambiar && <RevisionDireccion out={out} titulo={`${seriesTitle} · Episodio ${part}`} maestros={data.characters.filter((c: any) => c.seriesId === seriesId)} aspecto={aspecto || "9:16"} onAplicar={(propuesta: any) => onCambiar(propuesta, { anterior: out })} />}
+    {scenes.length > 0 && !finished && onCambiar && <TiemposMontaje out={out} usuario={userId || "local"} episodeId={episodeId} onAplicar={(propuesta: any) => onCambiar(propuesta, { anterior: out })} />}
     {promptsOutdated && !finished && <div className="mt-3 flex flex-wrap items-center gap-3 rounded-xl border border-sky-400/30 bg-sky-400/10 p-3 text-xs text-sky-100"><span className="flex-1 min-w-[220px]">{formatoViejo ? "Esta serie es de formato largo, pero los prompts de este episodio están en vertical 9:16. Actualízalos para pasar fichas, escenas y animación a horizontal 16:9 (el guion no cambia)." : <>Hay reglas nuevas para los prompts (ritmo viral: hablan desde el primer segundo, sin pausas y sin música dentro del clip). Este episodio tiene los prompts de una versión anterior.</>}</span><button type="button" onClick={refresh} disabled={refreshing} className="rounded-lg bg-sky-400 px-3 py-1.5 font-bold text-slate-950 hover:bg-sky-300 disabled:opacity-50">{refreshing ? "Actualizando…" : "Actualizar prompts"}</button></div>}
     {scenes.length > 0 && cast.length >= 2 && !referencesReady && <div className="mt-3 rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 text-xs text-amber-100">Faltan fichas maestras aprobadas: {missingMasters.join(", ")}. Súbelas y apruébalas en «1 · Personajes canónicos» antes de producir.</div>}
     {scenes.length > 0 && cast.length >= 2 && referencesReady && !snapshotValid && <div className="mt-3 rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 text-xs text-amber-100">La ficha maestra cambió desde que se creó este guion, o el episodio es anterior al control de versiones. Regenera el episodio para alinear prompts y personajes.</div>}
@@ -1389,6 +1394,66 @@ function RevisionDireccion({ out, titulo, maestros, aspecto, onAplicar }: { out:
         <button type="button" onClick={() => setRev(null)} className="rounded-lg border border-white/15 px-3 py-2 text-xs">Descartar</button>
       </div>
     </div>}
+    {estado && <p role="status" className="mt-2 text-cyan-100">{estado}</p>}
+  </details>;
+}
+
+// Tiempos del montaje: vídeo generado, voz y montaje por escena. La voz no decide sola dónde termina la escena:
+// en modo cinematográfico se conserva un margen de acción según el peso del momento. Nada se guarda sin aprobar.
+function TiemposMontaje({ out, usuario, episodeId, onAplicar }: { out: any; usuario: string; episodeId?: string; onAplicar: (p: any) => Promise<any> }) {
+  const style = (out?.seriesBible?.style || (out?.cast?.some((c: any) => c.fruit) ? "frutinovela" : "cine90")) as StyleKey;
+  const escenas: any[] = out?.scenes || [];
+  const [modo, setModo] = useState<ModoMontaje>(out?.tiemposMontaje?.modo || "cinematografico");
+  const [dec, setDec] = useState<Record<number, { toma: number; margen: number }>>({});
+  const [med, setMed] = useState<Record<number, Medicion>>({});
+  const [estado, setEstado] = useState(""); const [ocupado, setOcupado] = useState(false);
+  const virtuales = escenas.map(sc => dec[sc.n] ? { ...sc, tomaSeg: dec[sc.n].toma, margenAccion: dec[sc.n].margen } : sc);
+  const base = { tomaBase: segundosClip(style), modo, mediciones: med, tarjetas: out?.guionJson?.tarjetas || [], cierre: !!out?.guionJson?.cierre };
+  const plan = planTiempos(virtuales, base);
+  const actual = planTiempos(escenas, { ...base, mediciones: {} });
+  const cambios = Object.keys(dec).length;
+  const problemas = plan.filas.reduce((a, f) => a + f.problemas.length, 0);
+  function recomendar() { setDec(Object.fromEntries(plan.filas.map(f => [f.n, { toma: f.tomaRecomendada, margen: f.margenDeseado }]))); setEstado("Recomendación aplicada en la vista. Revísala y apruébala para guardarla."); }
+  async function medir() {
+    if (!episodeId) return; setOcupado(true); setEstado("");
+    try {
+      const a = await cargarArchivos(usuario, episodeId);
+      const res: Record<number, Medicion> = {};
+      for (const [n, f] of Object.entries(a.clip)) { try { res[Number(n)] = await medirClip(f); } catch { /* clip ilegible */ } }
+      setMed(res); setEstado(Object.keys(res).length ? `Medidos ${Object.keys(res).length} clip(s): se usan su duración y la voz real.` : "No hay clips subidos en este navegador: las voces siguen estimadas por palabras.");
+    } finally { setOcupado(false); }
+  }
+  async function aprobar() {
+    setOcupado(true);
+    try {
+      const decisiones = plan.filas.map(f => ({ n: f.n, toma: dec[f.n]?.toma ?? f.video, margen: dec[f.n]?.margen ?? f.margenDeseado }));
+      await onAplicar(aplicarTiempos(out, decisiones, modo, plan.totales.montaje));
+      setDec({}); setEstado("Tiempos guardados como versión nueva (la anterior queda en el historial). No se generó nada.");
+    } catch (e: any) { setEstado(`No se guardó: ${e?.message || e}`); } finally { setOcupado(false); }
+  }
+  return <details className="import-panel direction-review mt-3">
+    <summary className="cursor-pointer text-sm font-semibold">Tiempos del montaje · vídeo, voz, acción y montaje por escena</summary>
+    <p className="mt-2 text-slate-300">La voz no decide sola cuándo termina la escena. En modo cinematográfico se conserva un margen de acción o reacción tras la frase según el momento (llegadas y batallas más). {plan.motor} genera tomas de {plan.duraciones.join(", ")} s.</p>
+    <div className="mt-2 flex flex-wrap items-center gap-2">
+      <label className="text-xs">Montaje <select aria-label="Modo de montaje" className="w-auto" value={modo} onChange={e => setModo(e.target.value as ModoMontaje)}><option value="cinematografico">Cinematográfico (conserva la acción)</option><option value="viral">Viral (corta tras la voz)</option></select></label>
+      <button type="button" onClick={recomendar} className="rounded-lg border border-white/15 px-3 py-1.5 text-xs">Aplicar recomendación</button>
+      <button type="button" disabled={ocupado || !episodeId} onClick={() => { void medir(); }} className="rounded-lg border border-white/15 px-3 py-1.5 text-xs">Medir clips subidos (voz real)</button>
+    </div>
+    <p role="status" className="mt-2 text-xs"><b>Vídeo:</b> {plan.totales.video} s{plan.totales.video !== actual.totales.video ? ` (ahora ${actual.totales.video} s: ${plan.totales.video > actual.totales.video ? "+" : ""}${Math.round((plan.totales.video - actual.totales.video) * 10) / 10} s a generar)` : ""} · <b>Voz:</b> {plan.totales.voz} s ({plan.medidas ? `${plan.medidas} medida(s)` : "estimada"}) · <b>Montaje:</b> ~{plan.totales.montaje} s (incluye tarjetas {plan.totales.tarjetas} s y cierre {plan.totales.cierre} s) · {problemas ? <b>{problemas} aviso(s)</b> : "sin avisos"}</p>
+    <div className="mt-2 max-h-96 overflow-auto"><table className="w-full text-left text-xs"><thead><tr><th>Esc.</th><th>Vídeo</th><th>Voz</th><th>Margen de acción</th><th>Montaje</th><th>Estado</th></tr></thead><tbody>
+      {plan.filas.map(f => <tr key={f.n} className="border-t border-white/10 align-top">
+        <td className="py-1 pr-2"><b>{f.n}</b><div className="text-slate-400">{f.speaker}</div></td>
+        <td className="pr-2"><select aria-label={`Toma de la escena ${f.n}`} className="w-auto" value={dec[f.n]?.toma ?? f.video} onChange={e => setDec(d => ({ ...d, [f.n]: { toma: Number(e.target.value), margen: d[f.n]?.margen ?? f.margenDeseado } }))}>{Array.from(new Set([...plan.duraciones, f.video])).sort((a, b) => a - b).map(x => <option key={x} value={x}>{x} s</option>)}</select>{f.tomaRecomendada !== f.video && <div className="text-amber-200">recomendada {f.tomaRecomendada} s</div>}</td>
+        <td className="pr-2">{f.voz} s<div className="text-slate-400">{f.vozFuente}</div></td>
+        <td className="pr-2"><input aria-label={`Margen de acción de la escena ${f.n}`} type="number" min={0.4} max={6} step={0.5} className="w-16" value={dec[f.n]?.margen ?? f.margenDeseado} onChange={e => setDec(d => ({ ...d, [f.n]: { toma: d[f.n]?.toma ?? f.video, margen: Number(e.target.value) } }))} /> s<div className="text-slate-400">caben {f.margen} s</div></td>
+        <td className="pr-2">{f.montaje} s</td>
+        <td>{f.problemas.length ? f.problemas.map((p, k) => <div key={k} className={p.codigo === "voz-truncada" ? "text-rose-200" : "text-amber-200"}>{p.mensaje}</div>) : <span className="text-emerald-200">✓</span>}</td>
+      </tr>)}
+    </tbody></table></div>
+    <div className="mt-2 flex flex-wrap gap-2">
+      <button type="button" disabled={ocupado || (!cambios && modo === (out?.tiemposMontaje?.modo || "cinematografico") && !!out?.tiemposMontaje)} onClick={() => { void aprobar(); }} className="rounded-lg bg-amber-400 px-3 py-2 text-xs font-bold text-slate-950 disabled:opacity-60">{ocupado ? "Guardando…" : "Aprobar y guardar tiempos"}</button>
+      {cambios > 0 && <button type="button" onClick={() => setDec({})} className="rounded-lg border border-white/15 px-3 py-2 text-xs">Descartar cambios</button>}
+    </div>
     {estado && <p role="status" className="mt-2 text-cyan-100">{estado}</p>}
   </details>;
 }

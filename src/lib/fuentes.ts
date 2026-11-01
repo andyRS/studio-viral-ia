@@ -18,7 +18,9 @@ export type Clasificacion = { clase: ClaseFrase; refs: string[]; puntuacion: num
 const VACIAS = new Set("a al algo alguna alguno ante antes aqui asi aun aunque bien cada como con contra cual cuando de del desde donde dos el ella ellas ello ellos en entre era eres es esa ese eso esta este esto estas estos fue fueron ha han hasta hay he la las le les lo los mas me mi mis muy nada ni no nos o os otra otro para pero poco por porque que quien se ser si sin sobre son su sus tambien te ti tu tus un una uno unos y ya yo tengo tiene puedo puede debo debe hacer hace dijo dice estaba estar pues entonces mientras todavia ahora aqui alli hacia apenas ningun ninguno ninguna nadie".split(" "));
 // Grupos de sinónimos frecuentes en relatos (genéricos, no de un texto concreto).
 const SINONIMOS: string[][] = [["fuerz", "fuert", "vigor", "esfue", "alien", "respi"], ["escuc", "oid", "oida", "oir", "oye"], ["temor", "miedo", "tema", "teme", "temas"], ["orill", "ribera"], ["ayuda", "socor", "auxil"], ["lucha", "pelea", "comba", "batal"], ["vino", "llego", "venid", "vengo"], ["oraci", "orar", "orab", "rueg", "supli"], ["duelo", "contr", "aflig", "triste"]];
-const raiz = (w: string) => { const r = w.slice(0, 5); const g = SINONIMOS.find(gr => gr.some(x => r.startsWith(x) || x.startsWith(r))); return g ? g[0] : r; };
+// Raíz: sin plural ni vocal final (persia/persas → pers, palabras → palab) y hasta 5 letras.
+const tronco = (w: string) => { let x = w.replace(/(es|s)$/, w.length > 4 ? "" : "$1"); if (x.length > 4) x = x.replace(/(ia|io|a|o|e)$/, ""); return x.length >= 3 ? x : w; };
+const raiz = (w: string) => { const r = tronco(w).slice(0, 5); const g = SINONIMOS.find(gr => gr.some(x => r.startsWith(x) || x.startsWith(r))); return g ? g[0] : r; };
 export const normalizar = (t: string) => t.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-zñ0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
 const palabrasClave = (t: string) => normalizar(t).split(" ").filter(w => w.length > 2 && !VACIAS.has(w));
 const raices = (t: string) => new Set(palabrasClave(t).map(raiz));

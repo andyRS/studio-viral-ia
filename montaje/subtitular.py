@@ -356,7 +356,11 @@ if ANTERIOR:
     if not RECAP_PIEZAS:
         RECAP_PIEZAS = [(max(0.0, fin - 11.0), fin)]
     RECAP_S = round(sum(e0 - s0 for s0, e0 in RECAP_PIEZAS), 2)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from tiempos import avisos_clip, config_clip, corte_j_seguro, limites_clip
 offsets, words_per_clip, recortes, t = [], [], [], RECAP_S
+VOZ_FIN = []          # final de la voz de cada clip (segundos del clip), para no pisarla con un corte J
+AVISOS_TIEMPO = []
 for ci, clip in enumerate(clips):
     progreso(5 + 55 * ci / len(clips), f"Escuchando el clip {ci + 1} de {len(clips)} con Whisper")
     if ci in TARJETAS:
@@ -377,17 +381,19 @@ for ci, clip in enumerate(clips):
             best = ws
         if len(best) >= 0.6 * len(prompt.split()):
             break
-    # Recorte de silencios muertos: se empieza justo antes de la primera palabra y se corta 0,4 s
-    # después de la última (lo justo para ver la reacción, como los virales). Sin voz, el clip va entero.
+    # Recorte según el modo de montaje (tiempos.py): «voz» (viral: 0,4 s de reacción tras la frase),
+    # «accion» (cinematográfico: conserva margen de acción tras la voz) o «completo». Sin voz, el clip va entero.
     a, b = 0.0, D
-    if RECORTAR and best and G["clips"][ci]:
+    cfg = config_clip(G, ci)
+    primera = ultima = None
+    if best and G["clips"][ci]:
         primera, ultima = best[0]["s"], max(x["e"] for x in best)
-        if primera > 0.35:
-            a = max(0.0, primera - 0.12)
-        if D - ultima > 0.6:
-            b = min(D, ultima + 0.4)   # 0,4 s de reacción tras la frase
-        if b - a < 1.2:
-            a, b = 0.0, D
+    if RECORTAR and primera is not None:
+        a, b = limites_clip(primera, ultima, D, cfg)
+    VOZ_FIN.append(ultima)
+    for aviso in avisos_clip(ci, primera, ultima, D, a, b, cfg):
+        AVISOS_TIEMPO.append(aviso)
+        progreso(5 + 55 * (ci + 1) / len(clips), f"Aviso: {aviso}")
     for x in best:
         x["s"] = (x["s"] - a) / VEL + t; x["e"] = (x["e"] - a) / VEL + t
     recortes.append((a, b))
@@ -585,7 +591,7 @@ if PRO_SONIDO:
         ap, bp = recortes[ci - 1]
         if ci in TARJETAS or b_ - a_ <= 1.2 or bp - ap <= 1.2 or not words_per_clip[ci]:
             continue
-        if DUR_SRC[ci - 1] - bp >= J:
+        if DUR_SRC[ci - 1] - bp >= J and corte_j_seguro(VOZ_FIN[ci - 1], ap, bp, VEL, J):
             LIN[ci] = J
         elif a_ >= J:
             LIN[ci] = -J
@@ -1142,6 +1148,9 @@ try:
     if PRO_COLOR and (LOOK or any(g is not None for g in GAIN_RGB)):
         bien.append("Color igualado entre clips" + (f" y look «{ESTILO}»" if LOOK else "") + ".")
     bien.append("Textos dentro de las zonas seguras de TikTok e Instagram.")
+    # Tiempos medidos con la voz real: frases cortadas o clips que terminan antes de completar su acción.
+    for aviso in AVISOS_TIEMPO:
+        avisos.append({"tipo": "tiempo", "texto": aviso, "arreglo": "Genera esa toma más larga o sube el margen de acción de la escena en «Tiempos del montaje»."})
     revision = {"nota": max(0, nota), "duracion": round(total, 1), "avisos": avisos, "bien": bien}
     json.dump(revision, open(os.path.splitext(out_mp4)[0] + "_revision.json", "w", encoding="utf-8"), ensure_ascii=False)
     progreso(99, f"Revisión automática: {revision['nota']}/100" + (f" · {len(avisos)} cosa(s) por mejorar" if avisos else " · todo bien"))

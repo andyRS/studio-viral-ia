@@ -325,15 +325,18 @@ function animationPrompt(s: { setting: string; speaker: string; line: string; em
   if (remoteCall(s, member, others)) return phoneCallPrompt(s, member!, others, style, i);
   if (s.phone) s = { ...s, setting: tidy(s.setting) + phoneVisual(s, member, others, style, isFruitStyle(style) ? "es" : "en") };
   const narrator = s.speaker === NARRATOR;
+  // Duración de la toma (configurable por escena) y segundos de acción o reacción que siguen a la frase.
+  const toma = Number((s as any).tomaSeg) || seconds(style), tras = Number((s as any).margenAccion) || 1;
+  const sigue = tras > 1 ? ` The action keeps going for ${tras} s after the line (do not end the shot when the voice ends).` : "";
   const shot = pickShot(s, (member ? 1 : 0) + others.length, i);
   const setting = tidy(s.setting), location = tidy(s.location || "");
   if (!isFruitStyle(style)) {
     const voice = narrator ? `Off-screen narrator voice${direccionDe(s).vocalTone ? ` (${direccionDe(s).vocalTone})` : ""}; nobody moves their lips.` : `Only ${member!.name} speaks; lip sync only for ${member!.name}. Voice: ${member!.voice}.`;
-    return `Usa Seedance 2.5. ${look(style).vid}, vertical 9:16, ${seconds(style)} seconds. Animate from the scene image as the first frame.
+    return `Usa Seedance 2.5. ${look(style).vid}, vertical 9:16, ${toma} seconds. Animate from the scene image as the first frame.
 References: image 1 = scene${member ? `; image 2 = character sheet of ${member.name}` : others.length ? others.map((o, k) => `; image ${k + 2} = character sheet of ${o.name}`).join("") : ""}.
 CHARACTERS: ${member ? `${member.name}: ${member.visualEN || member.visualES}; outfit: ${member.clothing}. Real people.` : others.length ? `${others.map(o => `${o.name}: ${o.visualEN || o.visualES}; outfit: ${o.clothing}`).join(". ")}. Real people, identical to their sheets; nobody speaks on camera.` : `${EMPTY_EN}. Nobody appears at any moment.`}
 SCENE: ${location ? `${location} (same set as the other scenes here). ` : ""}${setting}.
-${(() => { const d = direccionDe(s); return [d.videoAction && `ACTION: ${d.videoAction}.`, d.camera && `CAMERA: ${d.camera} One continuous move, no cuts.`, d.vfx && `VFX: ${d.vfx}.`, d.continuity && `CONTINUITY: ${d.continuity}.`].filter(Boolean).map(x => x + "\n").join(""); })()}SHOTS: ${direccionDe(s).shotType || shot.en}, ${direccionDe(s).camera ? "with the camera move above" : shot.moveEn}. From 0.3 s, with no pause before, ${narrator ? `the on-screen action plays while the off-screen narrator says` : `${member!.name}, already in full ${s.emotion}, says while the camera dollies slowly toward the face`} (in Spanish, exact words): "${s.line}" Right after the line: 1 s ${narrator ? "holding on the scene" : `close-up of ${member!.name} holding the emotion`}, then the same shot continues without cuts.
+${(() => { const d = direccionDe(s); return [d.videoAction && `ACTION: ${d.videoAction}.`, d.camera && `CAMERA: ${d.camera} One continuous move, no cuts.`, d.vfx && `VFX: ${d.vfx}.`, d.continuity && `CONTINUITY: ${d.continuity}.`].filter(Boolean).map(x => x + "\n").join(""); })()}SHOTS: ${direccionDe(s).shotType || shot.en}, ${direccionDe(s).camera ? "with the camera move above" : shot.moveEn}. From 0.3 s, with no pause before, ${narrator ? `the on-screen action plays while the off-screen narrator says` : `${member!.name}, already in full ${s.emotion}, says while the camera dollies slowly toward the face`} (in Spanish, exact words): "${s.line}" Right after the line: ${tras} s ${narrator ? "of the on-screen action" : `of ${member!.name} reacting`}, then the same shot continues without cuts.${sigue}
 ${SOUND_EN}${kissNote(s, "en")}
 PRONUNCIATION: ${narrator ? accentPrompt(null, "en", style) : accentPrompt(member, "en", style)}.
 VOICES: ${voice}${voicesEnd(style)}${bibleVid(style)}`;
@@ -344,12 +347,12 @@ VOICES: ${voice}${voicesEnd(style)}${bibleVid(style)}`;
     : others.length ? `${others.map(o => `${o.name}: personaje 3D animado con rostro y cuerpo humanos y piel de ${o.fruit} (${o.headES}); ${o.clothing}`).join(". ")}. Idénticos a sus fichas; nunca una fruta entera como cabeza; nadie habla a cámara.`
     : `${EMPTY_ES}. No aparece nadie en ningún momento del vídeo.`;
   const tomas = narrator
-    ? `${shot.es} de la escena, ${shot.move}. Desde 0,3 s, sin pausa previa y con acercamiento lento, el narrador dice en voz en off: "${s.line}" Justo al terminar: 1 s sosteniendo la imagen; después la misma toma sigue sin cortes.`
-    : `${shot.es}, ${shot.move}; ${member!.name} ya está en plena emoción (${s.emotion}) desde el primer fotograma. Desde 0,3 s, sin pausa previa, ${member!.name} dice con ${s.emotion}, mientras la cámara hace un dolly lento hacia su cara: "${s.line}" Justo al terminar la frase: 1 s de primer plano de ${member!.name} sosteniendo la emoción; después la misma toma sigue sin cortes.`;
+    ? `${shot.es} de la escena, ${shot.move}. Desde 0,3 s, sin pausa previa y con acercamiento lento, el narrador dice en voz en off: "${s.line}" Justo al terminar: ${tras} s sosteniendo la imagen; después la misma toma sigue sin cortes.`
+    : `${shot.es}, ${shot.move}; ${member!.name} ya está en plena emoción (${s.emotion}) desde el primer fotograma. Desde 0,3 s, sin pausa previa, ${member!.name} dice con ${s.emotion}, mientras la cámara hace un dolly lento hacia su cara: "${s.line}" Justo al terminar la frase: ${tras} s de primer plano de ${member!.name} sosteniendo la emoción; después la misma toma sigue sin cortes.`;
   const voces = narrator
     ? `VOCES: Narrador: voz masculina profunda y cálida, en off. ${accentPrompt(null, "es", style)}. Nadie mueve los labios. Sin subtítulos ni texto en pantalla.`
     : `VOCES: ${member!.name}: ${member!.voice}. ${accentPrompt(member, "es", style)}. Solo habla ${member!.name}; sincronización de labios solo para quien habla. Sin subtítulos ni texto en pantalla.`;
-  return `Telenovela animada 3D (render CGI de película animada premium), vertical 9:16, 8 segundos. Anima a partir de la imagen de la escena como primer fotograma.
+  return `Telenovela animada 3D (render CGI de película animada premium), vertical 9:16, ${Number((s as any).tomaSeg) || 8} segundos. Anima a partir de la imagen de la escena como primer fotograma.
 ${ANIMATION_STYLE_LOCK}
 Referencias: imagen 1 = escena${member ? `; imagen 2 = ficha de ${member.name}` : others.map((o, k) => `; imagen ${k + 2} = ficha de ${o.name}`).join("")}.
 PERSONAJES: ${personajes}
@@ -610,12 +613,12 @@ export function refreshPrompts(out: any, style: StyleKey) {
     return { ...s, imagePromptFlow: imagePrompt(s, member, others, style, idx, ids), animationPrompt: animationPrompt(s, member, style, idx, others) };
   });
   const seg = seconds(style);
-  const total = scenes.length * seg;
+  const total = scenes.reduce((t: number, sc: any) => t + (Number(sc.tomaSeg) || seg), 0);
   const dolaNums: number[] = Array.isArray(out?.dolaSceneNumbers) && out.dolaSceneNumbers.length ? out.dolaSceneNumbers : selectShortScenes(scenes, Math.floor(60 / seg)).map((s: any) => s.n);
   const dolaScenes = scenes.filter((s: any) => dolaNums.includes(s.n));
   const dolaDuration = dolaScenes.length * seg;
   // Saltos de tiempo para el montaje también en episodios guardados antes de existir las tarjetas.
   const tarjetas = scenes.map((s: any, i: number) => ({ antes: i, texto: timeJump(`${s.transition || ""} ${s.setting || ""}`) })).filter((t: any) => t.antes > 0 && t.texto);
   const guionJson = out?.guionJson ? { ...out.guionJson, ...(tarjetas.length ? { tarjetas } : {}), ...phoneMontage(scenes) } : out?.guionJson;
-  return { ...out, guionJson, scenes, editDuration: Math.round(scenes.length * EDIT_SECONDS), prompts: scenes.map((s: any) => s.animationPrompt), dolaPrompt: scenes.length ? buildDolaPrompt(dolaScenes, cast, style, total, dolaDuration) : out?.dolaPrompt, promptsVersion: PROMPT_RULES_VERSION };
+  return { ...out, guionJson, scenes, editDuration: out?.tiemposMontaje?.montaje ?? out?.revisionDireccion?.montajeEstimado ?? Math.round(scenes.length * EDIT_SECONDS), prompts: scenes.map((s: any) => s.animationPrompt), dolaPrompt: scenes.length ? buildDolaPrompt(dolaScenes, cast, style, total, dolaDuration) : out?.dolaPrompt, promptsVersion: PROMPT_RULES_VERSION };
 }
