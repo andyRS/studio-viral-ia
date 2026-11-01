@@ -1,7 +1,7 @@
 // Generador: cantidad de escenas elegida y formato 16:9 de las series largas. npm test
 import assert from "node:assert/strict";
 import { buildProduction, escenasEnTexto, sceneCountFor, MAX_SCENES, NARRATOR } from "../src/lib/production";
-import { escenasDelGuion, escenasDeJson, guionExternoSinIA, templateSeries, templateNext } from "../src/lib/story";
+import { adaptarPersonajesLocal, personajesSinIA, escenasDelGuion, escenasDeJson, guionExternoSinIA, templateSeries, templateNext } from "../src/lib/story";
 let checks = 0;
 const ok = (c: boolean, m: string) => { assert.ok(c, m); checks++; console.log(`ok · ${m}`); };
 
@@ -50,4 +50,13 @@ const desdeJson = templateSeries({ style: "epica", duration: 88, guionExterno: J
 ok(desdeJson.characters.some((c: any) => /gabriel/i.test(c.name)) && desdeJson.episode.scenes.some((s: any) => /primer día/.test(s.line)), "crear serie desde un guion JSON");
 ok(escenasDelGuion(JSON.stringify({ clips: Array.from({ length: 28 }, (_, i) => [["DANIEL", `frase ${i}`]]) })) === 28, "se cuentan las escenas de un guion.json (28)");
 ok(escenasDelGuion(otro) === 4 && escenasDelGuion("Una historia de 24 escenas sobre Daniel") === 24 && escenasDelGuion("") === null, "se cuentan los diálogos de un guion en texto o la cifra que menciona");
+// Personajes de otra IA.
+const pj1 = personajesSinIA(JSON.stringify({ personajes: [{ nombre: "Daniel", edad: 85, apariencia: "anciano de barba blanca", vestuario: "túnica gris", voz: "grave y cansada" }, { name: "Gabriel", description: "tall angel", outfit: "white robe" }] }));
+ok(pj1.length === 2 && pj1[0].visualES === "anciano de barba blanca" && pj1[0].clothing === "túnica gris" && pj1[1].clothing === "white robe", "personajes en JSON (español o inglés)");
+const pj2 = personajesSinIA(`## Daniel\nAnciano profeta de barba blanca.\nRopa: túnica de lino.\nVoz: grave.\n\n## Miguel\nArcángel de armadura dorada.`);
+ok(pj2.length === 2 && pj2[0].clothing === "túnica de lino" && /barba blanca/.test(pj2[0].visualES) && /armadura dorada/.test(pj2[1].visualES), "personajes en texto con encabezados");
+const pj3 = personajesSinIA("DANIEL: anciano de barba blanca y túnica gris\nMIGUEL: arcángel con armadura dorada");
+ok(pj3.map(p => p.name).join() === "DANIEL,MIGUEL", "personajes en líneas «NOMBRE: descripción»");
+const pjL = adaptarPersonajesLocal({ texto: "DANIEL: anciano de barba blanca\nMIGUEL: arcángel de armadura dorada", style: "epica", formato: "largo" });
+ok(pjL.characters.length === 2 && pjL.characters.every((c: any) => /16:9/.test(c.flowPrompt) && /barba blanca|armadura/.test(c.visualES)), "sin IA, las fichas se adaptan al elenco con prompt 16:9");
 console.log(`${checks} comprobaciones del generador correctas.`);

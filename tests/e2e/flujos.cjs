@@ -313,7 +313,7 @@ const ir = async (page, espacio, modulo) => {
       await page.getByRole("button", { name: /Épica/ }).first().click();
       await page.getByRole("button", { name: /Historia nueva/ }).first().click();
       await page.getByRole("menuitemradio", { name: /Adaptar guion de otra IA/ }).click();
-      await page.getByLabel("Subir archivo de guion").setInputFiles({ name: "guion.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify({ escenas: [{ dialogos: [{ personaje: "Daniel", texto: "Hola" }] }] })) });
+      await page.getByLabel("Subir archivo: Guion de otra IA").setInputFiles({ name: "guion.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify({ escenas: [{ dialogos: [{ personaje: "Daniel", texto: "Hola" }] }] })) });
       await page.waitForTimeout(300);
       ok((await page.locator("#generator-guion-externo").inputValue()).includes("\"personaje\": \"Daniel\"") && await page.getByText(/Cargado «guion.json»/).count() === 1, "se puede subir el guion en JSON");
       await page.locator("#generator-guion-externo").fill("ESCENA 1 — EXT. RÍO\nDANIEL: Señor, ¿por qué callas?\nMENSAJERO: Fui enviado desde el primer día.\nMIGUEL: Yo pelearé contra Persia.\nNarrador: La guerra apenas comienza.");
@@ -323,6 +323,14 @@ const ir = async (page, espacio, modulo) => {
       ok(!!ep && ep.output.scenes.some(x => /primer día/.test(x.line)) && pers.includes("MIGUEL"), "el guion de otra IA se convierte en serie con sus personajes y diálogos");
       ok(!!ep && /16:9/.test(ep.output.scenes[0].imagePromptFlow) && !/9:16/.test(JSON.stringify(ep.output)), "la serie larga adaptada sale con prompts 16:9");
       // (En modo local el episodio es un borrador de plantilla y no muestra «Archivos»; esa vía se prueba en lógica.)
+      // Importar personajes de otra IA en «1 · Personajes canónicos»: actualiza a Daniel y añade a Gabriel.
+      await page.locator(".episode-tabs").getByRole("button", { name: /Personajes canónicos/ }).click(); await page.waitForTimeout(300);
+      await page.getByText("Importar personajes de otra IA").click();
+      await page.locator("#episodio-personajes-externos").fill(JSON.stringify({ personajes: [{ nombre: "DANIEL", apariencia: "anciano de barba blanca, ojos cansados", vestuario: "túnica de lino gris" }, { nombre: "Gabriel", apariencia: "ángel alto de rostro sereno", vestuario: "túnica blanca luminosa" }] }));
+      await page.getByRole("button", { name: /Adaptar personajes/ }).click(); await page.waitForTimeout(1500);
+      const pjs = await page.evaluate(() => JSON.parse(localStorage.getItem("estudio-viral:characters") || "[]"));
+      const dan = pjs.find(c => c.name.toUpperCase() === "DANIEL"), gab = pjs.find(c => c.name === "Gabriel");
+      ok(!!dan && /barba blanca/.test(dan.visualES) && /lino gris/.test(dan.clothing) && !!gab && /16:9/.test(gab.flowPrompt || ""), "importar personajes de otra IA actualiza los existentes y añade los nuevos (fichas 16:9)");
       await ctx.close(); }
   } finally {
     await b.close();

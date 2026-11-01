@@ -448,3 +448,84 @@ Responde SOLO JSON: {"reply":"1-2 frases para el usuario","ideas":[{"title":"","
     return { mode: providerMode(), reply: String(parsed.reply || "").trim() || "Aquí tienes ideas nuevas.", ideas };
   } catch (e: any) { return fallback(e?.message || String(e)); }
 }
+
+// ---------- ADAPTAR PERSONAJES DE OTRA IA ----------
+// Fichas escritas en otra herramienta (texto o JSON) → elenco de la app (nombre, apariencia, ropa, voz,
+// acento, prompt de ficha para Flow). Conserva lo que traen y completa lo que falte según el estilo.
+const CLAVES_PJ = {
+  name: ["name", "nombre", "personaje", "character"],
+  role: ["role", "rol", "papel", "funcion", "función"],
+  visualES: ["visuales", "apariencia", "descripcion", "descripción", "aspecto", "fisico", "físico", "appearance", "description", "look"],
+  visualEN: ["visualen", "appearance_en", "description_en"],
+  clothing: ["clothing", "ropa", "vestuario", "outfit", "costume", "vestimenta"],
+  voice: ["voice", "voz"],
+  speechStyle: ["speechstyle", "acento", "accent", "habla", "forma_de_hablar"],
+  fruit: ["fruit", "fruta"],
+  headES: ["heades", "cabeza", "rostro", "cara", "face"],
+  flowPrompt: ["flowprompt", "prompt", "prompt_ficha", "image_prompt"],
+};
+export function personajesSinIA(texto: string): any[] {
+  const t = String(texto || "").trim(); if (!t) return [];
+  let datos: any = null; try { datos = JSON.parse(t); } catch { /* texto */ }
+  if (datos) {
+    const out: any[] = [];
+    const visitar = (n: any) => {
+      if (Array.isArray(n)) { n.forEach(visitar); return; }
+      if (!n || typeof n !== "object") return;
+      const nombre = tomar(n, CLAVES_PJ.name);
+      if (nombre && nombre.length <= 40) {
+        const fila: any = { name: nombre };
+        for (const [k, ks] of Object.entries(CLAVES_PJ)) if (k !== "name") { const v = tomar(n, ks); if (v) fila[k] = v; }
+        if (fila.visualES || fila.clothing || fila.role || fila.voice || fila.headES) { out.push(fila); return; }
+      }
+      Object.values(n).forEach(v => { if (v && typeof v === "object") visitar(v); });
+    };
+    visitar(datos);
+    return out;
+  }
+  // Texto: «NOMBRE: descripción» por línea, o un encabezado (## Nombre / NOMBRE) con su descripción debajo.
+  const filas: any[] = []; let actual: any = null;
+  for (const raw of t.split("\n")) {
+    const l = raw.trim(); if (!l) continue;
+    const cab = l.match(/^#{1,4}\s*(.{2,40})$/) || l.match(/^([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ .]{1,38})$/);
+    const par = l.match(/^[-*]?\s*\**([A-ZÁÉÍÓÚÑa-záéíóúñ][\wÁÉÍÓÚÑáéíóúñ .]{1,38}?)\**\s*[:：—–]\s*(.{6,})$/);
+    if (cab) { actual = { name: cab[1].replace(/\*/g, "").trim(), visualES: "" }; filas.push(actual); continue; }
+    if (par && !actual) { filas.push({ name: par[1].trim(), visualES: par[2].trim() }); continue; }
+    if (actual) {
+      const campo = l.match(/^[-*]?\s*\**(rol|papel|ropa|vestuario|voz|acento|apariencia|aspecto)\**\s*[:：]\s*(.+)$/i);
+      if (campo) { const k = campo[1].toLowerCase(); const v = campo[2].trim().replace(/\.$/, "");
+        if (/rol|papel/.test(k)) actual.role = v; else if (/ropa|vestuario/.test(k)) actual.clothing = v; else if (k === "voz") actual.voice = v; else if (k === "acento") actual.speechStyle = `Acento: ${v}`; else actual.visualES = `${actual.visualES} ${v}`.trim(); }
+      else actual.visualES = `${actual.visualES} ${l.replace(/^[-*]\s*/, "")}`.trim();
+    } else if (par) filas.push({ name: par[1].trim(), visualES: par[2].trim() });
+  }
+  return filas.filter(f => f.name && !/^(personajes|elenco|cast)$/i.test(f.name));
+}
+
+const recortarTexto = (v: unknown) => String(v ?? "").replace(/\r/g, "").trim().slice(0, 40000);
+export function adaptarPersonajesLocal(input: any) {
+  const style = styleKey(input.style);
+  const characters = normalizeCast(personajesSinIA(recortarTexto(input.texto)), style).slice(0, 12);
+  return conAspecto({ mode: "plantilla-local", characters }, aspectoDe(input?.formato));
+}
+export async function adaptarPersonajes(input: any) {
+  const style = styleKey(input.style);
+  const texto = recortarTexto(input.texto);
+  if (!texto) throw new Error("Pega o sube primero los personajes.");
+  if (!process.env.LLM_API_KEY) return { ...adaptarPersonajesLocal(input), notice: "El servidor no tiene clave de IA: se leyeron las fichas tal cual." };
+  try {
+    const existentes = (Array.isArray(input.existentes) ? input.existentes : []).map((n: unknown) => String(n)).filter(Boolean);
+    const system = `${styleRules(style)}
+
+TAREA: adapta al formato de esta app las FICHAS DE PERSONAJES que escribió otra IA (texto libre o JSON, en «personajes»).
+- Conserva cada personaje con su nombre, edad, rasgos, apariencia, vestuario, voz y forma de hablar. No inventes personajes que no estén ni cambies a nadie.
+- Completa solo lo que falte, coherente con el estilo de la serie, y escribe la apariencia de forma visual y fija (para que la cara y la ropa no cambien entre escenas).
+${existentes.length ? `- La serie ya tiene a: ${existentes.join(", ")}. Si el texto describe a alguno de ellos, usa EXACTAMENTE ese nombre.\n` : ""}Responde SOLO JSON: {"characters":[${CAST_FIELDS(style)}]}`;
+    const parsed = await askJson(system, JSON.stringify({ personajes: texto }));
+    const characters = normalizeCast(parsed.characters || parsed, style).slice(0, 12);
+    if (!characters.length) throw new Error("la IA no devolvió personajes");
+    return conAspecto({ mode: providerMode(), characters }, aspectoDe(input?.formato));
+  } catch (error) {
+    const local = adaptarPersonajesLocal(input);
+    return { ...local, notice: `La IA no respondió (${error instanceof Error ? error.message : String(error)}). Se leyeron las fichas tal cual.` };
+  }
+}

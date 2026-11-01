@@ -26,7 +26,7 @@ import type { StoryIdea } from "@/lib/ideas";
 import SceneDesk from "./SceneDesk";
 import StoryArchitect from "./StoryArchitect";
 import { EPIC_NOTICE, STYLES, type StyleKey } from "@/lib/knowledge";
-import { escenasDelGuion, templateSeries, templateNext } from "@/lib/story";
+import { adaptarPersonajesLocal, escenasDelGuion, templateSeries, templateNext } from "@/lib/story";
 import { isGenericName } from "@/lib/cast";
 import { aspectoDe, buildFlowBatch, conAspecto, escenasEnTexto, MAX_SCENES, MIN_SCENES, refreshPrompts, PROMPT_RULES_VERSION, sceneCountFor } from "@/lib/production";
 import { seriesSignals } from "@/lib/seriesSignals";
@@ -313,6 +313,40 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
     } finally { setLoading(false); }
   }
 
+  // «1 · Personajes canónicos» → importar fichas de otra IA: actualiza a los que ya existen (por nombre) y añade
+  // los nuevos a la serie; el elenco del episodio y sus prompts se rehacen con esas fichas.
+  async function importarPersonajes(texto: string) {
+    if (!result?.seriesId) throw new Error("Guarda primero el episodio.");
+    const serie = data.series.find((x: any) => x.id === result.seriesId) as any;
+    const st = (result.episode?.seriesBible?.style || (result.episode?.cast?.some((x: any) => x.fruit) ? "frutinovela" : "cine90")) as StyleKey;
+    const existentes = data.characters.filter((c: any) => c.seriesId === result.seriesId);
+    const body = { texto, style: st, formato: serie?.format, existentes: existentes.map((c: any) => c.name) };
+    setLoading(true); setNotice(""); setAuthError(false);
+    try {
+      const res = await call("/api/personajes", body, () => adaptarPersonajesLocal(body)); if (!res) return;
+      const llegan: any[] = res.data.characters || [];
+      if (!llegan.length) throw new Error("No se encontraron personajes en ese texto. Usa «NOMBRE: descripción» o un JSON con nombre y apariencia.");
+      const CAMPOS = ["role", "fruit", "fruitEmoji", "headES", "visualES", "visualEN", "clothing", "voice", "speechStyle", "pronunciations", "flowPrompt"];
+      const actualizados: string[] = [], nuevos: string[] = [];
+      for (const c of llegan) {
+        const m = existentes.find((x: any) => x.name.toLowerCase() === String(c.name).toLowerCase());
+        const campos = Object.fromEntries(CAMPOS.filter(k => c[k] !== undefined && c[k] !== "").map(k => [k, c[k]]));
+        if (m) { await update("characters", m.id, campos); actualizados.push(c.name); }
+        else { await insert("characters", { ...c, seriesId: result.seriesId }); nuevos.push(c.name); }
+      }
+      // Elenco del episodio con las fichas nuevas y prompts rehechos (sin IA).
+      const cast = [...(result.episode?.cast || []).map((c: any) => { const n = llegan.find(x => x.name.toLowerCase() === String(c.name).toLowerCase()); return n ? { ...c, ...Object.fromEntries(CAMPOS.filter(k => n[k] !== undefined && n[k] !== "").map(k => [k, n[k]])) } : c; }),
+        ...llegan.filter(n => !(result.episode?.cast || []).some((c: any) => c.name.toLowerCase() === n.name.toLowerCase()))];
+      if (result.episodeId) {
+        const ep = data.episodes.find((e: any) => e.id === result.episodeId) as any;
+        const output = conAspecto(refreshPrompts({ ...result.episode, cast }, st), aspectoSerie(result.seriesId));
+        await update("episodes", result.episodeId, { output, versions: [...(Array.isArray(ep?.versions) ? ep.versions : []), result.episode].slice(-10) });
+        setResult(r => (r ? { ...r, episode: output } : r));
+      }
+      setNotice([actualizados.length ? `Fichas actualizadas: ${actualizados.join(", ")} (si cambió su apariencia, sube y aprueba una imagen nueva).` : "", nuevos.length ? `Personajes nuevos: ${nuevos.join(", ")} (crea y aprueba sus fichas).` : "", res.note && !/Elenco, escenas/.test(res.note) ? res.note : ""].filter(Boolean).join(" "));
+    } finally { setLoading(false); }
+  }
+
   async function continueStory() {
     if (!current) return;
     if (currentNeedsRepair) { setNotice("Esta serie contiene un borrador de plantilla o personajes incompletos. Recréala con Gemini antes de continuar."); return; }
@@ -528,7 +562,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
         )}
       </>}
 
-      {view === "resultado" && result && <Result aspecto={aspectoSerie(result.seriesId)} onAdaptarGuion={adaptarEpisodio} adaptando={loading}
+      {view === "resultado" && result && <Result aspecto={aspectoSerie(result.seriesId)} onImportarPersonajes={importarPersonajes} onAdaptarGuion={adaptarEpisodio} adaptando={loading}
         episode={result.episode} episodeId={result.episodeId} seriesId={result.seriesId} part={result.part} seriesTitle={data.series.find((s: any) => s.id === result.seriesId)?.title} initialTab={openTab || focusTab}
         status={data.episodes.find((e: any) => e.id === result.episodeId)?.status}
         onFinish={async () => { if (result.episodeId && !isFinished(data.episodes.find((e: any) => e.id === result.episodeId))) await update("episodes", result.episodeId, { status: FINISHED }); }}
@@ -652,7 +686,7 @@ function DownloadText({ text, filename, label }: { text: string; filename: strin
 const Field = ({ label, value }: { label: string; value?: string }) => value ? <div><dt className="inline font-semibold text-slate-200">{label}: </dt><dd className="inline text-slate-300">{value}</dd></div> : null;
 const RefChips = ({ refs }: { refs?: string[] }) => <p className="mt-2 text-[11px] text-sky-200">Referencias a seleccionar (fuera del prompt): {(refs || []).length ? (refs || []).map(r => <span key={r} className="ml-1 rounded-full bg-sky-400/15 px-2 py-0.5">{r}</span>) : <span className="text-slate-400">ninguna</span>}</p>;
 
-function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialTab, status, aspecto, onAdaptarGuion, adaptando, onFinish, onUnlock, onAcceptDraft, backLabel, onBack, onNext, onRecreate, onDelete, onRefreshPrompts, onMoveScene, onCambiar }: any) {
+function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialTab, status, aspecto, onAdaptarGuion, onImportarPersonajes, adaptando, onFinish, onUnlock, onAcceptDraft, backLabel, onBack, onNext, onRecreate, onDelete, onRefreshPrompts, onMoveScene, onCambiar }: any) {
   type Tab = "guion" | "elenco" | "imagenes" | "animacion" | "mesa" | "redes" | "plataformas" | "archivos";
   const { data, update, userId } = useData();
   const cast: any[] = Array.isArray(out.cast) ? out.cast : [];
@@ -775,6 +809,7 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
         {out.dialogueRules && <p className="text-xs text-slate-500">{out.dialogueRules}</p>}
       </div>}
       {tab === "elenco" && <div>
+        {onImportarPersonajes && !finished && <div className="mb-4"><ImportarPersonajes onImportar={onImportarPersonajes} ocupado={!!adaptando} /></div>}
         <p className="mb-3 text-sm text-slate-300">Genera la ficha una vez en Flow, guárdala aquí y apruébala. En todos los episodios siguientes se usa esta referencia maestra, no una ficha inventada de nuevo.</p>
         <div className="episode-character-gallery grid gap-3 md:grid-cols-2">{cast.map((generated: any, i: number) => { const c = master[i] || generated; return <article key={c.name} className="rounded-2xl border border-white/10 bg-[#151C2B] p-4">
           <div className="flex items-start gap-3">
@@ -1143,7 +1178,7 @@ function AvisoEscenas({ texto, escenas, onUsar }: { texto: string; escenas: numb
 }
 
 // Guion de otra IA: pegar el texto o subir el archivo (.txt, .md, .json, .srt, .fountain, .csv).
-function SubirGuion({ id, valor, onValor }: { id: string; valor: string; onValor: (v: string) => void }) {
+function SubirGuion({ id, valor, onValor, etiqueta = "Guion de otra IA", ayuda = "Pega aquí el guion completo (escenas, diálogos «NOMBRE: frase», narración, cámara…) o súbelo como archivo." }: { id: string; valor: string; onValor: (v: string) => void; etiqueta?: string; ayuda?: string }) {
   const [aviso, setAviso] = useState("");
   async function leer(file: File | undefined) {
     if (!file) return;
@@ -1154,9 +1189,9 @@ function SubirGuion({ id, valor, onValor }: { id: string; valor: string; onValor
     onValor(t); setAviso(`Cargado «${file.name}» (${t.trim().split(/\s+/).length} palabras).`);
   }
   return <div>
-    <div className="flex flex-wrap items-center gap-2"><label htmlFor={id} className="field-label block">Guion de otra IA</label>
-      <label className="ml-auto cursor-pointer rounded-lg border border-white/15 px-3 py-1.5 text-xs text-slate-200 hover:border-cyan-300/50">Subir archivo<input type="file" className="sr-only" accept=".txt,.md,.markdown,.json,.srt,.fountain,.csv,text/plain" aria-label="Subir archivo de guion" onChange={e => { void leer(e.target.files?.[0]); e.target.value = ""; }} /></label></div>
-    <textarea id={id} className="aurora-field mt-1" rows={8} value={valor} onChange={e => { onValor(e.target.value); setAviso(""); }} placeholder="Pega aquí el guion completo (escenas, diálogos «NOMBRE: frase», narración, cámara…) o súbelo como archivo." />
+    <div className="flex flex-wrap items-center gap-2"><label htmlFor={id} className="field-label block">{etiqueta}</label>
+      <label className="ml-auto cursor-pointer rounded-lg border border-white/15 px-3 py-1.5 text-xs text-slate-200 hover:border-cyan-300/50">Subir archivo<input type="file" className="sr-only" accept=".txt,.md,.markdown,.json,.srt,.fountain,.csv,text/plain" aria-label={`Subir archivo: ${etiqueta}`} onChange={e => { void leer(e.target.files?.[0]); e.target.value = ""; }} /></label></div>
+    <textarea id={id} className="aurora-field mt-1" rows={8} value={valor} onChange={e => { onValor(e.target.value); setAviso(""); }} placeholder={ayuda} />
     {aviso && <p role="status" className="mt-1 text-xs text-cyan-100">{aviso}</p>}
   </div>;
 }
@@ -1186,6 +1221,25 @@ function AdaptarGuionEpisodio({ onAdaptar, ocupado, escenas }: { onAdaptar: (t: 
       <p className="text-xs text-slate-400">Pulsa «Adaptar con IA» y listo: la IA conserva la historia y el sentido de los diálogos, usa el elenco fijo de la serie y rehace escenas, fichas y prompts. Después revisa el Guion y aprueba las fichas de personajes nuevos.</p>
       {error && <p role="alert" className="text-xs text-rose-200">{error}</p>}
       <button type="button" disabled={ocupado} onClick={() => { void enviar(); }} className="rounded-lg bg-cyan-400 px-4 py-2 text-sm font-bold text-slate-950 disabled:opacity-60">{ocupado ? "Adaptando…" : "✦ Adaptar con IA"}</button>
+    </div>
+  </details>;
+}
+
+// «1 · Personajes canónicos» → fichas de personajes escritas por otra IA (texto o JSON).
+function ImportarPersonajes({ onImportar, ocupado }: { onImportar: (t: string) => Promise<void>; ocupado: boolean }) {
+  const [texto, setTexto] = useState(""); const [error, setError] = useState("");
+  async function enviar() {
+    if (!texto.trim()) { setError("Pega o sube primero los personajes."); return; }
+    setError("");
+    try { await onImportar(texto); setTexto(""); } catch (e: any) { setError(e?.message || String(e)); }
+  }
+  return <details className="rounded-xl border border-white/10 bg-black/20 p-3">
+    <summary className="cursor-pointer text-sm font-semibold text-slate-100">Importar personajes de otra IA</summary>
+    <div className="mt-3 space-y-2">
+      <SubirGuion id="episodio-personajes-externos" etiqueta="Personajes de otra IA" valor={texto} onValor={setTexto} ayuda="Pega las fichas (nombre, apariencia, ropa, voz, acento…) en texto o JSON, o súbelas como archivo." />
+      <p className="text-xs text-slate-400">Pulsa «Adaptar personajes» y listo: los que ya existen (mismo nombre) se actualizan sin perder su imagen; los nuevos se añaden a la serie. Se rehacen los prompts de ficha y de las escenas.</p>
+      {error && <p role="alert" className="text-xs text-rose-200">{error}</p>}
+      <button type="button" disabled={ocupado} onClick={() => { void enviar(); }} className="rounded-lg bg-cyan-400 px-4 py-2 text-sm font-bold text-slate-950 disabled:opacity-60">{ocupado ? "Adaptando…" : "✦ Adaptar personajes"}</button>
     </div>
   </details>;
 }
