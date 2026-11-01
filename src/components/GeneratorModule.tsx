@@ -351,7 +351,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
         <div className="creation-workspace mt-3"><p className="studio-eyebrow cinematic-gold">PREPRODUCCIÓN / NUEVA HISTORIA</p><h2 className="mt-2 text-3xl font-semibold tracking-tight">Dale forma a tu próxima historia.</h2><p className="mt-2 text-sm text-slate-400">Elige su identidad, escribe la premisa y prepara el primer episodio.</p>
         <div className="creation-brief-layout">
         <div className="creation-fields space-y-5">
-          <CanalPicker accounts={data.accounts} accountId={accountId} onAccount={setAccountId} formato={formato} onFormato={setFormato} largoPosible={largoPosible} clipIds={clipIds} onClipIds={setClipIds} />
+          <CanalPicker accounts={data.accounts} accountId={accountId} onAccount={setAccountId} estilo={styleChosen ? style : undefined} formato={formato} onFormato={setFormato} largoPosible={largoPosible} clipIds={clipIds} onClipIds={setClipIds} />
           <fieldset>
             <legend className="field-label">Estilo <span className="normal-case tracking-normal text-amber-300">· obligatorio{styleChosen ? "" : ": elige uno"}</span></legend>
             <div className="grid gap-2 sm:grid-cols-3">
@@ -833,14 +833,20 @@ const REDES_LARGO = new Set(["Facebook", "YouTube"]);
 const cuentasPorRed = (accounts: any[]) => REDES.map(red => ({ red, cuentas: accounts.filter((a: any) => a.platform === red) })).filter(g => g.cuentas.length);
 
 // Paso obligatorio al crear una serie: el canal (red + cuenta), su formato y a qué otras cuentas van los clips.
-function CanalPicker({ accounts, accountId, onAccount, formato, onFormato, largoPosible, clipIds, onClipIds }: { accounts: any[]; accountId: string; onAccount: (id: string) => void; formato: "corto" | "largo"; onFormato: (f: "corto" | "largo") => void; largoPosible: boolean; clipIds: string[]; onClipIds: (ids: string[]) => void }) {
-  if (!accounts.length) return <div className="rounded-xl border border-amber-400/30 bg-amber-400/10 p-4 text-sm text-amber-100">Antes de crear una serie, crea la cuenta donde se va a publicar en <b>Publish & Grow → Cuentas</b>.</div>;
+function CanalPicker({ accounts, accountId, onAccount, formato, onFormato, largoPosible, clipIds, onClipIds, estilo }: { accounts: any[]; accountId: string; onAccount: (id: string) => void; formato: "corto" | "largo"; onFormato: (f: "corto" | "largo") => void; largoPosible: boolean; clipIds: string[]; onClipIds: (ids: string[]) => void; estilo?: string }) {
+  // Sin cuentas, o al elegir «＋ Conectar una cuenta nueva», se registra aquí mismo y queda elegida.
+  const [nueva, setNueva] = useState(false);
+  if (!accounts.length || nueva) return <fieldset className="rounded-xl border border-amber-400/40 bg-amber-400/[.05] p-4">
+    <legend className="field-label">Canal de la serie <span className="normal-case tracking-normal text-amber-300">· {accounts.length ? "cuenta nueva" : "aún no tienes cuentas: registra la primera"}</span></legend>
+    <NuevaCuenta estilo={estilo} onCreada={id => { setNueva(false); onAccount(id); }} onCancelar={accounts.length ? () => setNueva(false) : undefined} />
+  </fieldset>;
   const otras = accounts.filter((a: any) => a.id !== accountId);
   return <fieldset className={`rounded-xl border p-4 ${accountId ? "border-white/10" : "border-amber-400/40 bg-amber-400/[.05]"}`}>
     <legend className="field-label">Canal de la serie <span className="normal-case tracking-normal text-amber-300">· obligatorio{accountId ? "" : ": elige dónde se publica"}</span></legend>
-    <select value={accountId} onChange={e => onAccount(e.target.value)} aria-label="Canal de la serie">
+    <select value={accountId} onChange={e => { if (e.target.value === NUEVA_CUENTA) setNueva(true); else onAccount(e.target.value); }} aria-label="Canal de la serie">
       <option value="">Elige la red y la cuenta…</option>
       {cuentasPorRed(accounts).map(g => <optgroup key={g.red} label={g.red === "YouTube" ? "YouTube (vídeos largos)" : g.red}>{g.cuentas.map((a: any) => <option key={a.id} value={a.id}>{a.name} · {a.platform}</option>)}</optgroup>)}
+      <option value={NUEVA_CUENTA}>＋ Conectar una cuenta nueva…</option>
     </select>
     {accountId && <div className="mt-3 grid gap-3 sm:grid-cols-2">
       <div><p className="text-xs text-slate-300">Formato</p>
@@ -858,6 +864,8 @@ function CanalPicker({ accounts, accountId, onAccount, formato, onFormato, largo
 // Canal de una serie abierta: se ve siempre y se puede cambiar.
 function CanalSerie({ serie, accounts, onSave }: { serie: any; accounts: any[]; onSave: (patch: any) => void }) {
   const [editando, setEditando] = useState(false);
+  const [nueva, setNueva] = useState(false);
+  const elegir = (id: string) => { onSave({ accountId: id, ...(REDES_LARGO.has(accounts.find((a: any) => a.id === id)?.platform) ? {} : { format: "corto" }) }); setEditando(false); };
   if (!serie) return null;
   const acc = accounts.find((a: any) => a.id === serie.accountId);
   const clips = (serie.clipAccountIds || []).map((id: string) => accounts.find((a: any) => a.id === id)).filter(Boolean);
@@ -866,10 +874,12 @@ function CanalSerie({ serie, accounts, onSave }: { serie: any; accounts: any[]; 
       : <span className="rounded-full border border-amber-400/40 bg-amber-400/10 px-2.5 py-1 font-semibold text-amber-100">Sin canal</span>}
     {clips.map((a: any) => <span key={a.id} className="rounded-full border border-white/10 px-2 py-0.5 text-slate-300">✂ {a.platform} · {a.name}</span>)}
     {!editando ? <button type="button" onClick={() => setEditando(true)} className="text-slate-400 underline hover:text-white">{acc ? "Cambiar canal" : "Anclar a un canal"}</button>
-      : <select autoFocus defaultValue={serie.accountId || ""} onChange={e => { if (e.target.value) { onSave({ accountId: e.target.value, ...(REDES_LARGO.has(accounts.find((a: any) => a.id === e.target.value)?.platform) ? {} : { format: "corto" }) }); setEditando(false); } }} onBlur={() => setEditando(false)} className="w-auto text-xs">
+      : <select autoFocus defaultValue={serie.accountId || ""} onChange={e => { const v = e.target.value; if (v === NUEVA_CUENTA) setNueva(true); else if (v) elegir(v); }} className="w-auto py-1 text-xs" aria-label="Canal de la serie">
         <option value="">Elige el canal…</option>
         {cuentasPorRed(accounts).map(g => <optgroup key={g.red} label={g.red}>{g.cuentas.map((a: any) => <option key={a.id} value={a.id}>{a.name} · {a.platform}</option>)}</optgroup>)}
+        <option value={NUEVA_CUENTA}>＋ Conectar una cuenta nueva…</option>
       </select>}
+    {nueva && <div className="mt-2 w-full rounded-xl border border-white/10 p-3"><NuevaCuenta onCreada={id => { setNueva(false); elegir(id); }} onCancelar={() => setNueva(false)} /></div>}
   </div>;
 }
 
@@ -1040,5 +1050,42 @@ function TipoMenu({ kind, onKind }: { kind: "nueva" | "replica"; onKind: (k: "nu
     <button type="button" className="aurora-chip" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>{kind === "replica" ? "Réplica de un viral" : "Historia nueva"} <span aria-hidden="true">{open ? "▴" : "▾"}</span></button>
     {open && <div className="aurora-menu left-0 top-full mt-2" role="menu" aria-label="Tipo de pedido">{opciones.map(([k, l, d]) =>
       <button key={k} type="button" role="menuitemradio" aria-checked={kind === k} onClick={() => { onKind(k); setOpen(false); }}><span><b className="block font-semibold">{l}</b><span className="text-xs opacity-75">{d}</span></span></button>)}</div>}
+  </div>;
+}
+
+// Registrar una cuenta nueva (red + nombre) sin salir de la creación de la serie. Es la cuenta de trabajo
+// donde se publica; la conexión con Meta para importar métricas se hace aparte en Publish & Grow.
+const NUEVA_CUENTA = "__nueva_cuenta__";
+const NICHO_DE_ESTILO: Record<string, string> = { frutinovela: "frutinovelas", cristiana: "cristiano", biblica: "cristiano", epica: "cristiano", cine90: "cine90" };
+function NuevaCuenta({ estilo, onCreada, onCancelar }: { estilo?: string; onCreada: (id: string) => void; onCancelar?: () => void }) {
+  const { insert } = useData();
+  const [f, setF] = useState({ name: "", platform: "Facebook", niche: NICHO_DE_ESTILO[estilo || ""] || "frutinovelas", audience: "", idealDuration: "" });
+  const [estado, setEstado] = useState<{ busy: boolean; error: string }>({ busy: false, error: "" });
+  async function crear() {
+    const name = f.name.trim();
+    if (!name) { setEstado({ busy: false, error: "Escribe el nombre o @usuario de la cuenta." }); return; }
+    setEstado({ busy: true, error: "" });
+    try { const a = await insert("accounts", { ...f, name, idealDuration: f.idealDuration || (f.platform === "YouTube" ? "15-25 min" : f.platform === "Facebook" ? "60-90 s" : "60 s") }); onCreada(a.id); }
+    catch (e: any) { setEstado({ busy: false, error: `No se pudo guardar la cuenta: ${e?.message || e}. Los datos siguen aquí para reintentar.` }); }
+  }
+  return <div className="grid gap-3 sm:grid-cols-2" onKeyDown={e => { if (e.key === "Enter" && (e.target as HTMLElement).tagName === "INPUT") { e.preventDefault(); void crear(); } }}>
+    <div><label htmlFor="nueva-cuenta-red" className="field-label block">Red</label>
+      <select id="nueva-cuenta-red" value={f.platform} onChange={e => setF({ ...f, platform: e.target.value })}>
+        {[["Facebook", "Facebook (página)"], ["YouTube", "YouTube (vídeos largos)"], ["TikTok", "TikTok"], ["Instagram", "Instagram (Reels)"], ["YouTube Shorts", "YouTube Shorts"]].map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+      </select></div>
+    <div><label htmlFor="nueva-cuenta-nombre" className="field-label block">Nombre o @usuario</label>
+      <input id="nueva-cuenta-nombre" autoFocus value={f.name} onChange={e => setF({ ...f, name: e.target.value })} placeholder="Ej.: Un Minuto en Oración" /></div>
+    <div><label htmlFor="nueva-cuenta-tipo" className="field-label block">Tipo de contenido</label>
+      <select id="nueva-cuenta-tipo" value={f.niche} onChange={e => setF({ ...f, niche: e.target.value })}>
+        <option value="frutinovelas">Frutinovelas</option><option value="cristiano">Cristiano y bíblico</option><option value="cine90">Cine de los 90</option><option value="dropshipping">Dropshipping</option>
+      </select></div>
+    <div><label htmlFor="nueva-cuenta-publico" className="field-label block">Público <span className="normal-case tracking-normal text-slate-500">(opcional)</span></label>
+      <input id="nueva-cuenta-publico" value={f.audience} onChange={e => setF({ ...f, audience: e.target.value })} placeholder="Ej.: evangélicos dominicanos, 25-60 años" /></div>
+    <div className="flex flex-wrap items-center gap-2 sm:col-span-2">
+      <button type="button" disabled={estado.busy} onClick={() => { void crear(); }} className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-50">{estado.busy ? "Guardando…" : "Conectar y usar esta cuenta"}</button>
+      {onCancelar && <button type="button" onClick={onCancelar} className="text-sm text-slate-400 underline">Cancelar</button>}
+      <span className="text-[11px] text-slate-500">Registra la cuenta donde publicarás. Para importar sus métricas, conéctala con Meta en Publish & Grow → Métricas.</span>
+    </div>
+    {estado.error && <p role="alert" className="text-xs text-rose-200 sm:col-span-2">{estado.error}</p>}
   </div>;
 }
