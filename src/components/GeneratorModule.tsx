@@ -30,6 +30,9 @@ import { normalizarCapitulo, normalizarPersonajes, importarFiel, estiloDeTexto, 
 import { ETIQUETA_CLASE, fuenteDeTexto, fuenteSugerida, type Fuente } from "@/lib/fuentes";
 import { aplicarTiempos, planTiempos, type Medicion, type ModoMontaje } from "@/lib/tiempos";
 import { medirClip } from "@/lib/medirAudio";
+import { aplicarAccion, costeEstimado, planificarAccion, type TomaAccion } from "@/lib/accion";
+import { motorDe } from "@/lib/tiempos";
+import { conAspecto as conAspectoAccion, refreshPrompts as refrescarAccion } from "@/lib/production";
 import { cargarArchivos } from "@/lib/archivosTrabajo";
 import { segundosClip } from "@/lib/production";
 import { adaptarPersonajesLocal, escenasDelGuion, templateSeries, templateNext } from "@/lib/story";
@@ -812,6 +815,7 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
     {(out.validacion || out.adaptacion) && <RevisionImportacion out={out} />}
     {scenes.length > 0 && !finished && onCambiar && <RevisionDireccion out={out} titulo={`${seriesTitle} · Episodio ${part}`} maestros={data.characters.filter((c: any) => c.seriesId === seriesId)} aspecto={aspecto || "9:16"} onAplicar={(propuesta: any) => onCambiar(propuesta, { anterior: out })} />}
     {scenes.length > 0 && !finished && onCambiar && <TiemposMontaje out={out} usuario={userId || "local"} episodeId={episodeId} onAplicar={(propuesta: any) => onCambiar(propuesta, { anterior: out })} />}
+    {scenes.length > 0 && !finished && onCambiar && <DirectorAccion out={out} maestros={data.characters.filter((c: any) => c.seriesId === seriesId)} aspecto={aspecto || "9:16"} versiones={(data.episodes.find((e: any) => e.id === episodeId) as any)?.versions || []} onAplicar={(propuesta: any) => onCambiar(propuesta, { anterior: out })} />}
     {promptsOutdated && !finished && <div className="mt-3 flex flex-wrap items-center gap-3 rounded-xl border border-sky-400/30 bg-sky-400/10 p-3 text-xs text-sky-100"><span className="flex-1 min-w-[220px]">{formatoViejo ? "Esta serie es de formato largo, pero los prompts de este episodio están en vertical 9:16. Actualízalos para pasar fichas, escenas y animación a horizontal 16:9 (el guion no cambia)." : <>Hay reglas nuevas para los prompts (ritmo viral: hablan desde el primer segundo, sin pausas y sin música dentro del clip). Este episodio tiene los prompts de una versión anterior.</>}</span><button type="button" onClick={refresh} disabled={refreshing} className="rounded-lg bg-sky-400 px-3 py-1.5 font-bold text-slate-950 hover:bg-sky-300 disabled:opacity-50">{refreshing ? "Actualizando…" : "Actualizar prompts"}</button></div>}
     {scenes.length > 0 && cast.length >= 2 && !referencesReady && <div className="mt-3 rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 text-xs text-amber-100">Faltan fichas maestras aprobadas: {missingMasters.join(", ")}. Súbelas y apruébalas en «1 · Personajes canónicos» antes de producir.</div>}
     {scenes.length > 0 && cast.length >= 2 && referencesReady && !snapshotValid && <div className="mt-3 rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 text-xs text-amber-100">La ficha maestra cambió desde que se creó este guion, o el episodio es anterior al control de versiones. Regenera el episodio para alinear prompts y personajes.</div>}
@@ -1455,5 +1459,108 @@ function TiemposMontaje({ out, usuario, episodeId, onAplicar }: { out: any; usua
       {cambios > 0 && <button type="button" onClick={() => setDec({})} className="rounded-lg border border-white/15 px-3 py-2 text-xs">Descartar cambios</button>}
     </div>
     {estado && <p role="status" className="mt-2 text-cyan-100">{estado}</p>}
+  </details>;
+}
+
+// Cinematic Action Director: secuencias, bloqueo, coreografía, cámara y VFX planificados antes de generar.
+// Vista previa sin créditos; se aprueba por toma o por secuencia; se puede restaurar la versión anterior.
+const FASE_COLOR: Record<string, string> = { preparacion: "#36b8c4", accion: "#f5bc69", consecuencia: "#bfeef4", reaccion: "#22d3ee", transicion: "#8aa4ad" };
+const FASE_NOMBRE: Record<string, string> = { preparacion: "Preparación", accion: "Acción", consecuencia: "Consecuencia", reaccion: "Reacción", transicion: "Transición" };
+function Bloqueo({ t, grande = false }: { t: TomaAccion; grande?: boolean }) {
+  const W = 160, H = 90;
+  const p = (e: { x: number; y: number }) => [e.x * W, (1 - e.y) * H * 0.85 + 6];
+  const ej = t.eje && t.final.find(e => e.nombre === t.eje![0]) && t.final.find(e => e.nombre === t.eje![1]) ? [t.final.find(e => e.nombre === t.eje![0])!, t.final.find(e => e.nombre === t.eje![1])!] : null;
+  return <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`Bloqueo de la escena ${t.escena}: ${t.bloqueo || "sin personajes"}`} className={grande ? "w-full" : "w-full max-w-[220px]"} style={{ background: "rgba(8,15,20,.6)", borderRadius: 8 }}>
+    {ej && <line x1={p(ej[0])[0]} y1={p(ej[0])[1]} x2={p(ej[1])[0]} y2={p(ej[1])[1]} stroke="#f5bc69" strokeDasharray="3 3" strokeWidth={0.8} />}
+    {t.inicial.map(e => { const [x, y] = p(e); const f = t.final.find(z => z.nombre === e.nombre) || e; const [x2, y2] = p(f); return <g key={e.nombre}>
+      {(Math.abs(x2 - x) > 1 || Math.abs(y2 - y) > 1) && <line x1={x} y1={y} x2={x2} y2={y2} stroke="#22d3ee" strokeWidth={1} markerEnd="url(#flecha)" />}
+      <circle cx={x} cy={y} r={5} fill="#36b8c4" /><line x1={x} y1={y} x2={x + (e.mira === "izquierda" ? -8 : e.mira === "derecha" ? 8 : 0)} y2={y} stroke="#bfeef4" strokeWidth={1.4} />
+      <text x={x} y={y - 7} fontSize={grande ? 6 : 7} fill="#e6f6f8" textAnchor="middle">{e.nombre.split(" ").map(w => w[0]).join("").slice(0, 3)}</text></g>; })}
+    <defs><marker id="flecha" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 z" fill="#22d3ee" /></marker></defs>
+    <path d={`M${W / 2 - 6},${H - 2} l6,-7 l6,7 z`} fill="#f5bc69" aria-hidden="true" /><text x={W / 2 + 10} y={H - 3} fontSize={5} fill="#f5bc69">cámara</text>
+  </svg>;
+}
+function DirectorAccion({ out, maestros, aspecto, versiones, onAplicar }: { out: any; maestros: any[]; aspecto: "9:16" | "16:9"; versiones: any[]; onAplicar: (p: any) => Promise<any> }) {
+  const style = (out?.seriesBible?.style || (out?.cast?.some((c: any) => c.fruit) ? "frutinovela" : "cine90")) as StyleKey;
+  const [abierto, setAbierto] = useState(false);
+  const plan = useMemo(() => abierto ? planificarAccion(out?.scenes || [], maestros.length ? maestros : out?.cast || []) : null, [abierto, out, maestros]);
+  const [sel, setSel] = useState<number | null>(null);
+  const [aprobadas, setAprobadas] = useState<number[]>([]);
+  const [ed, setEd] = useState<Record<number, { shotType?: string; camera?: string; videoAction?: string }>>({});
+  const [tarifa, setTarifa] = useState({ creditosSegundo: null as number | null, usdCredito: null as number | null, reintentos: 1.5 });
+  const [estado, setEstado] = useState(""); const [ocupado, setOcupado] = useState(false);
+  const toma = plan?.tomas.find(t => t.escena === sel) || plan?.tomas[0] || null;
+  const vista = useMemo(() => plan && toma ? conAspectoAccion(refrescarAccion(aplicarAccion(out, plan, [toma.escena], ed), style), aspecto) : null, [plan, toma, out, ed, style, aspecto]);
+  const escenaVista = vista?.scenes?.find((s: any) => s.n === toma?.escena);
+  const escenaAntes = out?.scenes?.find((s: any) => s.n === toma?.escena);
+  const motor = motorDe("seedance");
+  // Tiempos: la producción actual frente a la configuración cinematográfica de referencia (sin aplicar).
+  const tb = segundosClip(style);
+  const actual = planTiempos(out?.scenes || [], { tomaBase: tb, tarjetas: out?.guionJson?.tarjetas || [], cierre: !!out?.guionJson?.cierre });
+  const referencia = planTiempos((out?.scenes || []).map((s: any, i: number) => ({ ...s, tomaSeg: actual.filas[i].tomaRecomendada })), { tomaBase: tb, tarjetas: out?.guionJson?.tarjetas || [], cierre: !!out?.guionJson?.cierre });
+  const costeA = costeEstimado(actual.totales.video, tarifa), costeR = costeEstimado(referencia.totales.video, tarifa);
+  const filaT = toma ? actual.filas.find(f => f.n === toma.escena) : null;
+  async function aprobar(ns: number[]) {
+    if (!plan || !ns.length) return; setOcupado(true);
+    try { await onAplicar(aplicarAccion(out, plan, ns, ed)); setEstado(`Dirección de acción aprobada para ${ns.length} toma(s) y guardada como versión nueva. No se generó nada.`); setAprobadas([]); }
+    catch (e: any) { setEstado(`No se guardó: ${e?.message || e}`); } finally { setOcupado(false); }
+  }
+  async function restaurar() {
+    const v = versiones[versiones.length - 1]; if (!v) return;
+    if (!window.confirm("¿Restaurar la versión anterior del episodio? La actual queda guardada en el historial.")) return;
+    setOcupado(true); try { await onAplicar(v); setEstado("Versión anterior restaurada (la que había queda en el historial)."); } finally { setOcupado(false); }
+  }
+  const alternar = (n: number) => setAprobadas(a => a.includes(n) ? a.filter(x => x !== n) : [...a, n]);
+  return <details className="import-panel direction-review mt-3" onToggle={e => setAbierto((e.target as HTMLDetailsElement).open)}>
+    <summary className="cursor-pointer text-sm font-semibold">Director de acción · secuencias, bloqueo, coreografía y continuidad</summary>
+    {plan && <div className="mt-3 space-y-3 text-xs">
+      <p className="text-slate-300">Planifica la geografía de cada secuencia (quién está dónde, hacia dónde mira y avanza, el eje de acción y el lado de cámara), la coreografía por fases, el plano según su función y los efectos con su propósito. Vista previa sin créditos: nada cambia hasta que apruebes. Motor: {plan.motor} ({motor.duraciones.join(", ")} s{motor.primerUltimo ? ", admite fotograma inicial y final" : ""}).</p>
+      {plan.avisos.map((a, k) => <p key={k} role="status" className="text-amber-200">{a}</p>)}
+      <div className="grid gap-3 lg:grid-cols-[220px_minmax(0,1fr)_320px]">
+        <nav aria-label="Secuencias de acción" className="space-y-2">{plan.secuencias.map(sq => <div key={sq.id} className="rounded-lg border border-white/10 p-2">
+          <b className="block text-cyan-100">{sq.id} · {sq.titulo}</b>
+          <span className="text-slate-400">Escenas {sq.escenas.join(", ")}{sq.intercaladas.length ? ` · intercaladas ${sq.intercaladas.join(", ")}` : ""} · confianza {sq.confianza}</span>
+          <p className="mt-1"><b>Objetivo:</b> {sq.objetivo}</p><p><b>Conflicto:</b> {sq.conflicto}</p>
+          <p><b>Ventaja:</b> {sq.progresion.map(x => `${x.escena}:${x.ventaja === "oposicion" ? "oposición" : x.ventaja}`).join(" · ")}</p>
+          <p><b>Máxima tensión:</b> escena {sq.maximaTension} · <b>Final:</b> {sq.estadoFinal}</p>
+          {sq.interpretacion && <p className="text-amber-200">{sq.interpretacion}</p>}
+          <button type="button" className="mt-1 underline" onClick={() => setAprobadas(a => Array.from(new Set([...a, ...sq.escenas])))}>Marcar la secuencia para aprobar</button>
+        </div>)}</nav>
+        <div aria-label="Storyboard" className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">{plan.tomas.map(t => <button key={t.escena} type="button" aria-pressed={toma?.escena === t.escena} onClick={() => setSel(t.escena)} className={`rounded-lg border p-2 text-left ${toma?.escena === t.escena ? "border-cyan-300/70 bg-cyan-300/10" : "border-white/10 bg-black/20"}`}>
+          <span className="flex items-center gap-2"><b>Escena {t.escena}</b><span style={{ color: FASE_COLOR[t.fase] }}>{FASE_NOMBRE[t.fase]}</span>{aprobadas.includes(t.escena) && <span className="text-emerald-200">✓ marcada</span>}</span>
+          <Bloqueo t={t} /><span className="mt-1 block text-slate-300">{t.camara.plano}</span>{t.continuidad.some(c => !/correcta|Primera/.test(c)) && <span className="text-rose-200">⚠ continuidad</span>}
+        </button>)}</div>
+        {toma && <aside aria-label="Inspector de dirección" className="space-y-2 rounded-lg border border-white/10 p-2">
+          <b className="block text-sm">Escena {toma.escena} · {FASE_NOMBRE[toma.fase]} · {toma.tipo}</b>
+          <Bloqueo t={toma} grande />
+          <p><b>En cuadro:</b> {toma.visibles.join(", ") || "nadie"}</p>
+          <p><b>Estado inicial:</b> {toma.estadoInicial || "—"}</p><p><b>Estado final:</b> {toma.estadoFinal || "—"}</p>
+          <label className="block"><b>Plano</b><input className="aurora-field mt-1" value={ed[toma.escena]?.shotType ?? toma.camara.plano} onChange={e => setEd(d => ({ ...d, [toma.escena]: { ...d[toma.escena], shotType: e.target.value } }))} /></label>
+          <label className="block"><b>Cámara</b><input className="aurora-field mt-1" value={ed[toma.escena]?.camera ?? toma.camara.movimiento} onChange={e => setEd(d => ({ ...d, [toma.escena]: { ...d[toma.escena], camera: e.target.value } }))} /></label>
+          <p className="text-slate-400"><b>Por qué:</b> {toma.camara.razon}</p>
+          <label className="block"><b>Acción principal (vídeo)</b><textarea className="aurora-field mt-1" rows={3} value={ed[toma.escena]?.videoAction ?? toma.accionPrincipal} onChange={e => setEd(d => ({ ...d, [toma.escena]: { ...d[toma.escena], videoAction: e.target.value } }))} /></label>
+          <p><b>Consecuencia:</b> {toma.consecuencia}</p>
+          {toma.vfx.length > 0 && <div><b>Efectos (con propósito):</b><ul>{toma.vfx.map((v, k) => <li key={k}>{v.efecto} — <span className="text-slate-400">{v.proposito}</span></li>)}</ul></div>}
+          <div><b>Continuidad:</b>{toma.continuidad.map((c, k) => <p key={k} className={/correcta|Primera/.test(c) ? "text-emerald-200" : "text-rose-200"}>{c}</p>)}</div>
+          {toma.dividir && <p className="text-amber-200">{toma.dividir}</p>}
+          {filaT && <p><b>Tiempos:</b> vídeo {filaT.video} s · voz {filaT.voz} s · acción tras la voz {filaT.margen}/{filaT.margenDeseado} s · montaje {filaT.montaje} s · {motor.nombre}</p>}
+          {escenaAntes && <details><summary>Antes / después</summary><p><b>Antes:</b> {escenaAntes.shotType}. {escenaAntes.camera} {escenaAntes.videoAction}</p><p><b>Después:</b> {escenaVista?.shotType}. {escenaVista?.camera} {escenaVista?.videoAction}</p></details>}
+          {escenaVista && <details><summary>Prompts exactos (imagen / vídeo)</summary><p className="whitespace-pre-wrap text-slate-300"><b>Imagen:</b> {escenaVista.imagePromptFlow}</p><p className="mt-2 whitespace-pre-wrap text-slate-300"><b>Vídeo:</b> {escenaVista.animationPrompt}</p></details>}
+          <label className="flex items-center gap-2"><input type="checkbox" checked={aprobadas.includes(toma.escena)} onChange={() => alternar(toma.escena)} /> Marcar esta toma para aprobar</label>
+        </aside>}
+      </div>
+      <div aria-label="Línea de tiempo de acciones y clips" className="flex w-full gap-0.5 overflow-x-auto rounded-lg border border-white/10 p-1">{(out?.scenes || []).map((s: any, i: number) => { const t = plan.tomas.find(x => x.escena === s.n); const f = actual.filas[i]; return <button key={s.n} type="button" onClick={() => t && setSel(s.n)} title={`Escena ${s.n}: vídeo ${f.video} s · montaje ${f.montaje} s${t ? ` · ${FASE_NOMBRE[t.fase]}` : " · sin acción"}`} style={{ flexGrow: f.video, minWidth: 18, background: t ? FASE_COLOR[t.fase] : "rgba(255,255,255,.08)", opacity: t ? 0.85 : 1, color: "#080f14" }} className="h-8 rounded text-[10px] font-bold">{s.n}</button>; })}</div>
+      <div className="rounded-lg border border-white/10 p-2">
+        <b>Duración y coste</b> · actual: vídeo {actual.totales.video} s, montaje ~{actual.totales.montaje} s · referencia cinematográfica (escenas {actual.filas.filter(f => f.tomaRecomendada !== f.video).map(f => f.n).join(", ")} a {Math.max(...motor.duraciones.filter(d => d <= 8))} s): vídeo {referencia.totales.video} s, montaje ~{referencia.totales.montaje} s. Los tiempos se aprueban en «Tiempos del montaje».
+        <div className="mt-1 flex flex-wrap items-center gap-2">Tarifa de tu plan: <input aria-label="Créditos por segundo" type="number" min={0} step={0.1} className="w-20" placeholder="créd./s" value={tarifa.creditosSegundo ?? ""} onChange={e => setTarifa(t => ({ ...t, creditosSegundo: e.target.value === "" ? null : Number(e.target.value) }))} /> créditos/s · <input aria-label="Dólares por crédito" type="number" min={0} step={0.001} className="w-20" placeholder="USD/créd." value={tarifa.usdCredito ?? ""} onChange={e => setTarifa(t => ({ ...t, usdCredito: e.target.value === "" ? null : Number(e.target.value) }))} /> USD/crédito · intentos por toma <input aria-label="Intentos por toma" type="number" min={1} step={0.5} className="w-14" value={tarifa.reintentos} onChange={e => setTarifa(t => ({ ...t, reintentos: Number(e.target.value) || 1 }))} /></div>
+        <p className="mt-1">{costeA.creditos == null ? costeA.nota : `Actual: ~${costeA.creditos} créditos${costeA.usd != null ? ` (~${costeA.usd} USD)` : ""} · referencia: ~${costeR.creditos} créditos${costeR.usd != null ? ` (~${costeR.usd} USD)` : ""} (${costeR.nota}).`}</p>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <button type="button" disabled={ocupado || !aprobadas.length} onClick={() => { void aprobar(aprobadas); }} className="rounded-lg bg-amber-400 px-3 py-2 font-bold text-slate-950 disabled:opacity-60">{ocupado ? "Guardando…" : `Aprobar ${aprobadas.length} toma(s) marcada(s)`}</button>
+        <button type="button" onClick={() => { setAprobadas([]); setEd({}); setEstado("Cambios descartados: el episodio no se modificó."); }} className="rounded-lg border border-white/15 px-3 py-2">Descartar</button>
+        <button type="button" disabled={ocupado || !versiones.length} onClick={() => { void restaurar(); }} className="rounded-lg border border-white/15 px-3 py-2">Restaurar versión anterior</button>
+      </div>
+      {estado && <p role="status" className="text-cyan-100">{estado}</p>}
+    </div>}
   </details>;
 }

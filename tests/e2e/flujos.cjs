@@ -394,6 +394,18 @@ const ir = async (page, espacio, modulo) => {
       await page.getByRole("button", { name: /Aprobar y guardar tiempos/ }).click(); await page.waitForTimeout(1500);
       const ep3 = await page.evaluate(id => JSON.parse(localStorage.getItem("estudio-viral:episodes")).find(e => e.id === id), ep.id);
       ok(ep3.output.scenes[18].durationSec === 8 && /8 seconds/.test(ep3.output.scenes[18].animationPrompt) && ep3.output.guionJson.montaje.modo === "accion" && ep3.output.scenes.every((x, i) => x.line === orig.clips[i][0][1]) && ep3.versions.length === ep2.versions.length + 1, "Daniel: aprobar los tiempos guarda la escena 19 a 8 s, montaje cinematográfico y los mismos diálogos");
+      // Director de acción: vista previa, aprobar la batalla, restaurar.
+      await page.getByText("Director de acción · secuencias, bloqueo, coreografía y continuidad").click(); await page.waitForTimeout(600);
+      ok(await page.getByText(/S1 · Mensajero Celestial y Miguel contra Príncipe de Persia/).count() === 1 && await page.getByRole("img", { name: /Bloqueo de la escena 11/ }).count() >= 1, "Daniel: el director de acción muestra la batalla y el bloqueo de cada toma");
+      await page.getByRole("button", { name: "Marcar la secuencia para aprobar" }).first().click();
+      const v0 = (await page.evaluate(id => JSON.parse(localStorage.getItem("estudio-viral:episodes")).find(e => e.id === id), ep.id)).versions.length;
+      await page.getByRole("button", { name: /Aprobar 9 toma\(s\) marcada\(s\)/ }).click(); await page.waitForTimeout(1500);
+      const ep4 = await page.evaluate(id => JSON.parse(localStorage.getItem("estudio-viral:episodes")).find(e => e.id === id), ep.id);
+      ok(ep4.versions.length === v0 + 1 && /Blocking/.test(ep4.output.scenes[10].imagePromptFlow) && /END STATE/.test(ep4.output.scenes[10].animationPrompt) && ep4.output.scenes.every((x, i) => x.line === orig.clips[i][0][1]), "Daniel: aprobar la batalla añade bloqueo y estado final a los prompts, sin tocar los diálogos");
+      page.once("dialog", d => d.accept());
+      await page.getByRole("button", { name: "Restaurar versión anterior" }).click(); await page.waitForTimeout(1500);
+      const ep5 = await page.evaluate(id => JSON.parse(localStorage.getItem("estudio-viral:episodes")).find(e => e.id === id), ep.id);
+      ok(!/Blocking/.test(ep5.output.scenes[10].imagePromptFlow) && ep5.output.scenes.every((x, i) => x.line === orig.clips[i][0][1]), "Daniel: restaurar vuelve a la versión anterior");
       await ctx.close(); }
   } finally {
     await b.close();
