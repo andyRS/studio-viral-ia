@@ -2,6 +2,7 @@
 // Fase 5 del proyecto largo: montaje por actos en 16:9 (con clips verticales), unir los actos, publicación
 // (títulos, descripción con capítulos, miniaturas, clips y plan al calendario) y evaluación narrativa.
 import { useMemo, useState } from "react";
+import type { GuardarProyecto } from "@/components/studio/cola";
 import MontajePanel, { PC_URL } from "@/components/MontajePanel";
 import CopyButton from "@/components/CopyButton";
 import { useData } from "@/lib/DataContext";
@@ -9,7 +10,7 @@ import { capitulos, CRITERIOS, escenaPorId, guionDeActo, notaMedia, tomasDelActo
 import { allScenes, type Outline } from "@/lib/outline";
 import { perfilActivo, duracionClip } from "@/lib/tomas";
 
-type Base = { outline: Outline; guardar: (o: Outline) => Promise<void>; busy: boolean; series: any };
+type Base = { outline: Outline; guardar: GuardarProyecto<Outline>; busy: boolean; series: any };
 type ConIA = Base & { ia: (body: any) => Promise<any>; run: (label: string, fn: () => Promise<void>) => Promise<void> };
 
 // ---------- Montaje por actos ----------
@@ -84,7 +85,7 @@ export function PublicacionPanel({ outline, guardar, busy, series, ia, run }: Co
   const cuentas = [series.accountId, ...(series.clipAccountIds || [])].map((id: string) => data.accounts.find((a: any) => a.id === id)).filter(Boolean);
   const generar = () => run("Preparando la publicación…", async () => {
     const r = await ia({ action: "distribucion", outline, perfilCuenta });
-    await guardar({ ...outline, distribucion: r });
+    await guardar(b => ({ ...b, distribucion: r }));
   });
   const descripcion = d ? `${d.descripcion}\n\n${caps.join("\n")}${d.etiquetas.length ? `\n\n${d.etiquetas.slice(0, 5).map(t => `#${t.replace(/\s+/g, "")}`).join(" ")}` : ""}` : "";
   const alCalendario = async () => {
@@ -141,7 +142,7 @@ export function EvaluacionPanel({ outline, guardar, busy, series, ia, run }: Con
   const media = notaMedia(e);
   const evaluar = () => run("Evaluando el guion…", async () => {
     const r = await ia({ action: "evaluar", outline, criterios: CRITERIOS });
-    await guardar({ ...outline, evaluacion: r });
+    await guardar(b => ({ ...b, evaluacion: r }));
   });
   // Datos observados de la cuenta (métricas importadas): solo para comparar, separados de la evaluación.
   const obs = useMemo(() => {

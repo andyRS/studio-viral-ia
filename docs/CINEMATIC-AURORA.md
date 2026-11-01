@@ -193,3 +193,24 @@ Aurora ya no introduce violeta ni naranja. Equivalencias:
 - En el navegador:
   - con los dos divisores al máximo, el lienzo queda en 407 px a 1680 de ventana y en 383 px tras estrechar;
   - en «Reducidos», el inspector, las tarjetas, las vistas, los desplegables y los botones quedan sin animación ni transición.
+
+## Correcciones de integridad (segunda revisión)
+
+1. **Paneles con operaciones sobre el estado actual.** `guardarEnCola` recibía proyectos completos calculados con las props del render y la cola los guardaba tal cual: con guardado lento, cambiar plano y luz conservaba la luz y perdía el plano. Ahora el contrato es `GuardarProyecto` (`studio/cola.ts`): los paneles pasan una operación `(base) => proyecto` y la cola la aplica sobre el último proyecto guardado.
+   - **Paneles cubiertos:** Tomas (toma, lista, reordenar, dividir, añadir, partir, borrar, bloquear), Plan y costos (motor, formato, tarifas), Fuentes y canon, Escenarios (campos, imágenes, versiones, candado, detectar, añadir y quitar), Publicación y Evaluación.
+   - **El compilador lo vigila:** un panel que intente pasar un proyecto completo no compila.
+   - **Biblia del personaje:** tenía el mismo problema y ahora acumula los cambios sobre la última versión y los guarda en cola.
+2. **Un deshacer o rehacer fallido no se pierde.** `studio/historial.ts` (sin React, con pruebas):
+   - si guardar falla, o la acción no puede aplicarse ahora por un candado, la acción vuelve a su pila y el aviso indica que se puede reintentar;
+   - solo se descarta si ya no cambia nada;
+   - un deshacer o rehacer a la vez: mientras uno guarda, el siguiente avisa «Espera…» en lugar de desordenar la pila.
+
+**Pruebas:**
+- `tests/directores.test.ts` (7 nuevas):
+  - Tomas con plano y luz y guardado lento de 80 ms;
+  - deshacer que falla y se reintenta;
+  - rehacer que falla y se reintenta;
+  - acciones que no pueden aplicarse;
+  - dos deshacer seguidos.
+- e2e 10: plano e iluminación de una toma editados en el mismo instante. **Falla con `fb1a90d` y pasa ahora.**
+- El fallo al guardar un deshacer solo se prueba en lógica: en modo local el guardado no falla de forma provocable.

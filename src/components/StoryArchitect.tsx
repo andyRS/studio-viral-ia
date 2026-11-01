@@ -7,7 +7,7 @@ import { useData } from "@/lib/DataContext";
 import { CanonPanel, EscenariosPanel } from "@/components/CanonPanels";
 import { PlanPanel, TomasPanel } from "@/components/ProduccionPanels";
 import LongDirector, { type IrALargo } from "@/components/LongDirector";
-import { crearCola } from "@/components/studio/cola";
+import { crearCola, type GuardarProyecto } from "@/components/studio/cola";
 import { despuesDePintar } from "@/components/studio/useOperaciones";
 import type { Mapa } from "@/lib/ordenEscenas";
 import { EvaluacionPanel, MontajeLargo, PublicacionPanel } from "@/components/DistribucionPanels";
@@ -52,14 +52,18 @@ export default function StoryArchitect({ series, style, cast, characters = [], d
   // Una sola cola de guardado para el proyecto: director, editor de guion y paneles guardan uno detrás de
   // otro, y las operaciones del director y del guion se calculan sobre el último proyecto guardado.
   const guardarRef = useRef(guardar); guardarRef.current = guardar;
+  const baseRef = useRef<Outline>(saved as Outline);
   const colaRef = useRef<ReturnType<typeof crearCola<Outline, Mapa>> | null>(null);
   if (!colaRef.current) colaRef.current = crearCola<Outline, Mapa>(async v => { await guardarRef.current(v); await despuesDePintar(); return v; });
   if (saved) colaRef.current.sincronizar(saved);
   const aplicar = colaRef.current.aplicar;
-  const guardarEnCola = (o: Outline) => aplicar(() => ({ valor: o })).then(() => {});
+  // Los paneles pasan operaciones `(base) => proyecto`: la cola las aplica sobre el último proyecto guardado.
+  // Sin proyecto guardado todavía (fuentes o escenarios antes de la estructura) se parte del proyecto base.
+  const guardarEnCola: GuardarProyecto<Outline> = cambio => aplicar(b => { const v = cambio(b ?? baseRef.current); return v ? { valor: v } : null; }).then(() => {});
   if (!series) return null;
   // Proyecto base para poder cargar fuentes y escenarios antes de crear la estructura.
   const base: Outline = saved || { seriesId: series.id, structure: 3, targetMinutes: 20, acts: [] };
+  baseRef.current = base;
 
   async function guardar(o: Outline) {
     const item = { ...o, seriesId: series.id, updatedAt: new Date().toISOString() };

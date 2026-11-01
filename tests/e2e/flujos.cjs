@@ -224,6 +224,32 @@ const ir = async (page, espacio, modulo) => {
         ok(ep.output.scenes[0].line === "frase rápida" && ep.output.scenes[0].emotion === "emoción rápida", "dos ediciones simultáneas del director corto se guardan las dos");
       } else ok(false, "no se abrió el episodio corto");
       await ctx.close(); }
+
+    // 10. Panel de Tomas: plano e iluminación de una toma editados en el mismo instante se guardan los dos.
+    { const { ctx, page } = await abrir(b, () => {
+        const S = (k, v) => localStorage.setItem("estudio-viral:" + k, JSON.stringify(v));
+        const toma = { id: "t1", personajes: [], accion: "a", plano: "general", lente: "", movimiento: "", composicion: "", luz: "día", vfx: "", expresion: "", sonido: "", musica: "", duracion: 5, frameInicial: "", frameFinal: "", transicion: "corte", estado: "pendiente" };
+        S("series", [{ id: "s1", title: "Serie Tomas", description: "x", format: "largo", style: "epica" }]);
+        S("storyOutlines", [{ id: "o1", seriesId: "s1", structure: 3, targetMinutes: 20, acts: [{ id: "a1", title: "Acto I", goal: "", sequences: [{ id: "q1", title: "Sec", goal: "", scenes: [{ id: "e1", heading: "EXT. RÍO", summary: "x", objective: "", obstacle: "", consequence: "", tension: 5, minutes: 2, tomas: [toma] }] }] }] }]);
+      });
+      await ir(page, "Creative Studio", "Generador");
+      const serie = page.getByRole("button", { name: /Serie Tomas/ }).first(); if (await serie.count()) { await serie.click(); await page.waitForTimeout(700); }
+      const mesa = page.getByRole("button", { name: /Mesa de dirección/ }).first(); if (await mesa.count() && (await mesa.getAttribute("aria-expanded")) === "false") { await mesa.click(); await page.waitForTimeout(600); }
+      await page.getByRole("tab", { name: "Tomas y storyboard" }).click(); await page.waitForTimeout(500);
+      await page.getByRole("button", { name: "Editar" }).first().click(); await page.waitForTimeout(400);
+      const hecho = await page.evaluate(() => {
+        const campo = texto => Array.from(document.querySelectorAll("label")).find(l => l.firstChild?.textContent?.trim() === texto)?.querySelector("textarea");
+        const plano = campo("Plano"), luz = campo("Iluminación");
+        if (!plano || !luz) return false;
+        plano.value = "primer plano"; luz.value = "atardecer";
+        plano.dispatchEvent(new FocusEvent("focusout", { bubbles: true })); luz.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+        return true;
+      });
+      await page.waitForTimeout(1200);
+      const o = await page.evaluate(() => JSON.parse(localStorage.getItem("estudio-viral:storyOutlines"))[0]);
+      const t = o.acts[0].sequences[0].scenes[0].tomas[0];
+      ok(hecho && t.plano === "primer plano" && t.luz === "atardecer", "Tomas: plano y luz editados a la vez se guardan los dos");
+      await ctx.close(); }
   } finally {
     await b.close();
     if (srv) try { process.kill(-srv.pid); } catch {}

@@ -163,7 +163,15 @@ const CAMPOS_BIBLIA: [keyof CharacterBible, string, string][] = [
 function BibliaPersonaje({ c, guardar }: { c: any; guardar: (b: CharacterBible) => Promise<any> }) {
   const [open, setOpen] = useState(false);
   const b = normBible(c.bible);
-  const set = (patch: Partial<CharacterBible>) => { void guardar({ ...b, ...patch }); };
+  // Los cambios se acumulan sobre la última biblia (local) y se guardan en cola: dos campos editados seguidos
+  // no se pisan aunque el guardado tarde. Cuando no hay nada pendiente, manda lo que llega de la cuenta.
+  const ultima = useRef<CharacterBible>(b); const pendientes = useRef(0); const cola = useRef<Promise<unknown>>(Promise.resolve());
+  if (pendientes.current === 0) ultima.current = b;
+  const set = (patch: Partial<CharacterBible> | ((x: CharacterBible) => Partial<CharacterBible>)) => {
+    ultima.current = { ...ultima.current, ...(typeof patch === "function" ? patch(ultima.current) : patch) };
+    const valor = ultima.current; pendientes.current++;
+    cola.current = cola.current.catch(() => {}).then(() => guardar(valor)).finally(() => { pendientes.current--; });
+  };
   const completos = CAMPOS_BIBLIA.filter(([k]) => String(b[k] || "").trim()).length + (b.vestuario?.length ? 1 : 0);
   return <div className="mt-3 rounded-lg border border-white/10">
     <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} className="flex w-full items-center gap-2 p-2 text-left text-xs">
@@ -175,12 +183,12 @@ function BibliaPersonaje({ c, guardar }: { c: any; guardar: (b: CharacterBible) 
           onBlur={e => { if (e.target.value !== String(b[k] || "")) set({ [k]: e.target.value } as any); }} /></label>)}
       <div className="text-slate-300">Variantes de vestuario
         <ul className="mt-1 space-y-1">{(b.vestuario || []).map((v, i) => <li key={i} className="flex items-center gap-2"><span className="flex-1 text-slate-200">• {v}</span>
-          <button type="button" onClick={() => set({ vestuario: b.vestuario!.filter((_, j) => j !== i) })} className="text-slate-500 hover:text-red-300">Quitar</button></li>)}</ul>
-        <button type="button" onClick={() => { const v = window.prompt("Nueva variante de vestuario (p. ej. «manto real de Babilonia, bordado en oro»)"); if (v?.trim()) set({ vestuario: [...(b.vestuario || []), v.trim()] }); }} className="mt-1 text-sky-300">+ Añadir variante</button>
+          <button type="button" onClick={() => set(x => ({ vestuario: (x.vestuario || []).filter((_, j) => j !== i) }))} className="text-slate-500 hover:text-red-300">Quitar</button></li>)}</ul>
+        <button type="button" onClick={() => { const v = window.prompt("Nueva variante de vestuario (p. ej. «manto real de Babilonia, bordado en oro»)"); if (v?.trim()) set(x => ({ vestuario: [...(x.vestuario || []), v.trim()] })); }} className="mt-1 text-sky-300">+ Añadir variante</button>
       </div>
-      <label className="flex items-center gap-2 text-slate-300"><input type="checkbox" checked={!!b.candado} onChange={e => set({ candado: e.target.checked, versiones: [...(b.versiones || []), { at: new Date().toISOString(), nota: e.target.checked ? "identidad bloqueada" : "identidad desbloqueada" }] })} className="h-auto w-auto" />
+      <label className="flex items-center gap-2 text-slate-300"><input type="checkbox" checked={!!b.candado} onChange={e => set({ candado: e.target.checked, versiones: [...(ultima.current.versiones || []), { at: new Date().toISOString(), nota: e.target.checked ? "identidad bloqueada" : "identidad desbloqueada" }] })} className="h-auto w-auto" />
         Candado de identidad (la IA no cambia su aspecto; rasgos y paleta quedan fijos)</label>
-      <button type="button" onClick={() => { const nota = window.prompt("¿Qué cambió en el personaje? (queda en su historial)"); if (nota?.trim()) set({ versiones: [...(b.versiones || []), { at: new Date().toISOString(), nota: nota.trim() }] }); }} className="text-sky-300">Registrar un cambio</button>
+      <button type="button" onClick={() => { const nota = window.prompt("¿Qué cambió en el personaje? (queda en su historial)"); if (nota?.trim()) set({ versiones: [...(ultima.current.versiones || []), { at: new Date().toISOString(), nota: nota.trim() }] }); }} className="text-sky-300">Registrar un cambio</button>
       {!!b.versiones?.length && <ul className="space-y-0.5 text-slate-400">{b.versiones.slice().reverse().map(v => <li key={v.at}>{new Date(v.at).toLocaleDateString("es-DO")} · {v.nota}</li>)}</ul>}
     </div>}
   </div>;

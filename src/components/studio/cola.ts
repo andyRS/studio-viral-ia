@@ -27,3 +27,7 @@ export function crearCola<T, M = undefined>(guardar: (valor: T, meta: M | undefi
     },
   };
 }
+
+// Contrato de guardado de los paneles del proyecto largo: reciben una OPERACIÓN sobre el proyecto actual
+// (no un proyecto ya calculado con props de un render anterior). Devolver null = no hay nada que guardar.
+export type GuardarProyecto<T> = (cambio: (base: T) => T | null) => Promise<void>;
