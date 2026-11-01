@@ -9,6 +9,8 @@ import { duracionClip, ESTADO_LABEL, perfilActivo, type Toma } from "@/lib/tomas
 import { opCandadoLarga, opDesplazarLarga, opEditarLarga } from "./studio/operaciones";
 import { useOperaciones, type Aplicar } from "./studio/useOperaciones";
 import { Divisor, useAnchos } from "./studio/Divisores";
+import SceneTransferDialog, { type ConfirmSceneTransfer } from "./studio/SceneTransferDialog";
+import { useReorderMotion } from "./studio/useReorderMotion";
 
 type Vista = "director" | "secuencia" | "guion";
 type Pestaña = "escena" | "guion" | "escenario" | "canon" | "tomas";
@@ -19,6 +21,8 @@ type Props = {
   onEscribirGuion: (sc: OutlineScene) => void;
   renderGuion: (sc: OutlineScene) => ReactNode;
   onIrA: (p: IrALargo, sceneId?: string) => void;
+  /** Optional: the data agent owns moving, lock validation and the reversible operation. */
+  onTransferScene?: ConfirmSceneTransfer;
 };
 const mmss = (min: number) => `${Math.floor(min)}:${String(Math.round((min % 1) * 60)).padStart(2, "0")}`;
 const hecho = (t: Toma) => t.estado === "aprobado" || t.estado === "exportado";
@@ -29,6 +33,8 @@ export default function LongDirector(p: Props) {
   const [activa, setActiva] = useState<string>(escenas[0]?.id || "");
   const [vista, setVista] = useState<Vista>("director");
   const [pestaña, setPestaña] = useState<Pestaña>("escena");
+  const [transferScene, setTransferScene] = useState<string | null>(null);
+  const motionRef = useReorderMotion<HTMLElement>(vista);
   const ops = useOperaciones<Outline>(p.aplicar);
   const guardado = ops.estado;
   const paneles = useAnchos("director-largo", { izq: 290, der: 360 });
@@ -89,7 +95,12 @@ export default function LongDirector(p: Props) {
       : <textarea id={`ld-${String(k)}-${sc.id}`} key={`${sc.id}-${String(k)}-${String(sc[k] ?? "")}`} className="aurora-field !min-h-0" rows={filas} defaultValue={String(sc[k] ?? "")} onBlur={e => editar(sc.id, String(k), e.target.value.trim())} />)
       : <p className="text-sm">{String(sc[k] ?? "—")}</p>}</div>;
 
-  return <section className="sd" aria-label="Director del proyecto largo">
+  return <section ref={motionRef} className="sd" aria-label="Director del proyecto largo">
+    {transferScene && <SceneTransferDialog outline={o} sceneId={transferScene} busy={p.busy} onClose={() => setTransferScene(null)} onConfirm={p.onTransferScene ? async request => {
+      await p.onTransferScene!(request);
+      setActiva(request.sceneId);
+      requestAnimationFrame(() => document.getElementById(`ld-${request.sceneId}`)?.focus({ preventScroll: true }));
+    } : undefined} />}
     <div className="sd-toolbar">
       <div className="sd-views" role="group" aria-label="Vista">{([["director", "Director"], ["secuencia", "Secuencia"], ["guion", "Guion"]] as const).map(([v, l]) =>
         <button key={v} type="button" aria-pressed={vista === v} onClick={() => setVista(v)}>{l}</button>)}</div>
@@ -106,7 +117,7 @@ export default function LongDirector(p: Props) {
         <div className="sd-nav-list ld-tree">{o.acts.map((a, ai) => <div key={a.id} className="ld-act" role="group" aria-label={`Acto ${ai + 1}: ${a.title}`}>
           <p className="ld-act-head"><span>Acto {ai + 1}</span><b>{a.title}</b>{a.locked && <span aria-label="bloqueado">🔒</span>}</p>
           {a.sequences.map(q => <div key={q.id} className="ld-seq"><p className="ld-seq-head">{q.title}{q.locked ? " 🔒" : ""}</p>
-            <div role="list">{q.scenes.map(s => { const st = estadoEscena(s); const img = portada(s); return <div key={s.id} role="listitem">
+            <div role="list">{q.scenes.map(s => { const st = estadoEscena(s); const img = portada(s); return <div key={s.id} role="listitem" data-reorder-key={s.id}>
               <button type="button" id={`ld-${s.id}`} className="sd-card ld-card" data-spotlight aria-current={s.id === sc.id} onClick={() => setActiva(s.id)} onKeyDown={e => tecla(e, s)}
                 aria-label={`${s.heading}. ${st.t}.${s.locked ? " Bloqueada." : ""} Alt y flechas arriba o abajo para moverla en su secuencia.`}>
                 <span className="sd-thumb">{img && <img src={img} alt="" loading="lazy" />}<span className="sd-thumb-tag">{img ? (tomasDe(s).some(t => t.imagen) ? "Storyboard" : "Escenario") : "Sin imagen"}</span></span>
@@ -135,6 +146,7 @@ export default function LongDirector(p: Props) {
           {!sc.script?.length && !prot && <button type="button" className="sd-iconbtn" disabled={p.busy} onClick={() => p.onEscribirGuion(sc)}>✦ Escribir el guion con IA</button>}
           <button type="button" className="sd-iconbtn" onClick={() => { setPestaña("guion"); }}>¶ Editar guion</button>
           <button type="button" className="sd-iconbtn" onClick={() => p.onIrA("tomas", sc.id)}>▦ {tomasDe(sc).length ? "Abrir tomas" : "Dividir en tomas"}</button>
+          <button type="button" className="sd-iconbtn transfer-trigger" disabled={prot || p.busy} onClick={() => setTransferScene(sc.id)}>{p.onTransferScene ? "↗ Cambiar de secuencia" : "↗ Vista previa de traslado"}</button>
           <button type="button" className="sd-iconbtn" disabled={p.busy || prot} onClick={() => p.onRegenerar(sc.id, "scene")}>↻ Regenerar escena</button>
           <button type="button" className="sd-iconbtn" disabled={p.busy || !!(ubic?.a.locked || ubic?.q.locked)} onClick={() => candado(sc.id, !!sc.locked)}>{sc.locked ? "🔒 Desbloquear" : "🔓 Bloquear"}</button>
           <button type="button" className="sd-iconbtn" disabled={prot} onClick={() => mover(sc.id, -1)} aria-label="Mover la escena antes en su secuencia">↑</button>
@@ -179,13 +191,13 @@ export default function LongDirector(p: Props) {
     {vista === "secuencia" && <div className="sd-sequence">
       <div className="sd-seq-bar" role="group" aria-label="Escenas por duración">{escenas.map(s => <button key={s.id} type="button" aria-current={s.id === sc.id} data-incompleta={!s.script?.length} title={`${s.heading} · ${mmss(s.minutes)} · tensión ${s.tension}`} onClick={() => setActiva(s.id)} style={{ flexGrow: s.minutes || 1 }}>{s.tension}</button>)}</div>
       {o.acts.map((a, ai) => <div key={a.id} className="grid gap-1.5"><p className="ld-act-head"><span>Acto {ai + 1}</span><b>{a.title}</b></p>
-        {a.sequences.flatMap(q => q.scenes).map(s => { const st = estadoEscena(s); return <button key={s.id} type="button" className="sd-seq-row" aria-current={s.id === sc.id} onClick={() => setActiva(s.id)} onDoubleClick={() => { setActiva(s.id); setVista("director"); }}>
+        {a.sequences.flatMap(q => q.scenes).map(s => { const st = estadoEscena(s); return <button key={s.id} data-reorder-key={s.id} type="button" className="sd-seq-row" aria-current={s.id === sc.id} onClick={() => setActiva(s.id)} onDoubleClick={() => { setActiva(s.id); setVista("director"); }}>
           <b>{mmss(s.minutes)}</b><small>tensión {s.tension}</small><span className="min-w-0"><span className="block truncate text-sm font-semibold">{s.heading}</span><small className="block truncate">{s.summary}</small></span><span className="sd-status" data-s={st.s}>{st.t}</span></button>; })}</div>)}
       <p className="text-xs text-slate-400">Doble clic en una fila para abrirla en el director. Las barras rayadas aún no tienen guion.</p>
     </div>}
 
     {vista === "guion" && <div className="sd-script" aria-label="Guion del proyecto">{o.acts.map((a, ai) => <div key={a.id} className="grid gap-3"><p className="ld-act-head ld-act-big"><span>Acto {ai + 1}</span><b>{a.title}</b></p>
-      {a.sequences.flatMap(q => q.scenes).map(s => <article key={s.id} aria-current={s.id === sc.id} tabIndex={0} onClick={() => setActiva(s.id)} onKeyDown={e => { if (e.key === "Enter") { setActiva(s.id); setVista("director"); } }}>
+      {a.sequences.flatMap(q => q.scenes).map(s => <article key={s.id} data-reorder-key={s.id} aria-current={s.id === sc.id} tabIndex={0} onClick={() => setActiva(s.id)} onKeyDown={e => { if (e.key === "Enter") { setActiva(s.id); setVista("director"); } }}>
         <h4>{s.heading}</h4>
         {s.script?.length ? s.script.map((el, k) => el.type === "dialogo" || el.type === "off"
           ? <div key={k}><p className="sd-personaje">{el.speaker}{el.type === "off" ? " (OFF)" : ""}</p><p className="sd-dialogo">{el.text}</p></div>

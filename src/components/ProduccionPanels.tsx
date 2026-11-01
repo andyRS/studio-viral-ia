@@ -5,6 +5,7 @@ import PromptWorkbench from "./PromptWorkbench";
 import type { GuardarProyecto } from "@/components/studio/cola";
 import CopyButton from "./CopyButton";
 import { reorderShots } from "./studio/shotOrder";
+import { useReorderMotion } from "./studio/useReorderMotion";
 import ReferencePreview from "./ReferencePreview";
 import { useMemo, useRef, useState } from "react";
 import { reducir } from "@/components/CanonPanels";
@@ -36,6 +37,7 @@ export function TomasPanel({ outline, guardar, ia, run, busy, style, characters,
     if (window.matchMedia("(max-width: 1100px)").matches) requestAnimationFrame(() => inspectorRef.current?.scrollIntoView({ block: "start", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" }));
   };
   const [vista, setVista] = useState<"grid" | "sequence">("grid");
+  const motionRef = useReorderMotion<HTMLDivElement>(`${vista}:${sel}`);
   const sc = escenas.find(s => s.id === sel) || escenas[0];
   const perfil = perfilActivo(outline);
   const { formato } = produccionDe(outline);
@@ -81,7 +83,7 @@ export function TomasPanel({ outline, guardar, ia, run, busy, style, characters,
   const total = tomas.reduce((a, t) => a + duracionClip(t.duracion, perfil), 0);
   const todosLosPrompts = () => tomas.map((t, i) => { const p = promptsDeToma(t, perfil, ctx); return `TOMA ${i + 1} · ${p.clip} s\n\n[IMAGEN]\n${p.imagen}\n\n[VÍDEO]\n${p.video}${p.voz ? `\n\n[VOZ]\n${p.voz}` : ""}\n\n[SONIDO]\n${p.efectos}`; }).join("\n\n────────\n\n");
 
-  return <div className="storyboard-studio space-y-3">
+  return <div ref={motionRef} className="storyboard-studio space-y-3">
     <div className="flex flex-wrap items-end gap-2">
       <label className="min-w-0 flex-1 text-xs text-slate-300">Escena
         <select value={sc?.id || ""} onChange={e => { setSel(e.target.value); setSelectedShot(null); setInspectorTab("details"); setOrderMessage(""); }} className="mt-1">
@@ -113,7 +115,7 @@ export function TomasPanel({ outline, guardar, ia, run, busy, style, characters,
       <div className="storyboard-layout">
       <ol className={vista === "grid" ? "storyboard-card-grid" : "storyboard-sequence"}>{tomas.map((t, i) => {
         const pr = promptsDeToma(t, perfil, ctx);
-        return <li key={t.id} data-shot-id={t.id} data-scene-id={sc?.id} data-selected={selected?.id === t.id} className={`storyboard-shot rounded-xl border bg-white/[.02] p-2 text-xs ${dropTarget === t.id ? "shot-drop-target" : ""} ${t.locked ? "border-emerald-400/30" : pr.avisos.length ? "border-rose-400/40" : "border-white/10"}`}>
+        return <li key={t.id} data-reorder-key={t.id} data-shot-id={t.id} data-scene-id={sc?.id} data-selected={selected?.id === t.id} className={`storyboard-shot rounded-xl border bg-white/[.02] p-2 text-xs ${dropTarget === t.id ? "shot-drop-target" : ""} ${t.locked ? "border-emerald-400/30" : pr.avisos.length ? "border-rose-400/40" : "border-white/10"}`}>
           <div className="shot-card-heading"><button type="button" className="shot-drag-handle" aria-label={`Arrastrar toma ${i + 1}; usa Mover antes o Mover después con teclado`} disabled={prot || busy || savingOrder || t.locked} onPointerDown={e => { if (e.button !== 0) return; e.preventDefault(); draggingShot.current = t.id; e.currentTarget.setPointerCapture(e.pointerId); setOrderMessage(`Moviendo toma ${i + 1}: suéltala sobre otra tarjeta.`); }} onPointerMove={e => { if (draggingShot.current) setDropTarget(shotAt(e.clientX, e.clientY) || null); }} onPointerUp={e => { const from = draggingShot.current; const to = shotAt(e.clientX, e.clientY); draggingShot.current = null; setDropTarget(null); if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId); if (from && to && from !== to) void reorder(from, to); else if (from) setOrderMessage("Orden sin cambios."); }} onPointerCancel={() => { draggingShot.current = null; setDropTarget(null); setOrderMessage("Orden sin cambios."); }}>⠿</button><button type="button" onClick={() => showInspector(t.id, inspectorTab)} aria-pressed={selected?.id === t.id}>TOMA {String(i + 1).padStart(2, "0")}</button><span>{ESTADO_LABEL[t.estado]}</span></div>
           <div className="relative grid aspect-video place-items-center overflow-hidden rounded-lg bg-black/40">
             {t.imagen ? <ReferencePreview src={t.imagen} title={`Toma ${i + 1} · ${t.plano || "Storyboard"}`} landscape /> : <span className="px-2 text-center text-slate-500">{t.plano || "Sin imagen"}</span>}

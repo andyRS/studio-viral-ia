@@ -12,6 +12,7 @@ import { despuesDePintar, useOperaciones } from "./studio/useOperaciones";
 import { sceneRole } from "@/lib/production";
 import CopyButton from "./CopyButton";
 import { Divisor, useAnchos } from "./studio/Divisores";
+import { shortSceneVisualKeys, useReorderMotion } from "./studio/useReorderMotion";
 
 type Vista = "director" | "storyboard" | "secuencia" | "guion";
 type Pestaña = "guion" | "personajes" | "ambiente" | "camara" | "prompt" | "audio" | "produccion";
@@ -30,6 +31,9 @@ const pad = (n: number) => String(n).padStart(2, "0");
 export default function SceneDirector(p: Props) {
   const scenes: any[] = Array.isArray(p.out?.scenes) ? p.out.scenes : [];
   const [vista, setVista] = useState<Vista>("director");
+  const motionRef = useReorderMotion<HTMLElement>(vista);
+  const visualKeys = shortSceneVisualKeys(scenes);
+  const visualKey = (s: any) => visualKeys[scenes.indexOf(s)];
   const [pestaña, setPestaña] = useState<Pestaña>("guion");
   const [concentracion, setConcentracion] = useState(false);
   const [menu, setMenu] = useState<number | null>(null);
@@ -73,7 +77,15 @@ export default function SceneDirector(p: Props) {
   }, [p.checks, p.referenceSignature, medios.clip]);
 
   const deshacer = ops.deshacer, rehacer = ops.rehacer;
-  const mover = (n: number, a: number) => { p.onSelect(a); void ops.ejecutar(opMoverCorta(n, a)); };
+  const mover = (n: number, a: number) => {
+    const cardFocused = document.activeElement?.id === `sd-card-${n}`;
+    void ops.ejecutar(opMoverCorta(n, a)).then(result => {
+      if (!result) return;
+      const next = result.mapa?.[n] || a;
+      p.onSelect(next);
+      if (cardFocused) requestAnimationFrame(() => document.getElementById(`sd-card-${next}`)?.focus({ preventScroll: true }));
+    });
+  };
   const duplicar = (n: number) => { void ops.ejecutar(opDuplicarCorta(n)).then(h => { if (h) p.onSelect(n + 1); }); };
   const editar = (n: number, campo: string, valor: any) => { void ops.ejecutar(opEditarCorta(n, campo, valor)); };
 
@@ -102,7 +114,7 @@ export default function SceneDirector(p: Props) {
   const tarjeta = (s: any, compacta = false) => {
     const st = estadoDe(s); const img = medios.image[s.n] || masterDe(s.speaker)?.imageUrl; const real = !!medios.image[s.n];
     const presentes: string[] = Array.isArray(s.characters) && s.characters.length ? s.characters : [s.speaker].filter(Boolean);
-    return <div key={s.n} className="relative" role="listitem">
+    return <div key={visualKey(s)} data-reorder-key={visualKey(s)} className="relative" role="listitem">
       <button type="button" id={`sd-card-${s.n}`} className="sd-card" data-spotlight aria-current={s.n === escena?.n} data-arrastrando={arrastre?.de === s.n} data-destino={arrastre?.sobre === s.n && arrastre.de !== s.n}
         aria-label={`Escena ${s.n}: ${s.title || ""}. ${st.t}.${editable ? " Alt y flechas para moverla." : ""}`}
         draggable={editable} onDragStart={e => { setArrastre({ de: s.n, sobre: null }); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", String(s.n)); }}
@@ -153,7 +165,7 @@ export default function SceneDirector(p: Props) {
       : <textarea id={`sd-${k}-${escena.n}`} key={`${escena.n}-${k}-${escena[k]}`} className="aurora-field !min-h-0" rows={filas} defaultValue={escena[k] || ""} onBlur={e => editar(escena.n, k, e.target.value.trim())} />)
       : <p className="text-sm">{escena[k] || "—"}</p>}</div>;
 
-  return <section className="sd" aria-label="Director de escenas" data-concentracion={concentracion}>
+  return <section ref={motionRef} className="sd" aria-label="Director de escenas" data-concentracion={concentracion}>
     <div className="sd-toolbar">
       <div className="sd-views" role="group" aria-label="Vista">{([["director", "Director"], ["storyboard", "Storyboard"], ["secuencia", "Secuencia"], ["guion", "Guion"]] as const).map(([v, l]) =>
         <button key={v} type="button" aria-pressed={vista === v} onClick={() => setVista(v)}>{l}</button>)}</div>
@@ -240,14 +252,14 @@ export default function SceneDirector(p: Props) {
       <div className="sd-seq-bar" role="group" aria-label="Secuencia del episodio">{scenes.map((s, i) => { const r = sceneRole(i, scenes.length).title; const inc = estadoDe(s).s === "incompleta";
         return <button key={s.n} type="button" data-rol={r} data-incompleta={inc} aria-current={s.n === escena.n} title={`S${pad(s.n)} · ${r}${inc ? " · incompleta" : ""}`} onClick={() => p.onSelect(s.n)} style={{ flexGrow: Number(s.durationSec) || 8 }}>{pad(s.n)}</button>; })}</div>
       {(() => { let acum = 0; return scenes.map((s, i) => { const ini = acum; acum += Number(s.durationSec) || 8; const st = estadoDe(s); const sig = scenes[i + 1];
-        return <button key={s.n} type="button" className="sd-seq-row" aria-current={s.n === escena.n} onClick={() => { p.onSelect(s.n); }} onDoubleClick={() => { p.onSelect(s.n); setVista("director"); }}>
+        return <button key={visualKey(s)} data-reorder-key={visualKey(s)} type="button" className="sd-seq-row" aria-current={s.n === escena.n} onClick={() => { p.onSelect(s.n); }} onDoubleClick={() => { p.onSelect(s.n); setVista("director"); }}>
           <b>S{pad(s.n)}</b><small>{Math.floor(ini / 60)}:{pad(ini % 60)} – {Math.floor(acum / 60)}:{pad(acum % 60)}</small>
           <span className="min-w-0"><span className="block truncate text-sm font-semibold">{[sceneRole(i, scenes.length).title, s.title].filter((v, k, a) => v && a.indexOf(v) === k).join(" · ")}</span><small className="block truncate">{s.location || "sin lugar"}{sig && sig.location && s.location && sig.location !== s.location ? ` → ${sig.location}` : ""}</small></span>
           <span className="sd-status" data-s={st.s}>{st.t}</span></button>; }); })()}
       <p className="text-xs text-slate-400">Doble clic en una fila para abrirla en el director.</p>
     </div>}
 
-    {vista === "guion" && <div className="sd-script" aria-label="Guion del episodio">{scenes.map((s, i) => <article key={s.n} aria-current={s.n === escena.n} tabIndex={0} aria-label={`Escena ${s.n}. Intro para abrirla en el director`}
+    {vista === "guion" && <div className="sd-script" aria-label="Guion del episodio">{scenes.map((s, i) => <article key={visualKey(s)} data-reorder-key={visualKey(s)} aria-current={s.n === escena.n} tabIndex={0} aria-label={`Escena ${s.n}. Intro para abrirla en el director`}
       onClick={() => p.onSelect(s.n)} onKeyDown={e => { if (e.key === "Enter") { p.onSelect(s.n); setVista("director"); } }}>
       <h4>Escena {s.n} · {[sceneRole(i, scenes.length).title, s.title].filter((v, k, a) => v && a.indexOf(v) === k).join(" · ")} — {s.location || "Lugar"}</h4>
       {s.setting && <p className="sd-accion">{s.setting}</p>}
