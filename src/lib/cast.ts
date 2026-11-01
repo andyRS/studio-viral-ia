@@ -152,7 +152,8 @@ export function normalizeCast(list: unknown, style: StyleKey, opts: { taken?: Ca
     const rawHead = clean(row.headES);
     const headES = fruitStory ? (rawHead.length < 15 || /^aspecto:|color y la textura de su fruta|rasgos humanos realistas, cabello, ojos/i.test(rawHead) ? fruit!.head : rawHead) : undefined;
     const female = FEMALE.test(norm(context));
-    const clothing = clean(row.clothing) || (female ? "blusa de manga larga y falda por debajo de la rodilla" : "camisa de manga larga y pantalón de tela");
+    const relleno = RELLENO[style] || RELLENO.cine90;
+    const clothing = clean(row.clothing) || (female ? relleno.ropaF : relleno.ropaM);
     let hex = clean(row.subtitleColor).replace("#", "").toUpperCase();
     if (!/^[0-9A-F]{6}$/.test(hex)) hex = fruit?.color || PALETTE[i % PALETTE.length];
     if (usedColors.has(hex)) hex = PALETTE.find(p => !usedColors.has(p)) || hex;
@@ -160,7 +161,7 @@ export function normalizeCast(list: unknown, style: StyleKey, opts: { taken?: Ca
 
     const visualES = fruitStory
       ? `Rostro y cuerpo humanos realistas con piel de ${fruitName_}: ${headES}. Cabello humano real, ojos expresivos.`
-      : clean(row.visualES) || "Persona dominicana de los 90 con rasgos naturales.";
+      : clean(row.visualES) || relleno.visual;
     const voice = clean(row.voice) || (female ? "mujer, voz cálida y expresiva" : "hombre, voz firme y cercana");
     const pronunciations = Array.from(new Set([
       ...(Array.isArray(row.pronunciations) ? row.pronunciations.map(clean).filter(Boolean) : []),
@@ -174,6 +175,19 @@ export function normalizeCast(list: unknown, style: StyleKey, opts: { taken?: Ca
     member.flowPrompt = clean(row.flowPrompt) && /piel de|real human/i.test(row.flowPrompt) && !/nunca cara humana|cabeza (es )?entera/i.test(row.flowPrompt) ? clean(row.flowPrompt) : flowPromptFor(member, style);
     return member;
   });
+}
+
+// Relleno cuando la ficha no trae descripción, según el estilo (antes todos eran «dominicana de los 90»).
+const RELLENO: Record<string, { visual: string; ropaM: string; ropaF: string }> = {
+  cine90: { visual: "Persona dominicana de los 90 con rasgos naturales.", ropaM: "camisa de manga larga y pantalón de tela", ropaF: "blusa de manga larga y falda por debajo de la rodilla" },
+  biblica: { visual: "Persona dominicana de hoy con rasgos naturales.", ropaM: "camisa de manga larga y pantalón de tela", ropaF: "blusa de manga larga y falda por debajo de la rodilla" },
+  epica: { visual: "Persona del antiguo Oriente Próximo, piel morena curtida por el sol, rasgos naturales.", ropaM: "túnica de lino y manto de la época bíblica, sandalias de cuero", ropaF: "túnica larga de lino y manto sobre la cabeza, sandalias de cuero" },
+};
+// ¿La ficha es solo relleno (sin descripción real)? Se reconocen también los rellenos antiguos.
+export function fichaGenerica(c: { visualES?: string; clothing?: string; fruit?: string } | null | undefined) {
+  if (!c || c.fruit) return false;
+  const v = clean(c.visualES);
+  return !v || Object.values(RELLENO).some(r => r.visual === v);
 }
 
 // ¿Hace falta pedirle a la IA que repare el elenco? (antes de que lo arregle el código)

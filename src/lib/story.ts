@@ -5,7 +5,7 @@ import { callLLM } from "./llm";
 import { jsonrepair } from "jsonrepair";
 import { BIBLE_BANK, EPIC_BANK, EPIC_NOTICE, CHRISTIAN_RULES, FRUIT_CAST_RULES, MANUAL_VIRAL, STYLES, type StyleKey } from "./knowledge";
 import { templateHookVariants, type HookVariant } from "./hooks";
-import { castNeedsRepair, isFruitStyle, norm, normalizeCast, templateCast, type CastMember } from "./cast";
+import { castNeedsRepair, fichaGenerica, isFruitStyle, norm, normalizeCast, templateCast, type CastMember } from "./cast";
 import { aspectoDe, buildProduction, conAspecto, NARRATOR, sceneCountFor, templateScenes } from "./production";
 import { christianSafe, templateIdeas, type IdeasRequest, type StoryIdea } from "./ideas";
 
@@ -348,12 +348,12 @@ async function generateNextEpisodeBase(input: any) {
     const castSheet = existing.map(c => isFruitStyle(style)
       ? `- ${c.name} (${c.role}): piel de ${c.fruit} — ${c.headES}. Ropa: ${c.clothing}. Voz: ${c.voice}.`
       : `- ${c.name} (${c.role}): ${c.visualES}. Ropa: ${c.clothing}. Voz: ${c.voice}.`).join("\n");
-    const system = `${styleRules(style)}${extraContext(input)}\n\n${sceneBrief(style, count)}\n\n${miPedido(input, style, duration, count, externo ? "adaptacion" : "continuacion")}\n\n${externo ? `${adaptarReglas(count)}\n\nTAREA: adapta el guion recibido como el EPISODIO ${input.partNumber} de la serie "${input.series?.title}" con el elenco fijo (si el guion usa otros nombres para ellos, usa los del elenco; si trae personajes nuevos, créalos en newCharacters).` : `TAREA: escribe el EPISODIO ${input.partNumber} de la serie "${input.series?.title}", continuando exactamente donde terminó el anterior (retoma su cliffhanger en la escena 1; si es para TikTok/Facebook puede abrir con "Anteriormente...").${(() => { const c = String((input.history || []).slice(-1)[0]?.cliffhanger || "").trim(); return c ? `\nEL PÚBLICO SE QUEDÓ CON ESTE CIERRE: «${c}». La escena 1 retoma exactamente esa acción (sin repetir la frase y SIN resolver todavía el misterio: si alguien se iba, primero se le persigue o se le ve de espaldas; la revelación llega a mitad del episodio), la tensión sube escena a escena y el episodio termina con un cliffhanger nuevo, más fuerte, que haga pedir la parte siguiente en los comentarios.` : ""; })()}${input.nextPlan ? `\nLO QUE SE GUARDA PARA LA PARTE SIGUIENTE (no lo abras ni lo reveles en esta; como mucho, que aparezca cerrado al final como cliffhanger): «${String(input.nextPlan).slice(0, 600)}».` : ""}`}
+    const system = `${styleRules(style)}${extraContext(input)}\n\n${sceneBrief(style, count)}\n\n${miPedido(input, style, duration, count, externo ? "adaptacion" : "continuacion")}\n\n${externo ? `${adaptarReglas(count)}\n\nTAREA: adapta el guion recibido como el EPISODIO ${input.partNumber} de la serie "${input.series?.title}" con el elenco fijo (si el guion usa otros nombres para ellos, usa los del elenco; si trae personajes nuevos, créalos en newCharacters).${existing.some(c => fichaGenerica(c)) ? `\nFICHAS POR COMPLETAR: ${existing.filter(c => fichaGenerica(c)).map(c => c.name).join(", ")} tienen una ficha genérica sin descripción real. Escribe sus fichas en "castUpdates" (mismo nombre) con apariencia física fija, edad, vestuario y voz según el guion, la época y el estilo.` : ""}` : `TAREA: escribe el EPISODIO ${input.partNumber} de la serie "${input.series?.title}", continuando exactamente donde terminó el anterior (retoma su cliffhanger en la escena 1; si es para TikTok/Facebook puede abrir con "Anteriormente...").${(() => { const c = String((input.history || []).slice(-1)[0]?.cliffhanger || "").trim(); return c ? `\nEL PÚBLICO SE QUEDÓ CON ESTE CIERRE: «${c}». La escena 1 retoma exactamente esa acción (sin repetir la frase y SIN resolver todavía el misterio: si alguien se iba, primero se le persigue o se le ve de espaldas; la revelación llega a mitad del episodio), la tensión sube escena a escena y el episodio termina con un cliffhanger nuevo, más fuerte, que haga pedir la parte siguiente en los comentarios.` : ""; })()}${input.nextPlan ? `\nLO QUE SE GUARDA PARA LA PARTE SIGUIENTE (no lo abras ni lo reveles en esta; como mucho, que aparezca cerrado al final como cliffhanger): «${String(input.nextPlan).slice(0, 600)}».` : ""}`}
 ELENCO FIJO (reutilízalo SIN cambiar nombre, fruta, cara ni ropa; sus fichas ya están aprobadas):
 ${castSheet}${input.signatureSong ? `
 CANCIÓN DE FIRMA de la serie (repítela tal cual en social.music): ${String(input.signatureSong).slice(0, 200)}` : ""}
 Si la historia necesita un personaje nuevo, créalo en newCharacters (máximo 2) con una fruta que no use nadie del elenco.
-Responde SOLO JSON: {"episode":{"title":"","summary":"","hook":["",""],"coverText":"","description":"","hashtags":[],${FICHA_SCHEMA},${BIBLE_SCHEMA(style)}${PUBLISH_SCHEMA},${SCENES_SCHEMA}},"newCharacters":[${CAST_FIELDS(style)}]}`;
+Responde SOLO JSON: {${externo ? `"castUpdates":[${CAST_FIELDS(style)}],` : ""}"episode":{"title":"","summary":"","hook":["",""],"coverText":"","description":"","hashtags":[],${FICHA_SCHEMA},${BIBLE_SCHEMA(style)}${PUBLISH_SCHEMA},${SCENES_SCHEMA}},"newCharacters":[${CAST_FIELDS(style)}]}`;
     const parsed = await askJson(system, JSON.stringify({
       serie: input.series, mundo: input.bible, episodiosAnteriores: input.history,
       deseoDelUsuario: input.wish || "Decide tú lo que pasa para que enganche más", duracionSegundos: duration, ...(externo ? { guionExterno: externo } : {}),
@@ -361,16 +361,21 @@ Responde SOLO JSON: {"episode":{"title":"","summary":"","hook":["",""],"coverTex
     const known = new Set(existing.map(c => norm(c.name)));
     const newRows = (Array.isArray(parsed.newCharacters) ? parsed.newCharacters : []).filter((c: any) => c?.name && !known.has(norm(c.name))).slice(0, 2);
     const newCharacters = normalizeCast(newRows, style, { taken: existing });
-    const characters = [...existing, ...newCharacters];
+    // Fichas genéricas completadas por la IA desde el guion (mismo nombre): se usan en este episodio y se devuelven para guardarlas.
+    const genericos = new Set(existing.filter(c => fichaGenerica(c)).map(c => norm(c.name)));
+    const filasUpd = (Array.isArray(parsed.castUpdates) ? parsed.castUpdates : []).filter((c: any) => c?.name && genericos.has(norm(c.name)));
+    const castUpdates = filasUpd.map((f: any) => { const prev = existing.find(c => norm(c.name) === norm(f.name))!; const [n] = normalizeCast([{ ...f, name: prev.name, subtitleColor: prev.subtitleColor }], style); return { ...n, name: prev.name, subtitleColor: prev.subtitleColor }; });
+    const fijos = existing.map(c => castUpdates.find((u: CastMember) => u.name === c.name) || c);
+    const characters = [...fijos, ...newCharacters];
     const episodeRaw = await ensureNarratorEnding(parsed.episode || parsed, String(input.wish || input.series?.title || ""), style, Math.min(25000, 150000 - (Date.now() - startedAt)));
     const episode = buildProduction(episodeRaw, { style, duration, scenes: count, characters, idea: String(input.wish || input.series?.title || ""), chosenHook: input.chosenHook, seriesTitle: String(input.series?.title || "Serie"), partNumber: Number(input.partNumber || 2), previousSummary: String((input.history || []).slice(-1)[0]?.summary || "") });
     const mode = providerMode();
     try { validateEpisode(episode, count); }
     catch (qualityError) {
       const issue = qualityError instanceof Error ? qualityError.message : String(qualityError);
-      return { mode: "gemini-borrador", notice: `Gemini escribió el episodio, pero ${issue}. Se guardó como borrador para revisión; no se enviará a producción.`, episode: { ...episode, mode: "gemini-borrador", qualityIssues: [issue] }, newCharacters };
+      return { mode: "gemini-borrador", notice: `Gemini escribió el episodio, pero ${issue}. Se guardó como borrador para revisión; no se enviará a producción.`, episode: { ...episode, mode: "gemini-borrador", qualityIssues: [issue] }, newCharacters, castUpdates };
     }
-    return { mode, episode: { ...episode, mode }, newCharacters };
+    return { mode, episode: { ...episode, mode }, newCharacters, castUpdates };
   } catch (error) {
     return { ...templateNext(input), notice: fallbackNotice(error) };
   }

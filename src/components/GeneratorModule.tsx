@@ -27,7 +27,7 @@ import SceneDesk from "./SceneDesk";
 import StoryArchitect from "./StoryArchitect";
 import { EPIC_NOTICE, STYLES, type StyleKey } from "@/lib/knowledge";
 import { adaptarPersonajesLocal, capituloDeJson, escenasDelGuion, importarCapitulo, templateSeries, templateNext } from "@/lib/story";
-import { isGenericName } from "@/lib/cast";
+import { fichaGenerica, isGenericName } from "@/lib/cast";
 import { aspectoDe, buildFlowBatch, conAspecto, escenasEnTexto, MAX_SCENES, MIN_SCENES, refreshPrompts, PROMPT_RULES_VERSION, sceneCountFor } from "@/lib/production";
 import { seriesSignals } from "@/lib/seriesSignals";
 import { stylePublish, formatDescription, sinLlamadas, viralHashtags } from "@/lib/platforms";
@@ -311,17 +311,22 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
     try {
       const res = await call("/api/next-episode", body, () => templateNext(body)); if (!res) return;
       for (const c of res.data.newCharacters || []) await insert("characters", { ...c, seriesId: current.id });
+      // Fichas genéricas que la IA completó desde el guion: se guardan (la imagen, si la hay, se conserva).
+      for (const u of res.data.castUpdates || []) {
+        const m = data.characters.find((x: any) => x.seriesId === current.id && x.name.toLowerCase() === String(u.name).toLowerCase());
+        if (m && fichaGenerica(m)) await update("characters", m.id, { role: u.role, visualES: u.visualES, visualEN: u.visualEN, clothing: u.clothing, voice: u.voice, speechStyle: u.speechStyle, flowPrompt: u.flowPrompt });
+      }
       const ep = data.episodes.find((e: any) => e.id === result.episodeId) as any;
       const output = { ...res.data.episode, partNumber: part, seriesBible: bible };
       await update("episodes", result.episodeId, { output, title: output.title || ep?.title, theme: output.summary || ep?.theme, versions: [...(Array.isArray(ep?.versions) ? ep.versions : []), result.episode].slice(-10) });
       setResult(r => (r ? { ...r, episode: output } : r));
-      setNotice([`Guion adaptado: ${output.scenes?.length || 0} escenas. La versión anterior quedó en el historial del episodio.`, res.note, (res.data.newCharacters || []).length ? `Personajes nuevos: ${res.data.newCharacters.map((c: any) => c.name).join(", ")} (crea y aprueba sus fichas).` : ""].filter(Boolean).join(" "));
+      setNotice([`Guion adaptado: ${output.scenes?.length || 0} escenas. La versión anterior quedó en el historial del episodio.`, res.note, (res.data.newCharacters || []).length ? `Personajes nuevos: ${res.data.newCharacters.map((c: any) => c.name).join(", ")} (crea y aprueba sus fichas).` : "", (res.data.castUpdates || []).length ? `Fichas completadas desde el guion: ${res.data.castUpdates.map((c: any) => c.name).join(", ")}.` : ""].filter(Boolean).join(" "));
     } finally { setLoading(false); }
   }
 
   // «1 · Personajes canónicos» → importar fichas de otra IA: actualiza a los que ya existen (por nombre) y añade
   // los nuevos a la serie; el elenco del episodio y sus prompts se rehacen con esas fichas.
-  async function importarPersonajes(texto: string) {
+  async function importarPersonajes(texto: string, opciones: { soloNombres?: string[] } = {}) {
     if (!result?.seriesId) throw new Error("Guarda primero el episodio.");
     const serie = data.series.find((x: any) => x.id === result.seriesId) as any;
     const st = (result.episode?.seriesBible?.style || (result.episode?.cast?.some((x: any) => x.fruit) ? "frutinovela" : "cine90")) as StyleKey;
@@ -329,8 +334,11 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
     const body = { texto, style: st, formato: serie?.format, existentes: existentes.map((c: any) => c.name) };
     setLoading(true); setNotice(""); setAuthError(false);
     try {
-      const res = await call("/api/personajes", body, () => adaptarPersonajesLocal(body)); if (!res) return;
-      const llegan: any[] = res.data.characters || [];
+      const res = opciones.soloNombres
+        ? (mode === "supabase" ? await call("/api/personajes", body, () => ({})) : (() => { throw new Error("Completar fichas desde el guion necesita la IA: inicia sesión."); })())
+        : await call("/api/personajes", body, () => adaptarPersonajesLocal(body)); if (!res) return;
+      const solo = opciones.soloNombres?.map(n => n.toLowerCase());
+      const llegan: any[] = (res.data.characters || []).filter((c: any) => !solo || solo.includes(String(c.name).toLowerCase()));
       if (!llegan.length) throw new Error("No se encontraron personajes en ese texto. Usa «NOMBRE: descripción» o un JSON con nombre y apariencia.");
       const CAMPOS = ["role", "fruit", "fruitEmoji", "headES", "visualES", "visualEN", "clothing", "voice", "speechStyle", "pronunciations", "flowPrompt"];
       const actualizados: string[] = [], nuevos: string[] = [];
@@ -816,6 +824,7 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
         {out.dialogueRules && <p className="text-xs text-slate-500">{out.dialogueRules}</p>}
       </div>}
       {tab === "elenco" && <div>
+        {onImportarPersonajes && !finished && <CompletarFichas cast={cast} master={master} scenes={scenes} ocupado={!!adaptando} onCompletar={onImportarPersonajes} />}
         {onImportarPersonajes && !finished && <div className="mb-4"><ImportarPersonajes onImportar={onImportarPersonajes} ocupado={!!adaptando} /></div>}
         <p className="mb-3 text-sm text-slate-300">Genera la ficha una vez en Flow, guárdala aquí y apruébala. En todos los episodios siguientes se usa esta referencia maestra, no una ficha inventada de nuevo.</p>
         <div className="episode-character-gallery grid gap-3 md:grid-cols-2">{cast.map((generated: any, i: number) => { const c = master[i] || generated; return <article key={c.name} className="rounded-2xl border border-white/10 bg-[#151C2B] p-4">
@@ -1277,4 +1286,25 @@ function personajesParaExportar(cast: any[], master: any[]) {
 function capituloParaExportar(out: any, seriesTitle: string, cast: any[], master: any[]) {
   const { referenceVersions: _r, versions: _v, ...episodio } = out || {};
   return { formato: "estudio-viral/capitulo", series: { title: seriesTitle, style: out?.seriesBible?.style }, episode: { ...episodio, cast: personajesParaExportar(cast || [], master || []) }, characters: personajesParaExportar(cast || [], master || []) };
+}
+
+// Personajes con ficha de relleno (sin descripción real): la IA las escribe a partir del guion del episodio.
+function CompletarFichas({ cast, master, scenes, ocupado, onCompletar }: { cast: any[]; master: any[]; scenes: any[]; ocupado: boolean; onCompletar: (t: string, o: { soloNombres: string[] }) => Promise<void> }) {
+  const [error, setError] = useState("");
+  const nombres = cast.map((c: any, i: number) => master[i] || c).filter((c: any) => fichaGenerica(c)).map((c: any) => c.name);
+  if (!nombres.length || !scenes.length) return null;
+  async function completar() {
+    setError("");
+    const texto = `Escribe las fichas de: ${nombres.join(", ")}. Descríbelos según este guion: época, edad, rol, apariencia física fija, vestuario y voz. No cambies sus nombres.
+PERSONAJES DE LA SERIE:
+${cast.map((c: any) => `- ${c.name}: ${c.role || ""}`).join("\n")}
+GUION DEL EPISODIO:
+${scenes.map((x: any) => `[${x.setting || ""}] ${x.speaker}: ${x.line}`).join("\n")}`;
+    try { await onCompletar(texto, { soloNombres: nombres }); } catch (e: any) { setError(e?.message || String(e)); }
+  }
+  return <div role="status" className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 text-sm text-amber-100">
+    <span className="flex-1 min-w-[220px]"><b>{nombres.join(", ")}</b> {nombres.length > 1 ? "tienen" : "tiene"} una ficha genérica (sin descripción real). La IA puede escribirla a partir del guion de este episodio.</span>
+    <button type="button" disabled={ocupado} onClick={() => { void completar(); }} className="rounded-lg bg-amber-400 px-3 py-2 text-xs font-bold text-slate-950 disabled:opacity-60">{ocupado ? "Escribiendo…" : "✦ Completar fichas desde el guion"}</button>
+    {error && <p role="alert" className="w-full text-xs text-rose-200">{error}</p>}
+  </div>;
 }

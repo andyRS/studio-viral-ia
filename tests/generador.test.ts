@@ -1,5 +1,6 @@
 // Generador: cantidad de escenas elegida y formato 16:9 de las series largas. npm test
 import assert from "node:assert/strict";
+import { fichaGenerica, normalizeCast } from "../src/lib/cast";
 import { buildProduction, escenasEnTexto, sceneCountFor, MAX_SCENES, NARRATOR } from "../src/lib/production";
 import { capituloDeJson, importarCapitulo, adaptarPersonajesLocal, personajesSinIA, escenasDelGuion, escenasDeJson, guionExternoSinIA, templateSeries, templateNext } from "../src/lib/story";
 let checks = 0;
@@ -68,4 +69,8 @@ ok(imp.series.title === "Daniel: la guerra de los 21 días" && imp.series.style 
 ok(!/9:16/.test(JSON.stringify(imp.episode)) && imp.characters.length === base.characters.length, "importar en serie larga pasa todo a 16:9 y conserva el elenco");
 const conPj = importarCapitulo({ guionExterno: capJson, personajesExternos: JSON.stringify({ personajes: [{ nombre: base.characters[0].name, apariencia: "anciano de barba blanca", vestuario: "túnica gris" }] }) });
 ok(conPj.characters.length === 1 && /barba blanca/.test(conPj.characters[0].visualES), "los personajes canónicos subidos aparte mandan sobre los del capítulo");
+// Fichas de relleno: según el estilo, y reconocibles para completarlas desde el guion.
+const [rellenoEpica] = normalizeCast([{ name: "Daniel" }], "epica");
+ok(!/dominicana|90/.test(rellenoEpica.visualES) && /túnica/.test(rellenoEpica.clothing) && fichaGenerica(rellenoEpica), "en la épica bíblica el relleno es de la época bíblica y se marca como genérico");
+ok(fichaGenerica({ visualES: "Persona dominicana de los 90 con rasgos naturales." }) && !fichaGenerica({ visualES: "anciano de barba blanca" }), "se reconocen las fichas genéricas antiguas");
 console.log(`${checks} comprobaciones del generador correctas.`);
