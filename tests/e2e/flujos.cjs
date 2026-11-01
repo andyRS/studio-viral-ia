@@ -115,6 +115,27 @@ const ir = async (page, espacio, modulo) => {
       } else ok(false, "no se encontró la barra de escenas del episodio");
       await ctx.close(); }
 
+    // 6b. Mesa y montaje: subir todos los clips de una vez; cada uno va a su escena por el número del nombre.
+    { const { ctx, page } = await abrir(b, () => {
+        const S = (k, v) => localStorage.setItem("estudio-viral:" + k, JSON.stringify(v));
+        const img = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+        S("series", [{ id: "s1", title: "Serie Clips", description: "x" }]);
+        S("characters", ["Ana", "Luis"].map((name, i) => ({ id: `c${i}`, seriesId: "s1", name, imageUrl: img, referenceApprovedAt: "2026-11-01", referenceVersion: 1, subtitleColor: "#ffffff" })));
+        S("episodes", [{ id: "e1", seriesId: "s1", title: "Episodio Clips", status: "Guion", createdAt: new Date().toISOString(), versions: [],
+          output: { title: "Episodio Clips", mode: "llm", cast: [{ name: "Ana" }, { name: "Luis" }], referenceVersions: { ana: 1, luis: 1 }, seriesBible: { style: "cine90" },
+            scenes: [1, 2, 3].map(n => ({ n, durationSec: 8, setting: `Lugar ${n}`, speaker: n % 2 ? "Ana" : "Luis", line: `Frase ${n}`, emotion: "calma", title: `Escena ${n}`, imagePromptFlow: "x", animationPrompt: "x" })),
+            guionJson: { clips: [1, 2, 3].map(n => [[n % 2 ? "Ana" : "Luis", `Frase ${n}`]]) } } }]);
+      });
+      await ir(page, "Creative Studio", "Generador");
+      await page.getByRole("button", { name: /Abrir episodio/ }).first().click(); await page.waitForTimeout(1200);
+      await page.locator(".episode-tabs").getByRole("button", { name: /Mesa y montaje/ }).click(); await page.waitForTimeout(800);
+      ok(await page.getByText("Subir todo de una vez").isVisible(), "la subida de todos los clips está a la vista cuando el episodio aún no tiene archivos");
+      const clip = n => ({ name: `s0${n}_clip.mp4`, mimeType: "video/mp4", buffer: Buffer.from(`clip ${n}`) });
+      await page.locator('.review-import input[type="file"][multiple]').setInputFiles([clip(3), clip(1), clip(2)]);
+      await page.waitForTimeout(800);
+      ok(await page.getByText(/3 clip\(s\) y 0 imagen\(es\) colocados en su escena/).count() === 1, "subir todos los clips de una vez los coloca cada uno en su escena");
+      await ctx.close(); }
+
     // 7. Director de escenas: la selección cambia el inspector, editar guarda, duplicar y deshacer conservan las revisiones.
     { const { ctx, page } = await abrir(b, () => {
         const S = (k, v) => localStorage.setItem("estudio-viral:" + k, JSON.stringify(v));
