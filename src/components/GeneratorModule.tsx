@@ -27,6 +27,7 @@ import SceneDesk from "./SceneDesk";
 import StoryArchitect from "./StoryArchitect";
 import { EPIC_NOTICE, STYLES, type StyleKey } from "@/lib/knowledge";
 import { normalizarCapitulo, normalizarPersonajes, importarFiel, estiloDeTexto, redirigirEpisodio, vistaPreviaRevision } from "@/lib/importacion";
+import { ETIQUETA_CLASE, fuenteDeTexto, fuenteSugerida, type Fuente } from "@/lib/fuentes";
 import { adaptarPersonajesLocal, escenasDelGuion, templateSeries, templateNext } from "@/lib/story";
 import { fichaGenerica, isGenericName } from "@/lib/cast";
 import { aspectoDe, buildFlowBatch, conAspecto, escenasEnTexto, MAX_SCENES, MIN_SCENES, refreshPrompts, PROMPT_RULES_VERSION, sceneCountFor } from "@/lib/production";
@@ -1343,21 +1344,30 @@ function RevisionDireccion({ out, titulo, maestros, aspecto, onAplicar }: { out:
   const [rev, setRev] = useState<ReturnType<typeof redirigirEpisodio> | null>(null);
   const [estado, setEstado] = useState(""); const [guardando, setGuardando] = useState(false);
   const style = (out?.seriesBible?.style || (out?.cast?.some((c: any) => c.fruit) ? "frutinovela" : "cine90")) as StyleKey;
-  function proponer() { try { setRev(redirigirEpisodio(out, maestros, style, aspecto)); setEstado(""); } catch (e: any) { setEstado(`No se pudo calcular: ${e?.message || e}`); } }
+  // Texto de referencia para clasificar las frases: el incluido que citan las fichas, o uno subido.
+  const sugerida = useMemo(() => fuenteSugerida(maestros.map((c: any) => c?.bible?.canon?.referenciaBiblica || "").filter(Boolean)), [maestros]);
+  const [fuente, setFuente] = useState<Fuente | null | undefined>(undefined);
+  const fuenteActiva = fuente === undefined ? sugerida : fuente;
+  async function subirFuente(file?: File) { if (!file) return; const f = fuenteDeTexto(await file.text(), file.name.replace(/\.[^.]+$/, "")); if (f) { setFuente(f); setRev(null); } else setEstado("No se reconocieron pasajes («Libro 1:2 texto» por línea o JSON con «pasajes»)."); }
+  function proponer() { try { setRev(redirigirEpisodio(out, maestros, style, aspecto, { fuente: fuenteActiva })); setEstado(""); } catch (e: any) { setEstado(`No se pudo calcular: ${e?.message || e}`); } }
   async function aprobar() {
     if (!rev) return; setGuardando(true);
     try { await onAplicar(rev.propuesta); setEstado("Revisión guardada como versión nueva. La anterior quedó en el historial del episodio. No se generó ninguna imagen ni vídeo."); setRev(null); }
     catch (e: any) { setEstado(`No se guardó: ${e?.message || e}`); } finally { setGuardando(false); }
   }
-  const md = rev ? vistaPreviaRevision(titulo, rev.filas, rev.duraciones, rev.validacion) : "";
+  const md = rev ? vistaPreviaRevision(titulo, rev.filas, rev.duraciones, rev.validacion, fuenteActiva ? `${fuenteActiva.titulo}${fuenteActiva.version ? ` · ${fuenteActiva.version}` : ""}${fuenteActiva.licencia ? ` (${fuenteActiva.licencia})` : ""}` : undefined) : "";
   const errores = rev ? rev.validacion.filter(p => p.nivel === "error").length : 0;
   const cambiosPresencia = rev ? rev.filas.filter(f => f.antes.visibles.join(",") !== f.despues.visibles.join(",")).length : 0;
   return <details className="mt-3 rounded-xl border border-amber-300/30 bg-amber-300/[.05] p-3 text-xs text-amber-50">
     <summary className="cursor-pointer text-sm font-semibold">Dirección cinematográfica · revisión de escenas, cámara y beats</summary>
     <p className="mt-2 text-slate-300">Propone plano, cámara, imagen fija, acción de vídeo, quién está en cuadro, beat y duración para cada escena, mirando toda la secuencia. No cambia diálogos, hablantes, orden ni fichas, y no gasta créditos: primero revisas la vista previa y después decides.</p>
+    <div className="mt-2 flex flex-wrap items-center gap-2 text-slate-300"><span><b>Texto de referencia:</b> {fuenteActiva ? `${fuenteActiva.titulo}${fuenteActiva.version ? ` · ${fuenteActiva.version}` : ""}${fuenteActiva.licencia ? ` (${fuenteActiva.licencia})` : ""}` : "ninguno (no se clasifican las frases)"}</span>
+      {fuenteActiva && <button type="button" className="underline" onClick={() => { setFuente(null); setRev(null); }}>Quitar</button>}
+      <label className="cursor-pointer underline">Subir otro texto<input type="file" className="sr-only" accept=".txt,.md,.json" aria-label="Subir texto de referencia" onChange={e => { void subirFuente(e.target.files?.[0]); e.target.value = ""; }} /></label></div>
     {!rev && <button type="button" onClick={proponer} className="mt-2 rounded-lg bg-amber-400 px-3 py-2 text-xs font-bold text-slate-950">✦ Proponer revisión de dirección</button>}
     {rev && <div className="mt-3 space-y-2">
-      <p role="status"><b>{rev.filas.length} escenas</b> · {cambiosPresencia} con cambios de quién está en cuadro · montaje estimado ~{rev.duraciones.montaje} s · {rev.duraciones.noCaben.length ? <b>{rev.duraciones.noCaben.length} frase(s) no caben en su toma ({rev.duraciones.noCaben.map(f => f.n).join(", ")})</b> : "todas las frases caben"} · revisión: {errores ? `${errores} error(es)` : "sin errores"}</p>
+      <p role="status"><b>{rev.filas.length} escenas</b> · {cambiosPresencia} con cambios de quién está en cuadro · revisión: {errores ? `${errores} error(es)` : "sin errores"}, {rev.validacion.length - errores} aviso(s)</p>
+      <p><b>Duración:</b> tomas {rev.filas.length} × {rev.filas[0]?.duracion.toma} s = {rev.duraciones.tomas.actual} s · montaje tal cual ~{rev.duraciones.montajeActual} s (clips {rev.duraciones.desglose.clipsActual} s + tarjetas {rev.duraciones.desglose.tarjetas} s + cierre {rev.duraciones.desglose.cierre} s){rev.duraciones.noCaben.length ? <> · <b>{rev.duraciones.noCaben.length} frase(s) no caben ({rev.duraciones.noCaben.map(f => `${f.n}`).join(", ")})</b>: con la propuesta ~{rev.duraciones.montaje} s</> : " · todas las frases caben"}. No se cambia el montaje hasta que lo decidas.</p>
       <ol className="max-h-96 space-y-2 overflow-auto pr-1">{rev.filas.map(f => <li key={f.n} className="rounded-lg border border-white/10 bg-black/20 p-2">
         <b>{f.n}. {f.despues.title}</b> — <span className="text-slate-300">{f.speaker}: «{f.line}»</span>
         <div className="mt-1 text-slate-300"><b>Beat:</b> {f.despues.goal}</div>
@@ -1366,6 +1376,7 @@ function RevisionDireccion({ out, titulo, maestros, aspecto, onAplicar }: { out:
         <div className="text-slate-300"><b>Imagen:</b> {f.despues.visualAction}</div>
         <div className="text-slate-300"><b>Vídeo:</b> {f.despues.videoAction}</div>
         {!f.duracion.cabe && <div className="text-amber-200"><b>Duración:</b> ~{f.duracion.locucion} s de locución en una toma de {f.duracion.toma} s. {f.duracion.propuesta}</div>}
+        {f.texto && <div className="text-slate-300"><b>Texto:</b> {ETIQUETA_CLASE[f.texto.clase]}{f.texto.refs.length ? ` — ${f.texto.refs.join(", ")}` : ""}</div>}
         {f.despues.fidelityNote && <div className="text-slate-400"><b>Fidelidad:</b> {f.despues.fidelityNote}</div>}
       </li>)}</ol>
       <div className="flex flex-wrap gap-2">

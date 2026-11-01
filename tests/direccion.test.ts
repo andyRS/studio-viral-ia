@@ -49,7 +49,7 @@ ok(/Anticipación de un conflicto posterior/.test(E[19].fidelityNote), "20: anti
 
 // --- Duración ---
 const d = estimarDuraciones(E, 5);
-ok(d.noCaben.some(f => f.n === 18) && d.noCaben.some(f => f.n === 19) && d.noCaben.every(f => /Generar esta toma a (8|10) s|Repartirla/.test(f.propuesta)), "18 y 19 no caben en tomas de 5 s: se propone alargar la toma o encadenar la voz");
+ok(d.noCaben.map(f => f.n).join() === "19" && /Generar esta toma a 8 s/.test(d.noCaben[0].propuesta) && d.alLimite.map(f => f.n).join() === "1,11,18", "19 no cabe en 5 s (se propone 8 s o encadenar la voz); 1, 11 y 18 van al límite");
 ok(E.every((s, i) => s.line === orig.clips[i][0][1]), "la estimación no recorta ni reescribe diálogos");
 ok(estimarDuraciones([{ speaker: "Ana", line: "Hola." }], 8).noCaben.length === 0, "una frase corta cabe");
 

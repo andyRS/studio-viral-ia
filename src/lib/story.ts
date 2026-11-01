@@ -279,7 +279,7 @@ function validateEpisode(episode: ReturnType<typeof buildProduction>, expected: 
   const counts = new Map<string, number>();
   for (const line of lines) counts.set(line, (counts.get(line) || 0) + 1);
   if (Math.max(...Array.from(counts.values())) > 2) throw new Error("el guion repitió el mismo diálogo");
-  if (episode.duration !== episode.scenes.length * 8) throw new Error("la duración del guion no coincide con sus escenas");
+  if (episode.duration !== episode.scenes.reduce((t, sc) => t + (Number(sc.durationSec) || 8), 0)) throw new Error("la duración del guion no coincide con sus escenas");
 }
 
 // ---------- HISTORIA NUEVA ----------

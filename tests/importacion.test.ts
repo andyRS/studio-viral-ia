@@ -32,7 +32,7 @@ const vis = (n: number) => escenas[n - 1].visibleCharacters as string[];
 // 1. Se reconocen los 20 clips originales.
 ok(normalizarCapitulo(capituloTxt)!.clips.length === 20 && r.episode.adaptacion.original === 20, "1 · se reconocen los 20 clips originales");
 // 2. La cantidad final coincide con la configuración (por defecto: las del guion; y si se pide otra, se respeta y se explica).
-ok(escenas.length === 20 && r.episode.duration === 160 && r.episode.editDuration === 90, "2 · 20 escenas (configuración «las del guion»), 160 s de clips y 90 s montados");
+ok(escenas.length === 20 && r.episode.duration === 100 && escenas.every(x => x.durationSec === 5 && /5 seconds/.test(x.animationPrompt)) && r.episode.editDuration === 80, "2 · 20 escenas, tomas de 5 s como piden los prompts (100 s) y ~80 s de montaje estimado");
 const menos: any = importarFiel({ capitulo: capituloTxt, personajes: personajesTxt, formato: "largo", scenes: 16 });
 ok(menos.episode.scenes.length === 16 && menos.episode.adaptacion.avisos.some((a: string) => /pide 16 escenas/.test(a)) && menos.episode.scenes[15].line === "Mi tiempo se acerca.", "2b · si la configuración pide 16, se respeta, se conserva el cierre y se explica qué clips salen");
 const mas: any = importarFiel({ capitulo: capituloTxt, personajes: personajesTxt, formato: "largo", scenes: 28 });

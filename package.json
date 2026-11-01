@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test": "npx -y tsx tests/outline.test.ts && npx -y tsx tests/persistencia.test.ts && npx -y tsx tests/studio.test.ts && npx -y tsx tests/directores.test.ts && npx -y tsx tests/generador.test.ts && npx -y tsx tests/importacion.test.ts && npx -y tsx tests/direccion.test.ts",
+    "test": "npx -y tsx tests/outline.test.ts && npx -y tsx tests/persistencia.test.ts && npx -y tsx tests/studio.test.ts && npx -y tsx tests/directores.test.ts && npx -y tsx tests/generador.test.ts && npx -y tsx tests/importacion.test.ts && npx -y tsx tests/direccion.test.ts && npx -y tsx tests/validacion-final.test.ts",
     "check": "npm run typecheck && npm run lint && npm test && npm run build",
     "test:e2e": "node tests/e2e/flujos.cjs"
   },

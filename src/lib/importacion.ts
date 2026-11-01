@@ -15,6 +15,7 @@ import { normalizeCast, norm, type CastMember } from "./cast";
 import { STYLES, type StyleKey } from "./knowledge";
 import { aspectoDe, buildProduction, conAspecto, MAX_SCENES, NARRATOR, refreshPrompts, segundosClip, selectShortScenes, type Aspecto } from "./production";
 import type { Canon } from "./personajes";
+import { clasificarFrase, ETIQUETA_CLASE, type Clasificacion, type Fuente } from "./fuentes";
 
 const limpio = (v: unknown) => String(v ?? "").replace(/\s+/g, " ").trim();
 const sinPunto = (v: unknown) => limpio(v).replace(/[.;:,\s]+$/, "");
@@ -398,24 +399,46 @@ export function dirigirSecuencia(clips: ClipOriginal[], presencia: Presencia[], 
   return out;
 }
 
-// ---------- 4b. Duración: ¿cabe cada frase en su toma? ----------
-// Locución estimada: ~2,6 palabras/s en diálogo y ~2,3 en narración solemne, más 0,5 s de aire.
+// ---------- 4b. Duración: ¿cabe cada frase en su toma y cuánto dura el montaje? ----------
+// Modelo del montaje real (montaje/subtitular.py):
+//  - cada toma dura lo que piden los prompts de vídeo (segundosClip: 5 s en la épica bíblica, 8 s en el resto);
+//  - la voz empieza a los ~0,3 s; el montaje corta desde 0,12 s antes de la primera palabra hasta 0,4 s después de
+//    la última (con el máximo de la toma): si la frase no cabe, la toma se queda corta y la frase se corta;
+//  - tarjetas de tiempo: 1,3 s cada una (no se dibujan antes del primer clip); cierre: 3 s; el gancho es un rótulo encima.
+// Locución estimada: ~2,6 palabras/s en diálogo y ~2,4 en narración solemne (los prompts piden ~3: más rápido).
 // En fidelidad no se recortan frases: se propone alargar la toma o encadenar la voz con la siguiente.
-export type DuracionEscena = { n: number; palabras: number; locucion: number; toma: number; montaje: number; cabe: boolean; propuesta: string };
-export function estimarDuraciones(escenas: { n?: number; speaker: string; line: string }[], tomaSeg: number, opciones: number[] = [5, 8, 10]) {
+export const RITMO = { dialogo: 2.6, narracion: 2.4, inicioVoz: 0.3, antesPrimera: 0.12, reaccion: 0.4, tarjeta: 1.3, cierre: 3 };
+export type DuracionEscena = { n: number; palabras: number; locucion: number; toma: number; montaje: number; cabe: boolean; alLimite: boolean; tomaPropuesta: number; montajePropuesto: number; propuesta: string };
+export function estimarDuraciones(escenas: { n?: number; speaker: string; line: string }[], tomaSeg: number, opciones: number[] = [5, 8, 10], extra: { tarjetas?: { antes: number }[]; cierre?: boolean } = {}) {
   const filas: DuracionEscena[] = escenas.map((s, i) => {
     const palabras = limpio(s.line).split(/\s+/).filter(Boolean).length;
-    const locucion = Math.round((palabras / (esNarrador(s.speaker) ? 2.3 : 2.6) + 0.5) * 10) / 10;
-    const cabe = locucion <= tomaSeg;
-    const mayor = opciones.find(x => x >= locucion);
-    const montaje = Math.max(3.5, Math.round((locucion + 0.6) * 10) / 10);
+    const locucion = Math.round((palabras / (esNarrador(s.speaker) ? RITMO.narracion : RITMO.dialogo)) * 10) / 10;
+    const necesita = RITMO.inicioVoz + locucion + 0.1;   // hasta el final de la última palabra, con un respiro
+    const cabe = necesita <= tomaSeg;
+    const corte = (toma: number) => Math.round(Math.min(toma, RITMO.antesPrimera + locucion + RITMO.reaccion) * 10) / 10;
+    const tomaPropuesta = cabe ? tomaSeg : opciones.find(x => x >= necesita) || Math.max(...opciones);
+    const montaje = cabe ? corte(tomaSeg) : tomaSeg;   // sin cambios, la toma entera y la frase cortada
+    const montajePropuesto = corte(tomaPropuesta);
     const sig = escenas[i + 1];
-    const propuesta = cabe ? "" : mayor ? `Generar esta toma a ${mayor} s (la frase necesita ~${locucion} s).${sig ? " O dejar que la voz continúe sobre el inicio de la toma siguiente (encadenado)." : ""}`
-      : `La frase necesita ~${locucion} s: más que cualquier toma del motor. Repartirla en dos tomas seguidas con la voz continua.`;
-    return { n: Number(s.n) || i + 1, palabras, locucion, toma: tomaSeg, montaje, cabe, propuesta };
+    const propuesta = cabe ? "" : opciones.some(x => x >= necesita)
+      ? `Generar esta toma a ${tomaPropuesta} s: la frase necesita ~${Math.round(necesita * 10) / 10} s y en ${tomaSeg} s quedaría cortada.${sig ? " Alternativa: que la voz continúe sobre el inicio de la toma siguiente (encadenado), sin cambiar la toma." : ""}`
+      : `La frase necesita ~${Math.round(necesita * 10) / 10} s: más que cualquier toma del motor. Repartirla en dos tomas seguidas con la voz continua.`;
+    // Al límite: cabe, pero sin margen para la reacción tras la frase (si la voz sale un poco más lenta, se corta).
+    const alLimite = cabe && necesita + RITMO.reaccion - 0.1 > tomaSeg;
+    return { n: Number(s.n) || i + 1, palabras, locucion, toma: tomaSeg, montaje, cabe, alLimite, tomaPropuesta, montajePropuesto,
+      propuesta: alLimite ? `Cabe justo en ${tomaSeg} s, sin margen para la reacción: si la voz sale más lenta, generar a ${opciones.find(x => x > tomaSeg) || tomaSeg} s.` : propuesta };
   });
-  const montaje = Math.round(filas.reduce((a, f) => a + f.montaje, 0));
-  return { filas, montaje, noCaben: filas.filter(f => !f.cabe) };
+  const tarjetas = (extra.tarjetas || []).filter(t => t.antes > 0 && t.antes < escenas.length).length * RITMO.tarjeta;
+  const cierre = extra.cierre ? RITMO.cierre : 0;
+  const r1 = (x: number) => Math.round(x * 10) / 10;
+  const clipsActual = r1(filas.reduce((a, f) => a + f.montaje, 0)), clipsPropuesto = r1(filas.reduce((a, f) => a + f.montajePropuesto, 0));
+  return {
+    filas, noCaben: filas.filter(f => !f.cabe), alLimite: filas.filter(f => f.alLimite),
+    tomas: { actual: filas.length * tomaSeg, propuesto: filas.reduce((a, f) => a + f.tomaPropuesta, 0) },
+    desglose: { clipsActual, clipsPropuesto, tarjetas: r1(tarjetas), cierre },
+    montaje: Math.round(clipsPropuesto + tarjetas + cierre),        // con la propuesta (ninguna frase cortada)
+    montajeActual: Math.round(clipsActual + tarjetas + cierre),     // tal cual, con las frases que no caben cortadas
+  };
 }
 
 // ---------- 5. Validador de continuidad ----------
@@ -432,6 +455,9 @@ export function validarImportacion(o: { episodio: any; cast: CastMember[]; origi
     if (esNarrador(s.speaker) && /narrador|narrator/i.test(String(s.imagePromptFlow || "").replace(/narrator is an off-screen voice only: never shown, no narrator figure\.?/i, ""))) out.push({ nivel: "error", codigo: "narrador-con-rostro", escena: n, mensaje: `Escena ${n}: el prompt de imagen describe al Narrador como figura.` });
     if (!limpio(s.visualAction) && !limpio(s.setting)) out.push({ nivel: "aviso", codigo: "sin-accion", escena: n, mensaje: `Escena ${n}: sin acción visual definida.` });
     for (const v of vis) if (!String(s.imagePromptFlow || "").includes(v)) out.push({ nivel: "error", codigo: "referencia-faltante", escena: n, mensaje: `Escena ${n}: ${v} está en cuadro pero el prompt de imagen no usa su ficha.` });
+    // Identidad: la descripción del prompt debe ser exactamente la de la ficha maestra (sin reescribir rasgos ni vestuario).
+    for (const v of vis) { const m: any = o.cast.find(x => x.name === v); const img = String(s.imagePromptFlow || "");
+      if (m && img.includes("outfit:") && !img.includes(`${m.visualEN || m.visualES}; outfit: ${m.clothing}`)) out.push({ nivel: "error", codigo: "ficha-distinta", escena: n, mensaje: `Escena ${n}: el prompt describe a ${v} distinto de su ficha maestra.` }); }
     for (const p of o.biblioteca?.personajes || []) if (p.soloEnApariciones && vis.includes(p.name)) {
       const clip = o.original?.clips[i]?.n ?? n;
       if (!p.apariciones.includes(clip)) out.push({ nivel: "error", codigo: "restriccion", escena: n, mensaje: `Escena ${n}: ${p.name} aparece, pero su ficha lo reserva para ${p.apariciones.map(x => `el clip ${x}`).join(", ")}.` });
@@ -440,7 +466,10 @@ export function validarImportacion(o: { episodio: any; cast: CastMember[]; origi
     if (otro.test(`${s.imagePromptFlow} ${s.animationPrompt}`)) out.push({ nivel: "error", codigo: "formato", escena: n, mensaje: `Escena ${n}: el prompt no está en ${o.aspecto}.` });
   });
   for (const p of o.biblioteca?.personajes || []) if (!escenas.some(s => (s.visibleCharacters || s.characters || []).includes(p.name))) out.push({ nivel: "aviso", codigo: "sin-apariciones", mensaje: `${p.name} es un personaje canónico visual sin ninguna aparición asignada.` });
-  if (escenas.length && Number(o.episodio?.duration) !== escenas.length * 8) out.push({ nivel: "error", codigo: "duracion", mensaje: `La duración (${o.episodio?.duration} s) no coincide con ${escenas.length} escenas de 8 s.` });
+  const sumaTomas = escenas.reduce((t, sc) => t + (Number(sc.durationSec) || 8), 0);
+  if (escenas.length && Number(o.episodio?.duration) !== sumaTomas) out.push({ nivel: "error", codigo: "duracion", mensaje: `La duración guardada (${o.episodio?.duration} s) no coincide con la suma de sus tomas (${sumaTomas} s).` });
+  // La duración de cada toma debe ser la que piden sus prompts de vídeo.
+  escenas.forEach((sc, i) => { const m = String(sc.animationPrompt || "").match(/(\d+)\s*(?:seconds|segundos)/); if (m && Number(m[1]) !== (Number(sc.durationSec) || 8)) out.push({ nivel: "aviso", codigo: "duracion-toma", escena: i + 1, mensaje: `Escena ${i + 1}: la toma figura con ${sc.durationSec || 8} s, pero su prompt de vídeo pide ${m[1]} s.` }); });
   if (o.biblioteca?.formato && o.biblioteca.formato !== o.aspecto) out.push({ nivel: "aviso", codigo: "formato-biblioteca", mensaje: `Las fichas canónicas piden ${o.biblioteca.formato} y el proyecto es ${o.aspecto}.` });
   if (o.original && o.modo === "fidelidad") {
     const orig = o.original.clips;
@@ -526,6 +555,10 @@ export function importarFiel(input: { capitulo: string; personajes?: string; sty
   const colores = { ...episode.guionJson?.colores, ...Object.fromEntries(Object.entries(cap.colores || {}).map(([n, c]) => [n, String(c).replace("#", "").toUpperCase()])) };
   episode.guionJson = { ...episode.guionJson, colores, ...(cap.gancho.length ? { gancho: cap.gancho } : {}), ...(cap.cierre ? { cierre: cap.cierre } : {}), ...(cap.versiculo ? { versiculo: cap.versiculo } : {}),
     ...(cap.tarjetas.length ? { tarjetas: cap.tarjetas.filter(t => t.antes < episode.scenes.length) } : {}) };
+  // Montaje estimado con el modelo real de subtitular.py (voz, tarjetas y cierre), no escenas × 4,5 s.
+  const durImp = estimarDuraciones(episode.scenes, segundosClip(style), [5, 8, 10], { tarjetas: episode.guionJson?.tarjetas || [], cierre: !!episode.guionJson?.cierre });
+  episode.editDuration = durImp.montajeActual;
+  if (durImp.noCaben.length) avisos.push(`Duración: ${durImp.noCaben.map(f => `la escena ${f.n} (~${f.locucion} s de voz)`).join(", ")} no cabe(n) en tomas de ${segundosClip(style)} s; se propone generarlas a ${durImp.noCaben[0].tomaPropuesta} s o encadenar la voz (no se aplica sin tu aprobación).`);
   const final: any = conAspecto({ ...episode, mode: "importado", adaptacion: { modo: "fidelidad", original: cap.clips.length, escenas: episode.scenes.length, avisos } }, aspecto);
   const castFinal = conAspecto(cast, aspecto);
   final.validacion = validarImportacion({ episodio: final, cast: castFinal, original: cap, biblioteca: bib, modo: "fidelidad", aspecto, avisosPresencia: presencia.flatMap(p => p.avisos) });
@@ -550,48 +583,81 @@ export function bibliotecaDesdeElenco(cast: any[]): BibliotecaNormalizada {
     }),
   };
 }
-export type FilaRevision = { n: number; speaker: string; line: string; antes: { visibles: string[]; imagen: string; titulo: string; objetivo: string }; despues: DireccionEscena & { visibles: string[] }; duracion: DuracionEscena };
-export function redirigirEpisodio(out: any, castMaestro: any[], style: StyleKey, aspecto: Aspecto) {
+export type FilaRevision = { texto?: Clasificacion; n: number; speaker: string; line: string; antes: { visibles: string[]; imagen: string; titulo: string; objetivo: string }; despues: DireccionEscena & { visibles: string[] }; duracion: DuracionEscena };
+export function redirigirEpisodio(out: any, castMaestro: any[], style: StyleKey, aspecto: Aspecto, opciones: { fuente?: Fuente | null } = {}) {
   const escenas: any[] = Array.isArray(out?.scenes) ? out.scenes : [];
   const castBase = (castMaestro?.length ? castMaestro : out?.cast || []).filter((c: any) => c?.name && !esNarrador(c.name));
   const bib = bibliotecaDesdeElenco(castBase);
   const clips: ClipOriginal[] = escenas.map((s, i) => ({ n: i + 1, speaker: String(s.speaker), line: String(s.line) }));
   const presencia = asignarPresencia(clips, bib, castBase);
   const dir = dirigirSecuencia(clips, presencia, bib);
-  const durs = estimarDuraciones(escenas, segundosClip(style));
+  const seg = segundosClip(style);
+  const durs = estimarDuraciones(escenas, seg, [5, 8, 10], { tarjetas: out?.guionJson?.tarjetas || [], cierre: !!out?.guionJson?.cierre });
+  // Clasificación de cada frase frente a la fuente (si hay): cita, paráfrasis, inspirada o dramatización.
+  const fichaDe = (n: string) => bib.personajes.find(p => norm(p.name) === norm(n));
+  const clasif: (Clasificacion | null)[] = escenas.map(s => opciones.fuente ? clasificarFrase(String(s.line), opciones.fuente, { narrador: esNarrador(s.speaker), sinVozEnFuente: !!fichaDe(s.speaker)?.dialogoDramatizado }) : null);
   const filas: FilaRevision[] = escenas.map((s, i) => {
     const d = dir[i];
     const visibles = presencia[i].visibles.filter(n => !(d.quitarDeCuadro || []).includes(n));
     if (d.quitarDeCuadro?.length) presencia[i].avisos.push(`Escena ${i + 1}: ${d.quitarDeCuadro.join(", ")} sale del encuadre de la anticipación para no sugerir un encuentro que el texto no narra. Revísalo.`);
-    return { n: i + 1, speaker: s.speaker, line: s.line, antes: { visibles: s.visibleCharacters || s.characters || [], imagen: s.visualAction || s.setting || "", titulo: s.title || "", objetivo: s.goal || "" }, despues: { ...d, visibles }, duracion: durs.filas[i] };
+    const c = clasif[i];
+    // Con fuente, la clasificación sustituye a la marca genérica de «frase dramatizada».
+    const nota = c ? [d.fidelityNote.replace(/\s*Frase de [^.]+dramatizada[^.]*\./, ""), `Texto: ${ETIQUETA_CLASE[c.clase]}${c.refs.length ? ` (${c.refs.join(", ")})` : ""}.`].filter(Boolean).join(" ") : d.fidelityNote;
+    return { n: i + 1, speaker: s.speaker, line: s.line, antes: { visibles: s.visibleCharacters || s.characters || [], imagen: s.visualAction || s.setting || "", titulo: s.title || "", objetivo: s.goal || "" }, despues: { ...d, fidelityNote: nota, visibles }, duracion: durs.filas[i], ...(c ? { texto: c } : {}) };
   });
   const scenes = escenas.map((s, i) => {
     const d = filas[i].despues;
     const { quitarDeCuadro: _q, intensity: _i, visibles, ...campos } = d;
-    return { ...s, ...campos, visibleCharacters: visibles, characters: visibles, references: visibles.map(n => `Ficha de ${n}`),
+    const c = filas[i].texto;
+    return { ...s, ...campos, visibleCharacters: visibles, characters: visibles, references: visibles.map(n => `Ficha de ${n}`), durationSec: seg,
+      ...(c ? { sourceClass: c.clase, sourceRefs: c.refs } : {}),
       emotion: esNarrador(s.speaker) ? d.vocalTone : d.expression || s.emotion, speaker: s.speaker, line: s.line, n: s.n ?? i + 1 };
   });
   // El elenco del episodio con las fichas maestras actuales (mismas fichas aprobadas).
   const cast = (out?.cast || []).map((c: any) => castBase.find((m: any) => norm(m.name) === norm(c.name)) ? { ...c, ...Object.fromEntries(["visualES", "visualEN", "clothing", "voice", "flowPrompt"].map(k3 => [k3, castBase.find((m: any) => norm(m.name) === norm(c.name))[k3] ?? c[k3]])) } : c);
   const propuesta: any = conAspecto(refreshPrompts({ ...out, cast, scenes }, style), aspecto);
-  propuesta.revisionDireccion = { at: new Date().toISOString(), motor: "dirección por secuencia", montajeEstimado: durs.montaje, noCaben: durs.noCaben.map(f => f.n) };
+  // Duración: las tomas son las que piden los prompts; el montaje, el estimado con el modelo de subtitular.py.
+  propuesta.duration = escenas.length * seg;
+  propuesta.editDuration = durs.montajeActual;
+  propuesta.revisionDireccion = { at: new Date().toISOString(), motor: "dirección por secuencia", toma: seg, montajeEstimado: durs.montajeActual, montajeConPropuesta: durs.montaje, noCaben: durs.noCaben.map(f => ({ n: f.n, tomaPropuesta: f.tomaPropuesta })), ...(opciones.fuente ? { fuente: `${opciones.fuente.titulo}${opciones.fuente.version ? ` · ${opciones.fuente.version}` : ""}` } : {}) };
   propuesta.validacion = validarImportacion({ episodio: propuesta, cast: castBase, biblioteca: bib, modo: "fidelidad", aspecto, avisosPresencia: presencia.flatMap(p => p.avisos),
     original: { fuente: "scenes", titulo: "", clips, gancho: [], cierre: "", versiculo: "", tarjetas: [], colores: {}, avisos: [] } });
+  // Continuidad de identidad: mismos códigos de ficha [P01…] y fichas aprobadas antes de generar.
+  const codigo = (texto: string, nombre: string) => (texto.match(new RegExp(`${nombre.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} (\\[P\\d\\d\\])`)) || [])[1];
+  for (const c of castBase) {
+    const antes = escenas.map(x => codigo(String(x.imagePromptFlow || ""), c.name)).find(Boolean), despues = propuesta.scenes.map((x: any) => codigo(String(x.imagePromptFlow || ""), c.name)).find(Boolean);
+    if (antes && despues && antes !== despues) propuesta.validacion.push({ nivel: "error", codigo: "codigo-ficha", mensaje: `${c.name} cambia de código de ficha (${antes} → ${despues}).` });
+  }
+  const enCuadro = new Set(filas.flatMap(f => f.despues.visibles));
+  for (const c of castBase) if (enCuadro.has(c.name) && !c.referenceApprovedAt) propuesta.validacion.push({ nivel: "aviso", codigo: "ficha-sin-aprobar", mensaje: `Ficha maestra de ${c.name} sin aprobar: apruébala (con su imagen) antes de generar imágenes.` });
   return { propuesta, filas, duraciones: durs, validacion: propuesta.validacion as Problema[] };
 }
 
 // Vista previa textual para aprobar antes de gastar créditos.
-export function vistaPreviaRevision(titulo: string, filas: FilaRevision[], durs: ReturnType<typeof estimarDuraciones>, validacion: Problema[]) {
-  const l: string[] = [`# Revisión de dirección — ${titulo}`, "", `Escenas: ${filas.length}. Diálogos, hablantes y orden sin cambios. Montaje estimado por locución: ~${durs.montaje} s.`, ""];
-  if (durs.noCaben.length) { l.push("## Duración: frases que no caben en su toma (no se recortan)", ""); for (const f of durs.noCaben) l.push(`- Escena ${f.n}: ${f.palabras} palabras, ~${f.locucion} s de locución en tomas de ${f.toma} s. ${f.propuesta}`); l.push(""); }
-  if (validacion.length) { l.push("## Revisión de continuidad", ""); for (const p of validacion) l.push(`- ${p.nivel === "error" ? "Error" : "Aviso"}: ${p.mensaje}`); l.push(""); }
+export function vistaPreviaRevision(titulo: string, filas: FilaRevision[], durs: ReturnType<typeof estimarDuraciones>, validacion: Problema[], fuente?: string) {
+  const l: string[] = [`# Revisión de dirección — ${titulo}`, "", `Escenas: ${filas.length}. Diálogos, hablantes, orden y fichas sin cambios.${fuente ? ` Texto de referencia: ${fuente}.` : ""}`, ""];
+  const toma = filas[0]?.duracion.toma || 0;
+  l.push("## Duración", "",
+    `- Tomas generadas: ${filas.length} × ${toma} s = ${durs.tomas.actual} s (lo que piden los prompts de vídeo).`,
+    `- Montaje estimado tal cual: ~${durs.montajeActual} s (clips recortados a la voz ${durs.desglose.clipsActual} s + tarjetas ${durs.desglose.tarjetas} s + cierre ${durs.desglose.cierre} s)${durs.noCaben.length ? `, con ${durs.noCaben.length} frase(s) cortadas` : ""}.`,
+    ...(durs.noCaben.length ? [`- Montaje estimado con la propuesta (${durs.noCaben.map(f => `escena ${f.n} a ${f.tomaPropuesta} s`).join(", ")}): ~${durs.montaje} s; tomas ${durs.tomas.propuesto} s.`] : []),
+    `- Supuestos: voz desde 0,3 s; ~${RITMO.dialogo} palabras/s en diálogo y ~${RITMO.narracion} en narración; recorte 0,12 s antes y ${RITMO.reaccion} s después de la voz; tarjetas ${RITMO.tarjeta} s; cierre ${RITMO.cierre} s.`, "");
+  if (durs.noCaben.length) { l.push("### Frases que no caben en su toma (no se recortan)", ""); for (const f of durs.noCaben) l.push(`- Escena ${f.n}: ${f.palabras} palabras, ~${f.locucion} s de voz; toma de ${f.toma} s. ${f.propuesta}`); l.push(""); }
+  if (durs.alLimite.length) { l.push("### Frases al límite", ""); for (const f of durs.alLimite) l.push(`- Escena ${f.n}: ${f.palabras} palabras, ~${f.locucion} s de voz. ${f.propuesta}`); l.push(""); }
+  if (filas.some(f => f.texto)) {
+    l.push("## Clasificación del texto", "", "| Escena | Hablante | Clase | Referencias |", "|---|---|---|---|");
+    for (const f of filas) if (f.texto) l.push(`| ${f.n} | ${f.speaker} | ${ETIQUETA_CLASE[f.texto.clase]} | ${f.texto.refs.join(", ") || "—"} |`);
+    l.push("");
+  }
+  if (validacion.length) { l.push("## Avisos pendientes", ""); for (const p of validacion) l.push(`- ${p.nivel === "error" ? "Error" : "Aviso"}: ${p.mensaje}`); l.push(""); }
   for (const f of filas) {
     const d = f.despues;
     l.push(`## Escena ${f.n} — ${d.title}`, `**${f.speaker}:** «${f.line}»${esNarrador(f.speaker) ? ` _(voz en off: ${d.vocalTone.replace(/^voz en off\s*/i, "")})_` : ""}`, "",
       `- **Beat:** ${d.goal}`, `- **En cuadro:** ${d.visibles.join(", ") || "nadie (solo el escenario)"}${f.antes.visibles.join(",") !== d.visibles.join(",") ? ` _(antes: ${f.antes.visibles.join(", ") || "nadie"})_` : ""}`,
       `- **Plano y cámara:** ${d.shotType}. ${d.camera}`, `- **Imagen (fotograma fijo):** ${d.visualAction}.`, `- **Vídeo (acción y movimiento):** ${d.videoAction}.`,
       `- **Luz / ambiente / efectos:** ${[d.lighting, d.atmosphere, d.vfx].filter(Boolean).join(" · ")}`, `- **Sonido / música:** ${d.sfx} · ${d.music}`, `- **Continuidad:** ${d.continuity}`,
-      `- **Duración:** ${f.duracion.palabras} palabras, ~${f.duracion.locucion} s de locución; toma de ${f.duracion.toma} s${f.duracion.cabe ? " ✓" : ` ✗ — ${f.duracion.propuesta}`}`,
+      `- **Duración:** ${f.duracion.palabras} palabras, ~${f.duracion.locucion} s de voz; toma de ${f.duracion.toma} s → ${!f.duracion.cabe ? `✗ ${f.duracion.propuesta}` : f.duracion.alLimite ? `al límite (~${f.duracion.montaje} s). ${f.duracion.propuesta}` : `en montaje ~${f.duracion.montaje} s ✓`}`,
+      ...(f.texto ? [`- **Texto:** ${ETIQUETA_CLASE[f.texto.clase]}${f.texto.refs.length ? ` — ${f.texto.refs.join(", ")}` : ""} (${f.texto.motivo})`] : []),
       ...(d.fidelityNote ? [`- **Fidelidad:** ${d.fidelityNote}`] : []), "");
   }
   return l.join("\n");

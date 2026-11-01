@@ -382,7 +382,7 @@ const ir = async (page, espacio, modulo) => {
       // Revisión de dirección: propuesta sin IA, vista previa, aprobación como versión nueva (el guion no cambia).
       await page.getByText("Dirección cinematográfica · revisión de escenas, cámara y beats").click();
       await page.getByRole("button", { name: /Proponer revisión de dirección/ }).click(); await page.waitForTimeout(500);
-      ok(await page.getByText(/20 escenas.*montaje estimado/).count() === 1 && await page.getByRole("button", { name: /Descargar vista previa/ }).count() === 1, "Daniel: la revisión de dirección muestra la vista previa de las 20 escenas");
+      ok(await page.getByText(/20 escenas · \d+ con cambios de quién está en cuadro/).count() === 1 && await page.getByText(/montaje tal cual ~\d+ s/).count() === 1 && await page.getByText(/Texto de referencia: Daniel 10 · Reina-Valera 1909/).count() === 1 && await page.getByRole("button", { name: /Descargar vista previa/ }).count() === 1, "Daniel: la revisión muestra escenas, duración real y el texto de referencia sugerido");
       const versionesAntes = (await page.evaluate(id => JSON.parse(localStorage.getItem("estudio-viral:episodes")).find(e => e.id === id).versions.length, ep.id));
       await page.getByRole("button", { name: /Aprobar y guardar revisión/ }).click(); await page.waitForTimeout(1500);
       const ep2 = await page.evaluate(id => JSON.parse(localStorage.getItem("estudio-viral:episodes")).find(e => e.id === id), ep.id);

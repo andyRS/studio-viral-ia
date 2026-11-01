@@ -23,7 +23,8 @@ export interface Character { id:string; seriesId:string; name:string; imageUrl?:
   flowPrompt?:string;   // prompt de ficha para Flow
 }
 // Una escena = una imagen de Flow + un clip de 8 s con un solo personaje hablando.
-export interface Scene { n:number; durationSec:8; setting:string; imagePromptFlow:string; animationPrompt:string; speaker:string; line:string; emotion:string;
+export interface Scene { n:number; durationSec:number;   // segundos de la toma generada (5 en la épica bíblica, 8 en el resto)
+  setting:string; imagePromptFlow:string; animationPrompt:string; speaker:string; line:string; emotion:string;
   // Ficha de escena (estructura del prompt maestro): todo opcional para episodios anteriores.
   title?:string; goal?:string; shot?:string; characters?:string[]; sfx?:string; music?:string; transition?:string; nextLink?:string;
   location?:string;      // lugar fijo: idéntico en todas las escenas seguidas que pasan en ese sitio
