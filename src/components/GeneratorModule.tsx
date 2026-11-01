@@ -1221,7 +1221,7 @@ function SubirGuion({ id, valor, onValor, etiqueta = "Guion de otra IA", ayuda =
   }
   return <div>
     <div className="flex flex-wrap items-center gap-2"><label htmlFor={id} className="field-label block">{etiqueta}</label>
-      <label className="ml-auto cursor-pointer rounded-lg border border-white/15 px-3 py-1.5 text-xs text-slate-200 hover:border-cyan-300/50">Subir archivo<input type="file" className="sr-only" accept=".txt,.md,.markdown,.json,.srt,.fountain,.csv,text/plain" aria-label={`Subir archivo: ${etiqueta}`} onChange={e => { void leer(e.target.files?.[0]); e.target.value = ""; }} /></label></div>
+      <label className="import-file-button ml-auto cursor-pointer rounded-lg border border-white/15 px-3 py-1.5 text-xs text-slate-200 hover:border-cyan-300/50">Subir archivo<input type="file" className="sr-only" accept=".txt,.md,.markdown,.json,.srt,.fountain,.csv,text/plain" aria-label={`Subir archivo: ${etiqueta}`} onChange={e => { void leer(e.target.files?.[0]); e.target.value = ""; }} /></label></div>
     <textarea id={id} className="aurora-field mt-1" rows={8} value={valor} onChange={e => { onValor(e.target.value); setAviso(""); }} placeholder={ayuda} />
     {aviso && <p role="status" className="mt-1 text-xs text-cyan-100">{aviso}</p>}
   </div>;
@@ -1240,7 +1240,7 @@ function AdaptarGuionEpisodio({ onAdaptar, ocupado, escenas }: { onAdaptar: (t: 
     setError("");
     try { await onAdaptar(texto, final); setTexto(""); setCuantas(0); } catch (e: any) { setError(e?.message || String(e)); }
   }
-  return <details className="rounded-xl border border-white/10 bg-black/20 p-3">
+  return <details className="import-panel import-characters">
     <summary className="cursor-pointer text-sm font-semibold text-slate-100">Adaptar un guion de otra IA a este episodio</summary>
     <div className="mt-3 space-y-2">
       <SubirGuion id="episodio-guion-externo" valor={texto} onValor={setTexto} />
@@ -1277,21 +1277,25 @@ function ImportarPersonajes({ onImportar, ocupado }: { onImportar: (t: string) =
 
 // «Nueva historia» → capítulo (y personajes canónicos) hechos en otra IA, en JSON o texto.
 function CapituloDeOtraIA({ activo, onActivar, onQuitar, capitulo, onCapitulo, personajes, onPersonajes, resumen, modo, onModo, reconocido }: { activo: boolean; onActivar: () => void; onQuitar: () => void; capitulo: string; onCapitulo: (v: string) => void; personajes: string; onPersonajes: (v: string) => void; resumen: string; modo: "fidelidad" | "creativa"; onModo: (m: "fidelidad" | "creativa") => void; reconocido: boolean }) {
-  if (!activo) return <div className="mb-3 flex flex-wrap items-center gap-3 rounded-xl border border-cyan-300/25 bg-cyan-300/[.05] p-3">
+  if (!activo) return <div className="import-invitation">
     <span className="flex-1 min-w-[220px] text-sm text-slate-200"><b className="text-cyan-100">¿Ya tienes el capítulo hecho en otra IA?</b> Súbelo en JSON (o texto) con sus personajes canónicos y se crea la historia desde ahí.</span>
     <button type="button" onClick={onActivar} className="rounded-lg border border-cyan-300/50 px-3 py-2 text-sm font-semibold text-cyan-100 hover:bg-cyan-300/10">📄 Subir capítulo de otra IA</button>
   </div>;
-  return <div className="mb-3 space-y-3 rounded-xl border border-cyan-300/30 bg-cyan-300/[.04] p-3">
-    <div className="flex items-center gap-2"><b className="text-sm text-cyan-100">Capítulo de otra IA</b><button type="button" onClick={onQuitar} className="ml-auto text-xs text-slate-400 hover:text-white">Quitar y volver a Historia nueva</button></div>
+  return <section className="import-panel import-composer" aria-label="Capítulo de otra IA">
+    <header className="import-heading"><div><p className="studio-eyebrow">DEL GUION AL ESTUDIO</p><h3>Capítulo de otra IA</h3><p>Trae tu historia y decide cómo convertirla en producción.</p></div><button type="button" onClick={onQuitar} className="text-xs text-slate-400 hover:text-white">Quitar y volver a Historia nueva</button></header>
+    <div className="import-sources">
+    <div className="import-source"><span className="import-step">01 · CAPÍTULO</span>
     <SubirGuion id="generator-guion-externo" etiqueta="Capítulo (JSON o texto)" valor={capitulo} onValor={onCapitulo} ayuda="Sube el capitulo.json (estructura del estudio) o el guion de otra IA en JSON o texto." />
+    </div><div className="import-source"><span className="import-step">02 · ELENCO OPCIONAL</span>
     <SubirGuion id="generator-personajes-externos" etiqueta="Personajes canónicos (JSON o texto, opcional)" valor={personajes} onValor={onPersonajes} ayuda="Sube personajes.json o pega las fichas (nombre, apariencia, ropa, voz…). Si no, se toman del capítulo." />
-    {reconocido && <fieldset className="grid gap-2 sm:grid-cols-2"><legend className="field-label mb-1">Cómo usar el capítulo</legend>
+    </div></div>
+    {reconocido && <fieldset className="import-modes"><legend className="field-label mb-1">Cómo usar el capítulo</legend>
       {([["fidelidad", "Fidelidad (recomendado)", "Conserva diálogos, hablantes, orden y personajes. La app añade dirección de cámara, acción visual y prompts."], ["creativa", "Adaptación creativa", "La IA puede reescribir, reorganizar o ampliar escenas. Verás qué cambió."]] as const).map(([k, t, d]) =>
-        <label key={k} className={`cursor-pointer rounded-lg border p-2 text-xs ${modo === k ? "border-cyan-300/60 bg-cyan-300/10 text-cyan-50" : "border-white/10 text-slate-300"}`}><input type="radio" name="modo-importacion" className="mr-2" checked={modo === k} onChange={() => onModo(k)} /><b>{t}</b><span className="mt-1 block opacity-80">{d}</span></label>)}
+        <label key={k} data-selected={modo === k}><input type="radio" name="modo-importacion" checked={modo === k} onChange={() => onModo(k)} /><b>{t}</b><span>{d}</span></label>)}
     </fieldset>}
-    {resumen && <p role="status" className="text-xs text-cyan-100">{resumen}</p>}
+    {resumen && <p role="status" className="import-recognition">{resumen}</p>}
     <p className="text-xs text-slate-400">Luego pulsa «Crear serie y episodio 1». La idea de abajo es opcional (ajustes para la adaptación).</p>
-  </div>;
+  </section>;
 }
 
 // Exportar con la estructura del estudio (se vuelve a importar tal cual en «Subir capítulo de otra IA»).
@@ -1331,7 +1335,7 @@ function RevisionImportacion({ out }: { out: any }) {
   const errores = problemas.filter(p => p.nivel === "error");
   const a = out.adaptacion || {};
   const lista = [...(a.avisos || []), ...(a.cambios || [])];
-  return <details className={`mt-3 rounded-xl border p-3 text-xs ${errores.length ? "border-rose-400/40 bg-rose-400/10 text-rose-50" : "border-cyan-300/30 bg-cyan-300/[.06] text-cyan-50"}`} open={errores.length > 0}>
+  return <details className="import-panel import-continuity" data-errors={errores.length > 0} open={errores.length > 0}>
     <summary className="cursor-pointer text-sm font-semibold">Revisión de continuidad · {a.modo === "creativa" ? "adaptación creativa" : "modo fidelidad"} · {a.original ? `${a.original} clips originales → ${a.escenas} escenas · ` : ""}{errores.length ? `${errores.length} error(es)` : "sin errores"}, {problemas.length - errores.length} aviso(s){a.cambios?.length ? ` · ${a.cambios.length} cambio(s)` : ""}</summary>
     {!!problemas.length && <ul className="mt-2 space-y-1">{problemas.map((p, i) => <li key={i}><b>{p.nivel === "error" ? "Error" : "Aviso"}:</b> {p.mensaje}</li>)}</ul>}
     {!!lista.length && <><p className="mt-3 font-semibold">{a.modo === "creativa" ? "Cambios respecto al original" : "Notas de la importación"}</p><ul className="mt-1 space-y-1">{lista.map((x: string, i: number) => <li key={i}>{x}</li>)}</ul></>}
@@ -1358,7 +1362,7 @@ function RevisionDireccion({ out, titulo, maestros, aspecto, onAplicar }: { out:
   const md = rev ? vistaPreviaRevision(titulo, rev.filas, rev.duraciones, rev.validacion, fuenteActiva ? `${fuenteActiva.titulo}${fuenteActiva.version ? ` · ${fuenteActiva.version}` : ""}${fuenteActiva.licencia ? ` (${fuenteActiva.licencia})` : ""}` : undefined) : "";
   const errores = rev ? rev.validacion.filter(p => p.nivel === "error").length : 0;
   const cambiosPresencia = rev ? rev.filas.filter(f => f.antes.visibles.join(",") !== f.despues.visibles.join(",")).length : 0;
-  return <details className="mt-3 rounded-xl border border-amber-300/30 bg-amber-300/[.05] p-3 text-xs text-amber-50">
+  return <details className="import-panel direction-review">
     <summary className="cursor-pointer text-sm font-semibold">Dirección cinematográfica · revisión de escenas, cámara y beats</summary>
     <p className="mt-2 text-slate-300">Propone plano, cámara, imagen fija, acción de vídeo, quién está en cuadro, beat y duración para cada escena, mirando toda la secuencia. No cambia diálogos, hablantes, orden ni fichas, y no gasta créditos: primero revisas la vista previa y después decides.</p>
     <div className="mt-2 flex flex-wrap items-center gap-2 text-slate-300"><span><b>Texto de referencia:</b> {fuenteActiva ? `${fuenteActiva.titulo}${fuenteActiva.version ? ` · ${fuenteActiva.version}` : ""}${fuenteActiva.licencia ? ` (${fuenteActiva.licencia})` : ""}` : "ninguno (no se clasifican las frases)"}</span>
@@ -1368,14 +1372,14 @@ function RevisionDireccion({ out, titulo, maestros, aspecto, onAplicar }: { out:
     {rev && <div className="mt-3 space-y-2">
       <p role="status"><b>{rev.filas.length} escenas</b> · {cambiosPresencia} con cambios de quién está en cuadro · revisión: {errores ? `${errores} error(es)` : "sin errores"}, {rev.validacion.length - errores} aviso(s)</p>
       <p><b>Duración:</b> tomas {rev.filas.length} × {rev.filas[0]?.duracion.toma} s = {rev.duraciones.tomas.actual} s · montaje tal cual ~{rev.duraciones.montajeActual} s (clips {rev.duraciones.desglose.clipsActual} s + tarjetas {rev.duraciones.desglose.tarjetas} s + cierre {rev.duraciones.desglose.cierre} s){rev.duraciones.noCaben.length ? <> · <b>{rev.duraciones.noCaben.length} frase(s) no caben ({rev.duraciones.noCaben.map(f => `${f.n}`).join(", ")})</b>: con la propuesta ~{rev.duraciones.montaje} s</> : " · todas las frases caben"}. No se cambia el montaje hasta que lo decidas.</p>
-      <ol className="max-h-96 space-y-2 overflow-auto pr-1">{rev.filas.map(f => <li key={f.n} className="rounded-lg border border-white/10 bg-black/20 p-2">
-        <b>{f.n}. {f.despues.title}</b> — <span className="text-slate-300">{f.speaker}: «{f.line}»</span>
+      <ol className="direction-scenes" aria-label="Vista previa de dirección por escena" tabIndex={0}>{rev.filas.map(f => <li key={f.n}>
+        <header><span className="import-step">ESCENA {String(f.n).padStart(2, "0")}</span><h4>{f.despues.title}</h4></header><blockquote><b>{f.speaker}</b><p>«{f.line}»</p></blockquote>
         <div className="mt-1 text-slate-300"><b>Beat:</b> {f.despues.goal}</div>
         <div className="text-slate-300"><b>En cuadro:</b> {f.despues.visibles.join(", ") || "nadie"}{f.antes.visibles.join(",") !== f.despues.visibles.join(",") && <span className="text-amber-200"> (antes: {f.antes.visibles.join(", ") || "nadie"})</span>}</div>
         <div className="text-slate-300"><b>{f.despues.shotType}.</b> {f.despues.camera}</div>
         <div className="text-slate-300"><b>Imagen:</b> {f.despues.visualAction}</div>
         <div className="text-slate-300"><b>Vídeo:</b> {f.despues.videoAction}</div>
-        {!f.duracion.cabe && <div className="text-amber-200"><b>Duración:</b> ~{f.duracion.locucion} s de locución en una toma de {f.duracion.toma} s. {f.duracion.propuesta}</div>}
+        {(!f.duracion.cabe || f.duracion.alLimite) && <div className="text-amber-200"><b>Duración:</b> ~{f.duracion.locucion} s de voz en una toma de {f.duracion.toma} s{f.duracion.alLimite ? " (al límite)" : ""}. {f.duracion.propuesta}</div>}
         {f.texto && <div className="text-slate-300"><b>Texto:</b> {ETIQUETA_CLASE[f.texto.clase]}{f.texto.refs.length ? ` — ${f.texto.refs.join(", ")}` : ""}</div>}
         {f.despues.fidelityNote && <div className="text-slate-400"><b>Fidelidad:</b> {f.despues.fidelityNote}</div>}
       </li>)}</ol>
