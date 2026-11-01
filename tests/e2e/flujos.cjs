@@ -300,6 +300,30 @@ const ir = async (page, espacio, modulo) => {
       await page.locator("#nueva-cuenta-nombre").fill("Primera cuenta"); await page.locator("#nueva-cuenta-nombre").press("Enter"); await page.waitForTimeout(800);
       ok((await page.getByLabel("Canal de la serie").count()) === 1 && (await page.evaluate(() => JSON.parse(localStorage.getItem("estudio-viral:accounts")).length)) === 1, "Intro guarda la primera cuenta y vuelve al selector");
       await ctx.close(); }
+    // 12. Adaptar un guion de otra IA: se pega, se crea la serie con sus personajes y diálogos, en 16:9 si es larga.
+    { const { ctx, page } = await abrir(b);
+      await ir(page, "Creative Studio", "Generador");
+      await page.getByRole("button", { name: /Crear$/ }).first().click(); await page.waitForTimeout(900);
+      const canal = page.getByLabel("Canal de la serie");
+      await canal.selectOption({ label: "＋ Conectar una cuenta nueva…" }); await page.waitForTimeout(300);
+      await page.locator("#nueva-cuenta-red").selectOption("YouTube");
+      await page.locator("#nueva-cuenta-nombre").fill("Canal Adaptar");
+      await page.getByRole("button", { name: "Conectar y usar esta cuenta" }).click(); await page.waitForTimeout(600);
+      await page.getByRole("button", { name: /Largo · 16:9/ }).click();
+      await page.getByRole("button", { name: /Épica/ }).first().click();
+      await page.getByRole("button", { name: /Historia nueva/ }).first().click();
+      await page.getByRole("menuitemradio", { name: /Adaptar guion de otra IA/ }).click();
+      await page.getByLabel("Subir archivo de guion").setInputFiles({ name: "guion.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify({ escenas: [{ dialogos: [{ personaje: "Daniel", texto: "Hola" }] }] })) });
+      await page.waitForTimeout(300);
+      ok((await page.locator("#generator-guion-externo").inputValue()).includes("\"personaje\": \"Daniel\"") && await page.getByText(/Cargado «guion.json»/).count() === 1, "se puede subir el guion en JSON");
+      await page.locator("#generator-guion-externo").fill("ESCENA 1 — EXT. RÍO\nDANIEL: Señor, ¿por qué callas?\nMENSAJERO: Fui enviado desde el primer día.\nMIGUEL: Yo pelearé contra Persia.\nNarrador: La guerra apenas comienza.");
+      await page.getByRole("button", { name: /Crear serie y episodio 1/ }).click(); await page.waitForTimeout(2500);
+      const ep = await page.evaluate(() => JSON.parse(localStorage.getItem("estudio-viral:episodes") || "[]").slice(-1)[0]);
+      const pers = await page.evaluate(() => JSON.parse(localStorage.getItem("estudio-viral:characters") || "[]").map(c => c.name.toUpperCase()));
+      ok(!!ep && ep.output.scenes.some(x => /primer día/.test(x.line)) && pers.includes("MIGUEL"), "el guion de otra IA se convierte en serie con sus personajes y diálogos");
+      ok(!!ep && /16:9/.test(ep.output.scenes[0].imagePromptFlow) && !/9:16/.test(JSON.stringify(ep.output)), "la serie larga adaptada sale con prompts 16:9");
+      // (En modo local el episodio es un borrador de plantilla y no muestra «Archivos»; esa vía se prueba en lógica.)
+      await ctx.close(); }
   } finally {
     await b.close();
     if (srv) try { process.kill(-srv.pid); } catch {}

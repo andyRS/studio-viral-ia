@@ -84,9 +84,70 @@ function styleRules(style: StyleKey) {
   return [MANUAL_VIRAL, isFruitStyle(style) ? FRUIT_CAST_RULES : "", style === "cristiana" ? CHRISTIAN_RULES : "", style === "biblica" ? BIBLICA_RULES : "", style === "epica" ? EPICA_RULES + "\n\n" + BIBLICA_RULES.split("\n").filter(l => /^(PROHIBIDO|SIN LLAMADAS)/.test(l)).join("\n") : ""].filter(Boolean).join("\n\n");
 }
 
+// ---------- ADAPTAR UN GUION DE OTRA IA ----------
+// El usuario sube o pega un guion escrito en otra herramienta; la IA lo adapta al formato de la app
+// (escenas de una frase, elenco con fichas, cierre del narrador) sin cambiar la historia.
+export const MAX_GUION_EXTERNO = 60000;
+export const guionExterno = (input: any) => String(input?.guionExterno || "").replace(/\r/g, "").trim().slice(0, MAX_GUION_EXTERNO);
+const ADAPTAR_TIPO = "ADAPTACIÓN FIEL de un guion escrito por otra IA (va en «guionExterno»)";
+const adaptarReglas = (count: number) => `ADAPTAR EL GUION RECIBIDO (manda sobre la idea y las notas):
+- Conserva la historia, el orden de los hechos, los personajes con sus nombres, los lugares y el sentido de cada diálogo. No inventes otra trama ni cambies el final.
+- Repártelo en exactamente ${count} escenas: si trae más momentos, une los menores; si trae menos, parte los largos en acciones o reacciones. Un solo personaje habla en cada escena.
+- Los diálogos largos se resumen en una frase natural con el mismo sentido; las narraciones en off pasan al Narrador.
+- Si el guion trae indicaciones de cámara, sonido o música, úsalas en "shot", "sfx" y "music"; las descripciones visuales van en "setting".
+- Si menciona tomas, segundos o formatos distintos, ignóralos: manda la configuración de este pedido.
+- El guion puede venir en texto libre o en JSON (con escenas, diálogos, narración, cámara…): lee su contenido, no copies su estructura.`;
+
+// Sin IA: cada línea «NOMBRE: frase» es una escena; el resto del texto pasa al Narrador.
+// Guion en JSON (de otra IA o el guion.json de esta app): se recorren sus escenas y diálogos sea cual sea
+// la forma (escenas[].dialogos[], scenes[].speaker/line, clips [[["A","frase"]]], narración en off…).
+type EscenaExterna = { speaker: string; line: string; setting?: string; emotion?: string; shot?: string; sfx?: string; music?: string };
+const CLAVES = {
+  speaker: ["speaker", "personaje", "character", "hablante", "quien", "nombre", "name", "voz", "actor"],
+  line: ["line", "dialogo", "diálogo", "dialogue", "texto", "text", "frase", "linea", "línea", "parlamento"],
+  narr: ["narracion", "narración", "narration", "narrator", "narrador", "voiceover", "voz_en_off", "vozEnOff", "voice_over"],
+  setting: ["setting", "escena", "descripcion", "descripción", "description", "visual", "lugar", "location", "ambiente", "accion", "acción", "action"],
+  emotion: ["emotion", "emocion", "emoción", "tono", "tone"],
+  shot: ["shot", "camara", "cámara", "camera", "plano", "encuadre"],
+  sfx: ["sfx", "sonido", "sound", "efectos"],
+  music: ["music", "musica", "música"],
+};
+const tomar = (o: any, ks: string[]) => { for (const k of Object.keys(o || {})) if (ks.includes(k.toLowerCase()) && typeof o[k] === "string" && o[k].trim()) return o[k].trim(); return ""; };
+export function escenasDeJson(texto: string): EscenaExterna[] | null {
+  let datos: any; try { datos = JSON.parse(texto); } catch { return null; }
+  const out: EscenaExterna[] = [];
+  const visitar = (n: any, ctx: Partial<EscenaExterna>) => {
+    if (Array.isArray(n)) {
+      if (n.length === 2 && n.every(x => typeof x === "string") && n[0].length <= 40) { out.push({ ...ctx, speaker: n[0], line: n[1] }); return; }
+      n.forEach(x => visitar(x, ctx)); return;
+    }
+    if (!n || typeof n !== "object") return;
+    const aqui: Partial<EscenaExterna> = { ...ctx };
+    for (const k of ["setting", "emotion", "shot", "sfx", "music"] as const) { const v = tomar(n, CLAVES[k]); if (v) aqui[k] = v; }
+    const speaker = tomar(n, CLAVES.speaker), line = tomar(n, CLAVES.line), narr = tomar(n, CLAVES.narr);
+    if (narr) out.push({ ...aqui, speaker: "Narrador", line: narr });
+    if (speaker && line) out.push({ ...aqui, speaker, line });
+    for (const v of Object.values(n)) if (v && typeof v === "object") visitar(v, aqui);
+  };
+  visitar(datos, {});
+  return out.length ? out : null;
+}
+
+export function guionExternoSinIA(texto: string, count: number) {
+  const json = escenasDeJson(texto);
+  if (json) return json.slice(0, Math.max(2, count)).map(e => ({ setting: "según el guion original", emotion: "emoción contenida", ...e }));
+  const lineas = texto.split("\n").map(l => l.replace(/^[-*#>\d.\s]+/, "").trim()).filter(Boolean);
+  const escenas = lineas.map(l => { const m = l.match(/^([A-ZÁÉÍÓÚÑa-záéíóúñ][\wÁÉÍÓÚÑáéíóúñ .]{0,30}?)\s*(?:\([^)]*\))?\s*[:：—–-]\s*(.{3,})$/);
+    return m ? { speaker: m[1].trim(), line: m[2].replace(/^["«“]|["»”]$/g, "").trim() } : null; })
+    .filter((x): x is { speaker: string; line: string } => !!x && !/^(escena|toma|plano|int|ext|c[aá]mara|sonido|m[uú]sica|nota)\b/i.test(x.speaker));
+  const lista = escenas.length ? escenas : lineas.map(line => ({ speaker: "Narrador", line }));
+  return lista.slice(0, Math.max(2, count)).map(e => ({ ...e, setting: "según el guion original", emotion: "emoción contenida" }));
+}
+
 // Sección «MI PEDIDO» del prompt maestro, con los datos del formulario.
-function miPedido(input: any, style: StyleKey, duration: number, count: number, type: "nueva" | "continuacion" | "replica") {
-  const tipo = type === "replica" ? `réplica de un viral ajeno (copia la estructura y la emoción, nunca personajes, diálogo literal ni marca). Viral: ${String(input.replica || "").trim() || "(sin descripción)"}`
+function miPedido(input: any, style: StyleKey, duration: number, count: number, type: "nueva" | "continuacion" | "replica" | "adaptacion") {
+  const tipo = type === "adaptacion" ? ADAPTAR_TIPO
+    : type === "replica" ? `réplica de un viral ajeno (copia la estructura y la emoción, nunca personajes, diálogo literal ni marca). Viral: ${String(input.replica || "").trim() || "(sin descripción)"}`
     : type === "continuacion" ? "continuación (debe entenderse sola, sin haber visto las anteriores)" : "historia nueva (Parte 1 que se entiende sola)";
   return `## MI PEDIDO
 - Estilo: ${STYLES[style].label}
@@ -210,15 +271,16 @@ async function generateSeriesBase(input: any) {
   const startedAt = Date.now();
   const style = styleKey(input.style);
   const duration = Number(input.duration || 90);
-  const idea = String(input.idea || input.replica || "").trim();
+  const externo = guionExterno(input);
+  const idea = String(input.idea || input.replica || "").trim() || externo.slice(0, 400);
   if (!idea) throw new Error("Escribe primero la idea concreta de la historia.");
   if (!process.env.LLM_API_KEY) return { ...templateSeries(input), notice: "El servidor no tiene clave de IA: se usó la plantilla local." };
   try {
     const count = sceneCountFor(duration, input.scenes);
-    const type = String(input.replica || "").trim() ? "replica" : "nueva";
-    const system = `${styleRules(style)}${extraContext(input)}\n\n${sceneBrief(style, count)}\n\n${miPedido(input, style, duration, count, type)}\n\nTAREA: crea una SERIE NUEVA a partir del pedido y escribe su EPISODIO 1 (Parte 1). Elenco de 3 a 6 personajes.
+    const type = externo ? "adaptacion" : String(input.replica || "").trim() ? "replica" : "nueva";
+    const system = `${styleRules(style)}${extraContext(input)}\n\n${sceneBrief(style, count)}\n\n${miPedido(input, style, duration, count, type)}\n\n${externo ? `${adaptarReglas(count)}\n\n` : ""}TAREA: crea una SERIE NUEVA a partir del pedido${externo ? " (el guion recibido es su episodio 1: el elenco son sus personajes)" : ""} y escribe su EPISODIO 1 (Parte 1). Elenco de 3 a 6 personajes.
 Responde SOLO JSON: {"series":{"title":"","logline":"","world":"","tone":""},"characters":[${CAST_FIELDS(style)}],"episode":{"title":"","summary":"3-4 frases con el cliffhanger final","hook":["línea 1","línea 2"],"coverText":"","description":"","hashtags":[],${FICHA_SCHEMA},${BIBLE_SCHEMA(style)}${PUBLISH_SCHEMA},${SCENES_SCHEMA}}}`;
-    const parsed = await askJson(system, JSON.stringify({ idea, duracionSegundos: duration, cuentaPrincipal: input.account?.name, notas: input.notes }));
+    const parsed = await askJson(system, JSON.stringify({ idea, duracionSegundos: duration, cuentaPrincipal: input.account?.name, notas: input.notes, ...(externo ? { guionExterno: externo } : {}) }));
     // Elenco sin fruta o con nombres genéricos: primero se le pide a la IA solo el elenco
     // (llamada corta); lo que siga faltando lo completa el código en normalizeCast.
     let chars = parsed.characters;
@@ -242,10 +304,14 @@ Responde SOLO JSON: {"series":{"title":"","logline":"","world":"","tone":""},"ch
 export function templateSeries(input: any) { return conAspecto(templateSeriesBase(input), aspectoDe(input?.formato)); }
 function templateSeriesBase(input: any) {
   const style = styleKey(input.style);
-  const idea = String(input.idea || "Nueva historia").trim();
+  const idea = String(input.idea || "").trim() || guionExterno(input).slice(0, 120) || "Nueva historia";
   const duration = Number(input.duration || 90);
-  const characters = templateCast(idea, style);
-  const raw = templateScenes(idea, characters, style, sceneCountFor(duration, input.scenes));
+  const externo = guionExterno(input);
+  const count = sceneCountFor(duration, input.scenes);
+  const delGuion = externo ? guionExternoSinIA(externo, count) : [];
+  const nombres = Array.from(new Set(delGuion.map(e => e.speaker).filter(n => !/^narrador$/i.test(n)))).slice(0, 6);
+  const characters = nombres.length ? normalizeCast(nombres.map(name => ({ name })), style) : templateCast(idea, style);
+  const raw = delGuion.length ? { title: "Episodio 1", summary: externo.slice(0, 300), scenes: delGuion } : templateScenes(idea, characters, style, count);
   const episode = buildProduction(raw, { style, duration, scenes: input.scenes, characters, idea, chosenHook: input.chosenHook, seriesTitle: idea.slice(0, 60), partNumber: 1 });
   return { mode: "plantilla-local", series: { title: idea.slice(0, 60), logline: idea, world: "", tone: "", style }, characters, episode: { ...episode, mode: "plantilla-local" } };
 }
@@ -253,6 +319,7 @@ function templateSeriesBase(input: any) {
 // ---------- CONTINUAR UNA SERIE ----------
 export async function generateNextEpisode(input: any) { return conAspecto(await generateNextEpisodeBase(input), aspectoDe(input?.formato)); }
 async function generateNextEpisodeBase(input: any) {
+  const externo = guionExterno(input);
   const startedAt = Date.now();
   const style = styleKey(input.style);
   const duration = Number(input.duration || 90);
@@ -263,7 +330,7 @@ async function generateNextEpisodeBase(input: any) {
     const castSheet = existing.map(c => isFruitStyle(style)
       ? `- ${c.name} (${c.role}): piel de ${c.fruit} — ${c.headES}. Ropa: ${c.clothing}. Voz: ${c.voice}.`
       : `- ${c.name} (${c.role}): ${c.visualES}. Ropa: ${c.clothing}. Voz: ${c.voice}.`).join("\n");
-    const system = `${styleRules(style)}${extraContext(input)}\n\n${sceneBrief(style, count)}\n\n${miPedido(input, style, duration, count, "continuacion")}\n\nTAREA: escribe el EPISODIO ${input.partNumber} de la serie "${input.series?.title}", continuando exactamente donde terminó el anterior (retoma su cliffhanger en la escena 1; si es para TikTok/Facebook puede abrir con "Anteriormente...").${(() => { const c = String((input.history || []).slice(-1)[0]?.cliffhanger || "").trim(); return c ? `\nEL PÚBLICO SE QUEDÓ CON ESTE CIERRE: «${c}». La escena 1 retoma exactamente esa acción (sin repetir la frase y SIN resolver todavía el misterio: si alguien se iba, primero se le persigue o se le ve de espaldas; la revelación llega a mitad del episodio), la tensión sube escena a escena y el episodio termina con un cliffhanger nuevo, más fuerte, que haga pedir la parte siguiente en los comentarios.` : ""; })()}${input.nextPlan ? `\nLO QUE SE GUARDA PARA LA PARTE SIGUIENTE (no lo abras ni lo reveles en esta; como mucho, que aparezca cerrado al final como cliffhanger): «${String(input.nextPlan).slice(0, 600)}».` : ""}
+    const system = `${styleRules(style)}${extraContext(input)}\n\n${sceneBrief(style, count)}\n\n${miPedido(input, style, duration, count, externo ? "adaptacion" : "continuacion")}\n\n${externo ? `${adaptarReglas(count)}\n\nTAREA: adapta el guion recibido como el EPISODIO ${input.partNumber} de la serie "${input.series?.title}" con el elenco fijo (si el guion usa otros nombres para ellos, usa los del elenco; si trae personajes nuevos, créalos en newCharacters).` : `TAREA: escribe el EPISODIO ${input.partNumber} de la serie "${input.series?.title}", continuando exactamente donde terminó el anterior (retoma su cliffhanger en la escena 1; si es para TikTok/Facebook puede abrir con "Anteriormente...").${(() => { const c = String((input.history || []).slice(-1)[0]?.cliffhanger || "").trim(); return c ? `\nEL PÚBLICO SE QUEDÓ CON ESTE CIERRE: «${c}». La escena 1 retoma exactamente esa acción (sin repetir la frase y SIN resolver todavía el misterio: si alguien se iba, primero se le persigue o se le ve de espaldas; la revelación llega a mitad del episodio), la tensión sube escena a escena y el episodio termina con un cliffhanger nuevo, más fuerte, que haga pedir la parte siguiente en los comentarios.` : ""; })()}${input.nextPlan ? `\nLO QUE SE GUARDA PARA LA PARTE SIGUIENTE (no lo abras ni lo reveles en esta; como mucho, que aparezca cerrado al final como cliffhanger): «${String(input.nextPlan).slice(0, 600)}».` : ""}`}
 ELENCO FIJO (reutilízalo SIN cambiar nombre, fruta, cara ni ropa; sus fichas ya están aprobadas):
 ${castSheet}${input.signatureSong ? `
 CANCIÓN DE FIRMA de la serie (repítela tal cual en social.music): ${String(input.signatureSong).slice(0, 200)}` : ""}
@@ -271,7 +338,7 @@ Si la historia necesita un personaje nuevo, créalo en newCharacters (máximo 2)
 Responde SOLO JSON: {"episode":{"title":"","summary":"","hook":["",""],"coverText":"","description":"","hashtags":[],${FICHA_SCHEMA},${BIBLE_SCHEMA(style)}${PUBLISH_SCHEMA},${SCENES_SCHEMA}},"newCharacters":[${CAST_FIELDS(style)}]}`;
     const parsed = await askJson(system, JSON.stringify({
       serie: input.series, mundo: input.bible, episodiosAnteriores: input.history,
-      deseoDelUsuario: input.wish || "Decide tú lo que pasa para que enganche más", duracionSegundos: duration,
+      deseoDelUsuario: input.wish || "Decide tú lo que pasa para que enganche más", duracionSegundos: duration, ...(externo ? { guionExterno: externo } : {}),
     }));
     const known = new Set(existing.map(c => norm(c.name)));
     const newRows = (Array.isArray(parsed.newCharacters) ? parsed.newCharacters : []).filter((c: any) => c?.name && !known.has(norm(c.name))).slice(0, 2);
@@ -297,7 +364,9 @@ function templateNextBase(input: any) {
   const duration = Number(input.duration || 90);
   const characters = normalizeCast(input.characters, style);
   const cast = characters.length >= 2 ? characters : templateCast(String(input.series?.title || ""), style);
-  const raw = templateScenes(String(input.wish || ""), cast, style, sceneCountFor(duration, input.scenes));
+  const externo = guionExterno(input);
+  const delGuion = externo ? guionExternoSinIA(externo, sceneCountFor(duration, input.scenes)) : [];
+  const raw = delGuion.length ? { title: `Episodio ${Number(input.partNumber || 2)}`, summary: externo.slice(0, 300), scenes: delGuion } : templateScenes(String(input.wish || ""), cast, style, sceneCountFor(duration, input.scenes));
   const part = Number(input.partNumber || 2);
   const episode = buildProduction({ ...raw, title: `Episodio ${part}`, summary: input.wish || "Continuación (plantilla local)." },
     { style, duration, scenes: input.scenes, characters: cast, idea: String(input.wish || input.series?.title || ""), chosenHook: input.chosenHook, seriesTitle: String(input.series?.title || "Serie"), partNumber: part, previousSummary: String((input.history || []).slice(-1)[0]?.summary || "") });
