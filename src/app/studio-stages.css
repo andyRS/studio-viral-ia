@@ -3,6 +3,24 @@
 .episode-heading { padding:1.3rem; border:1px solid var(--studio-edge); border-radius:1rem; background:radial-gradient(ellipse at 100% 0,rgba(54,184,196,.09),transparent 65%),#101d28; }
 .episode-heading h2 { margin:.45rem 0; font-size:clamp(22px,2.6vw,34px); letter-spacing:-.04em; font-weight:500; line-height:1.2; }
 .episode-heading > span { flex-wrap:wrap; }.episode-heading > div > p:last-child { max-width:640px; line-height:1.8; }
+.episode-heading > div:first-child { flex:1 1 400px; min-width:0; }
+.episode-actions { display:flex; flex:1 1 300px; max-width:460px; align-items:center; justify-content:flex-end; gap:.8rem 1rem; min-width:0; }
+.episode-actions > button { min-height:42px; }
+.episode-aspect { display:flex; flex:1 1 100%; align-items:center; flex-wrap:wrap; gap:.8rem; padding:.8rem 1rem; border:1px solid #6bbdcd4d; border-radius:.75rem; background:#0b1d27; color:#b9dce5; font-size:11px; }
+.episode-aspect > span:nth-child(2) { flex:1; min-width:100px; }
+.episode-aspect small { display:block; margin-top:.25rem; color:#8faebf; font-size:10px; }
+.episode-aspect select { min-width:0; max-width:100%; min-height:42px; background:#153541; border-color:#5f9fac66; color:#d8edf2; }
+.episode-aspect-icon { flex:none; width:30px; height:19px; border:1px solid var(--cinema); border-radius:3px; background:#f5bc690a; }
+.episode-aspect[data-aspect="9:16"] .episode-aspect-icon { width:19px; height:30px; margin:0 5px; }
+.review-import > summary small { display:block; margin-top:.35rem; color:#9ab9c8; font-size:10px; }
+.review-studio .review-import > summary > strong { display:inline-flex; align-items:center; justify-content:center; min-height:42px; padding:.6rem .9rem; border:1px solid #f5bc6959; border-radius:.55rem; background:#f5bc6910; color:#f3d6aa; }
+.review-import[data-dragging="true"] { border-color:#82d8e2; box-shadow:inset 0 0 0 1px #82d8e2; }
+.review-import[data-dragging="true"] > summary { background:#1b4350; color:#e4f5f8; }
+.review-import > div { background:linear-gradient(135deg,#142c37,#0e202b); }
+.review-import > div > label { position:relative; min-height:160px; justify-content:center; background:#0a1b25; border:1px dashed #6d9daa; }
+.review-import > div > label:focus-within { outline:2px solid #8adce5; outline-offset:3px; }
+.review-import > div > label input.sr-only { position:absolute; top:0; left:0; width:1px; height:1px; min-width:0; min-height:0; margin:-1px; padding:0; }
+@media(max-width:600px) { .episode-actions { justify-content:flex-start; flex-basis:100%; max-width:none; }.episode-aspect { padding:.8rem; }.episode-aspect select { flex:1 1 100%; width:100%; font-size:16px; } }
 .episode-tabs { padding:.25rem; border:1px solid var(--studio-edge); border-radius:.8rem; background:#101a24; gap:.2rem; }
 .episode-tabs button { border-bottom:0; border-radius:.5rem; font-size:11px; }.episode-tabs button.tab-active { background:rgba(54,184,196,.12); box-shadow:inset 0 -2px var(--creative); }
 .episode-stage-layout { display:grid; gap:1rem; align-items:start; margin-top:1rem; min-width:0; }
