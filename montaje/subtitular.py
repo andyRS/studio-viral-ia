@@ -528,11 +528,73 @@ ScaledBorderAndShadow: yes
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: Sub,Poppins,""" + ("68" if HORIZ else "84") + """,&H00FFFFFF,&H00FFFFFF,&H00000000,&H90000000,1,0,0,0,100,100,1,0,1,""" + ("5,2,2,260,260,64" if HORIZ else "7,3,2,130,130,470") + """,1
+Style: Peli,Poppins,""" + ("44" if HORIZ else "58") + """,&H00FFFFFF,&H00FFFFFF,&H00101010,&H99000000,0,0,0,0,100,100,0.5,0,1,""" + ("2.2,1.2,2,240,240,58" if HORIZ else "3,1.5,2,110,110,430") + """,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """]
-for n, ch in enumerate(events):
+# Estilo de subtítulos: «pelicula» (frase completa en blanco, 1-2 líneas, narrador en cursiva, como en el cine; por
+# defecto en 16:9), «karaoke» (bloques de 3 palabras con el color de quien habla, el de los virales) o «no».
+SUBS = str(G.get("subtitulos") or ("pelicula" if HORIZ else "karaoke")).lower()
+if SUBS == "pelicula":
+    MAXL = 42 if HORIZ else 30          # caracteres por línea (norma de subtitulado: ~42 en cine/TV)
+    frases, k = [], 0
+    while k < len(sw):
+        j = k
+        while j + 1 < len(sw) and sw[j + 1][2] == sw[k][2]:
+            j += 1
+        frases.append(list(range(k, j + 1))); k = j + 1
+    # Cada bloque: una oración (o parte de ella) en 1-2 líneas. Se corta primero por oraciones y, si una oración no
+    # cabe en dos líneas, por comas o por longitud; nunca deja un resto de menos de 3 palabras.
+    largo = lambda b: sum(len(sw[x][1]) + 1 for x in b) - 1
+    PELI = []
+    for idx in frases:
+        oraciones, act = [], []
+        for w in idx:
+            act.append(w)
+            if re.search(r"[.!?…]$", sw[w][1]):
+                oraciones.append(act); act = []
+        if act:
+            oraciones.append(act)
+        for o in oraciones:
+            partes, act = [], []
+            for w in o:
+                if act and largo(act + [w]) > MAXL * 2:
+                    corte = max((k for k in range(1, len(act)) if re.search(r"[,;:]$", sw[act[k - 1]][1])), default=len(act))
+                    partes.append(act[:corte]); act = act[corte:]
+                act.append(w)
+            if act:
+                if partes and len(act) < 3 and largo(partes[-1] + act) <= MAXL * 2 + 10:
+                    partes[-1] = partes[-1] + act
+                else:
+                    partes.append(act)
+            # Oraciones cortas seguidas que caben juntas en una sola línea van en el mismo subtítulo.
+            for pt in partes:
+                if PELI and PELI[-1][0] in idx and largo(PELI[-1] + pt) <= MAXL:
+                    PELI[-1] = PELI[-1] + pt
+                else:
+                    PELI.append(pt)
+    for n, ch in enumerate(PELI):
+        spk = sw[ch[0]][0]
+        st = times[ch[0]][0]
+        en = times[ch[-1]][1] + 0.5
+        if n + 1 < len(PELI):
+            en = min(en, times[PELI[n + 1][0]][0] - 0.05)
+        en = max(en, st + 0.8)
+        palabras = [sw[x][1] for x in ch]
+        texto = " ".join(palabras)
+        if len(texto) > MAXL:   # dos líneas equilibradas
+            mejor, corte = 10 ** 9, 1
+            for c in range(1, len(palabras)):
+                a, b = " ".join(palabras[:c]), " ".join(palabras[c:])
+                coste = abs(len(a) - len(b)) - (8 if re.search(r"[,;:.!?…]$", palabras[c - 1]) else 0)
+                if max(len(a), len(b)) <= MAXL + 6 and coste < mejor:
+                    mejor, corte = coste, c
+            texto = " ".join(palabras[:corte]) + "\\N" + " ".join(palabras[corte:])
+        cursiva = "\\i1" if re.search(r"narrador|voz en off", spk, re.I) else ""
+        ass.append(f"Dialogue: 0,{ts(st)},{ts(en)},Peli,{spk},0,0,0,,{{\\fad(120,120){cursiva}}}{texto}\n")
+    events = PELI
+for n, ch in enumerate(events if SUBS == "karaoke" else []):
     spk = sw[ch[0]][0]
     st, en = times[ch[0]][0], times[ch[-1]][1] + 0.35
     en = max(en, times[ch[-1]][1])
@@ -547,7 +609,8 @@ for n, ch in enumerate(events):
     ass.append(f"Dialogue: 0,{ts(st)},{ts(en)},Sub,{spk},0,0,0,,{{\\fscx88\\fscy88\\t(0,90,\\fscx100\\fscy100)\\1c{bgr(G['colores'][spk])}\\2c&H00FFFFFF&}}{' '.join(parts)}\n")
 ass_path = os.path.join(tmp, "subs.ass")
 open(ass_path, "w", encoding="utf-8").writelines(ass)
-progreso(65, f"Subtítulos de colores listos: {len(events)} bloques sin encimarse")
+progreso(65, f"Subtítulos de colores listos: {len(events)} bloques sin encimarse" if SUBS == "karaoke"
+         else f"Subtítulos de película listos: {len(events)} frases" if SUBS == "pelicula" else "Sin subtítulos (elegido en el montaje)")
 
 # 3b) Acabado profesional: lo que se calcula antes de montar.
 HABLA0 = [str((G["clips"][ci] or [["", ""]])[0][0]) for ci in range(len(clips))]
