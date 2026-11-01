@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { importarFiel, redirigirEpisodio } from "../src/lib/importacion";
-import { aplicarAccion, costeEstimado, planificarAccion, verificarContinuidad } from "../src/lib/accion";
+import { aplicarAccion, costeEstimado, planificarAccion, transicionesDe, verificarContinuidad } from "../src/lib/accion";
 import { conAspecto, refreshPrompts } from "../src/lib/production";
 import { motorDe } from "../src/lib/tiempos";
 
@@ -86,5 +86,13 @@ ok(drama.p.secuencias.length === 0 && drama.p.tomas.length === 0, "14 · drama s
 const fruta: any = importarFiel({ capitulo: JSON.stringify({ clips: [[["Narrador", "Platanito corre y salta la cerca del colmado."]], [["Platanito", "¡Me escapé!"]]] }), personajes: JSON.stringify({ personajes: [{ nombre: "Platanito", descripcion_maestra: "Personaje con piel de plátano." }] }), style: "frutinovela", formato: "corto" });
 const pf = planificarAccion(fruta.episode.scenes, fruta.characters);
 ok(pf.tomas.length >= 1 && pf.tomas[0].tipo !== undefined && /vertical 9:16/.test(fruta.episode.scenes[0].imagePromptFlow), "14 · telenovela animada: la acción física se reconoce sin cambiar su formato 9:16");
+
+// Transiciones del montaje: paso por negro al cambiar de secuencia y de lugar; nunca dentro del montaje paralelo
+// ni donde ya hay tarjeta de tiempo.
+const tr = transicionesDe(ep.scenes, plan, ep.guionJson.tarjetas);
+ok(tr.map(t => t.antes).join() === "3,15", "transiciones: paso por negro antes de la escena 4 (oración → misión) y de la 16 (fin del recuerdo)");
+ok(!tr.some(t => [6, 7, 8].includes(t.antes)) && !tr.some(t => ep.guionJson.tarjetas.some((k: any) => k.antes === t.antes)), "transiciones: el montaje paralelo (7–8) y las tarjetas de tiempo siguen a corte");
+ok(ep.scenes.slice(15, 19).every((s: any) => /Orillas del río/.test(s.location)), "tras la visión, 16–19 siguen a orillas del río (no en casa ni entre nubes)");
+ok(transicionesDe(ep.scenes, null).length === 0, "sin plan de acción no se inventan transiciones");
 
 console.log(`${checks} comprobaciones del director de acción correctas.`);

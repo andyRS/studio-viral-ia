@@ -369,7 +369,10 @@ export function dirigirSecuencia(clips: ClipOriginal[], presencia: Presencia[], 
     let vid = rellenar(elegida.vid);
     if (!A) { vis = `${lib.lugar || "El escenario"} sin personajes en cuadro`; vid = "La cámara recorre el escenario"; }
     const amb = sinPunto((ficha(A)?.ambiente || "").split(/[;.]/)[0]);
-    const location = sinPunto(retro ? "Recuerdo: " + (amb || lib.lugar) : amb && beat !== "vision" ? amb : lib.lugar || prev?.location || "");
+    // Las consecuencias de un momento (debilidad, consuelo, revelación, advertencia) siguen en el lugar de la escena
+    // anterior (sin la marca de recuerdo): la conversación tras la visión ocurre donde ocurrió la visión.
+    const sigueLugar = ["debilidad", "consuelo", "revelacion", "advertencia"].includes(beat) && prev?.location;
+    const location = sinPunto(sigueLugar ? prev!.location.replace(/^Recuerdo:\s*/i, "") : retro ? "Recuerdo: " + (amb || lib.lugar) : amb && beat !== "vision" ? amb : lib.lugar || prev?.location || "");
     // Intensidad: el tipo de momento y su posición en el episodio (sube hacia el clímax, baja en la resolución).
     const pos = clips.length > 1 ? i / (clips.length - 1) : 0;
     const intensity = Math.round(Math.min(1, lib.peso * 0.75 + (pos < 0.75 ? pos * 0.35 : 0.2)) * 100) / 100;

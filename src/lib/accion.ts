@@ -259,3 +259,18 @@ export function costeEstimado(segundos: number, tarifa: { creditosSegundo: numbe
   const creditos = Math.round(segundos * tarifa.creditosSegundo * (tarifa.reintentos || 1));
   return { creditos, usd: tarifa.usdCredito == null ? null : Math.round(creditos * tarifa.usdCredito * 100) / 100, nota: `${segundos} s × ${tarifa.creditosSegundo} créditos/s × ${tarifa.reintentos || 1} intentos` };
 }
+
+// Transiciones del montaje: paso por negro donde cambia la secuencia Y el lugar (no dentro del montaje paralelo,
+// que va a corte seco, ni donde ya hay una tarjeta de tiempo). Índice desde 0, como «tarjetas» en guion.json.
+export function transicionesDe(escenas: any[], plan: PlanAccion | null, tarjetas: { antes: number }[] = []) {
+  const secDe = (n: number) => plan?.secuencias.find(s => s.escenas.includes(n) || s.intercaladas.includes(n))?.id || "";
+  const lugar = (s: any) => norm(String(s?.location || "").replace(/^recuerdo:\s*/i, "recuerdo "));
+  const out: { antes: number; tipo: "negro"; motivo: string }[] = [];
+  for (let i = 1; i < escenas.length; i++) {
+    if (tarjetas.some(t => Number(t.antes) === i)) continue;
+    const a = escenas[i - 1], b = escenas[i];
+    const sa = secDe(Number(a.n) || i), sb = secDe(Number(b.n) || i + 1);
+    if (sa !== sb && lugar(a) && lugar(b) && lugar(a) !== lugar(b)) out.push({ antes: i, tipo: "negro", motivo: `Cambio de secuencia y de lugar: ${a.location} → ${b.location}` });
+  }
+  return out;
+}

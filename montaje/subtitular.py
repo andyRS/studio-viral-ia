@@ -292,6 +292,17 @@ for tj in G.get("tarjetas") or []:
         continue
     if 0 < k < len(clips) and txt:
         TARJETAS[k] = txt[:60]
+# Transiciones entre secuencias: «negro» = paso por negro (fundido de salida del clip anterior y de entrada del
+# siguiente, 0,35 s cada uno, sin alargar nada). Índice desde 0 como «tarjetas»; donde ya hay tarjeta no se añade.
+TRANS = set()
+for tr in G.get("transiciones") or []:
+    try:
+        k = int(tr.get("antes"))
+    except (TypeError, ValueError, AttributeError):
+        continue
+    if 0 < k < len(clips) and k not in TARJETAS and str(tr.get("tipo") or "negro") == "negro":
+        TRANS.add(k)
+FUNDIDO = 0.35
 # La vida de hoy: chats de WhatsApp dibujados encima de su clip y clips con la voz por teléfono.
 PANTALLAS = {}
 # En 16:9 (proyecto largo) no se dibujan chats de WhatsApp: no se usan en ese formato.
@@ -846,7 +857,12 @@ for ci, c in enumerate(clips):
     if PRO_CAMARA and HABLA0[ci].lower().startswith("narrador"):   # movimiento lento (Ken Burns) en el Narrador
         nf = max(1, int((vb - va) / VEL * 24))
         extra_v.append(f"zoompan=z='1+0.06*on/{nf}':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={RESX}:fps=24,setsar=1")
-    fc += ",".join(["null"] + extra_v) + f"{chat}{ajusta((vb - va) / VEL)}[v{n}];"
+    dseg = (vb - va) / VEL
+    if ci in TRANS:            # entra desde negro
+        extra_v.append(f"fade=t=in:st=0:d={FUNDIDO}")
+    if ci + 1 in TRANS:        # sale a negro
+        extra_v.append(f"fade=t=out:st={max(0.0, dseg - FUNDIDO):.3f}:d={FUNDIDO}")
+    fc += ",".join(["null"] + extra_v) + f"{chat}{ajusta(dseg)}[v{n}];"
     gan = f"volume={GANANCIA[ci]:.2f}dB," if abs(GANANCIA[ci]) > 0.3 else ""
     fc += (f"[{n}:a]atrim=start={a:.3f}:end={b:.3f},asetpts=PTS-STARTPTS,{f'atempo={VEL:.3f},' if VEL > 1 else ''}{tel}{gan}aresample=48000,aformat=channel_layouts=stereo,"
            f"afade=t=in:d=0.03,afade=t=out:st={max(0, (b - a) / VEL - 0.04):.3f}:d=0.04[a{n}];")
@@ -932,7 +948,32 @@ H0 = RECAP_S
 alpha = (f"alpha='if(lt(t,{H0 + 0.2:.2f}),max(0,(t-{H0:.2f})/0.2),if(lt(t,{H0 + 2.6:.2f}),1,max(0,1-(t-{H0 + 2.6:.2f})/0.4)))':enable='between(t,{H0:.2f},{H0 + 3:.2f})'"
          if PRO_CAMARA else f"alpha='if(lt(t,{H0 + 2.6:.2f}),1,max(0,1-(t-{H0 + 2.6:.2f})/0.4))':enable='between(t,{H0:.2f},{H0 + 3:.2f})'")
 y = 90 if HORIZ else 205
-gancho = G.get("gancho", [])
+# Apertura de película: en lugar del gancho viral, el título de la serie centrado con tipografía de cine (Lora),
+# subtítulo dorado y episodio pequeño; aparece y se va con fundidos lentos (≈5 s) sobre el primer plano.
+TP = G.get("titulo_pelicula") if isinstance(G.get("titulo_pelicula"), dict) else None
+APERTURA_TITULO = str(G.get("apertura") or "").lower() == "titulo" and TP and str(TP.get("titulo") or "").strip()
+if APERTURA_TITULO:
+    t0, t1, t2, t3 = H0 + 0.3, H0 + 1.3, H0 + 4.2, H0 + 5.2
+    a_tit = f"alpha='if(lt(t,{t1:.2f}),max(0,(t-{t0:.2f})/{t1 - t0:.2f}),if(lt(t,{t2:.2f}),1,max(0,1-(t-{t2:.2f})/{t3 - t2:.2f})))':enable='between(t,{t0:.2f},{t3:.2f})'"
+    titulo = str(TP.get("titulo")).strip().upper()
+    sub = str(TP.get("subtitulo") or "").strip().upper()
+    epi = str(TP.get("episodio") or "").strip()
+    s_tit, l_tit = ajustar(titulo, 150 if HORIZ else 120, 70)
+    s_sub = ajustar(sub, 52 if HORIZ else 44, 30)[0] if sub else 0
+    alto = len(l_tit) * int(s_tit * 0.9) + (int(s_sub * 1.3) if sub else 0) + (56 if epi else 0)
+    yt = H // 2 - alto // 2 - int(H * 0.04)
+    for ln in l_tit:
+        fc += texto_dt(ln, s_tit, "0xF4ECDD", yt, 3, ":" + a_tit, LORA_F) + ","
+        yt += int(s_tit * 0.9)
+    if sub:
+        yt += int(s_sub * 0.1)
+        for ln in lineas(sub, s_sub):
+            fc += texto_dt(ln, s_sub, "0xF5BC69", yt, 2, ":" + a_tit, LORA_F) + ","
+            yt += int(s_sub * 1.2)
+    if epi:
+        fc += texto_dt(epi, 34 if HORIZ else 32, "0xE6E6E6", yt + 14, 2, ":" + a_tit) + ","
+    progreso(69, f"Apertura de película: «{titulo}»" + (f" · {sub}" if sub else ""))
+gancho = [] if APERTURA_TITULO else G.get("gancho", [])
 size = min([ajustar(line, 66, 46)[0] for line in gancho] or [66])   # las dos líneas, del mismo tamaño
 for k, line in enumerate(gancho):
     col = "white" if k == 0 else ACENTO
@@ -1222,7 +1263,7 @@ try:
         nota -= 5
         avisos.append({"tipo": "orden", "texto": "Clips en otro orden que el guion: " + ", ".join(f"clip {c} = escena {b}" for c, b in REORDENADOS) + ". Los subtítulos ya siguen lo que se oye.",
                        "arreglo": "Comprueba que la historia se entienda en ese orden; si no, coloca bien los clips en la mesa de escenas y vuelve a montar."})
-    if not G.get("gancho"):
+    if not G.get("gancho") and not APERTURA_TITULO:
         nota -= 10
         avisos.append({"tipo": "gancho", "texto": "Sin texto de gancho en los primeros 3 s.", "arreglo": "Añade el gancho (2 líneas) en el guion."})
     if total > 90:

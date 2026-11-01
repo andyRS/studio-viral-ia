@@ -30,7 +30,7 @@ import { normalizarCapitulo, normalizarPersonajes, importarFiel, estiloDeTexto, 
 import { ETIQUETA_CLASE, fuenteDeTexto, fuenteSugerida, type Fuente } from "@/lib/fuentes";
 import { aplicarTiempos, planTiempos, type Medicion, type ModoMontaje } from "@/lib/tiempos";
 import { medirClip } from "@/lib/medirAudio";
-import { aplicarAccion, costeEstimado, planificarAccion, type TomaAccion } from "@/lib/accion";
+import { aplicarAccion, costeEstimado, planificarAccion, transicionesDe, type TomaAccion } from "@/lib/accion";
 import { motorDe } from "@/lib/tiempos";
 import { conAspecto as conAspectoAccion, refreshPrompts as refrescarAccion } from "@/lib/production";
 import { cargarArchivos } from "@/lib/archivosTrabajo";
@@ -755,6 +755,17 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
   const referencesReady = !!cast.length && master.every(c => !!c?.imageUrl && !!c?.referenceApprovedAt);
   const snapshotValid = !!out.referenceVersions && master.every((c, i) => Number(c?.referenceVersion || 1) === Number(out.referenceVersions[String(cast[i].name).toLowerCase()]));
   const productionReady = referencesReady && snapshotValid;
+  // Guion del montaje: el del episodio con su formato, el título de película (apertura) y los pasos por negro entre secuencias.
+  const guionMontaje = useMemo(() => {
+    const g: any = { ...(out.guionJson || {}), ...(aspecto === "16:9" ? { formato: "16:9" } : {}) };
+    const [tit, ...resto] = String(seriesTitle || out.title || "").split(/:\s*/);
+    g.titulo_pelicula = { titulo: tit, subtitulo: resto.join(": "), episodio: [`Episodio ${part}`, String(out.title || "").replace(/^episodio\s*\d+\s*[—–-]\s*/i, "")].filter(Boolean).join(" · ") };
+    if (aspecto === "16:9" && scenes.length) {
+      try { g.transiciones = transicionesDe(scenes, planificarAccion(scenes, master.filter(Boolean).length ? master.filter(Boolean) : cast), g.tarjetas || []); } catch { /* sin plan: sin transiciones */ }
+    }
+    return g;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [out, aspecto, seriesTitle, part, scenes, cast]);
   const episodeStyle: string = out.seriesBible?.style || (/escribe am[eé]n/i.test(scenes.at(-1)?.line || "") ? "cristiana" : cast.some(c => c.fruit) ? "frutinovela" : "cine90");
   // Serie larga con prompts aún en vertical (creados antes del 16:9): también se ofrece actualizarlos.
   const formatoViejo = aspecto === "16:9" && scenes.some((s: any) => /9:16/.test(`${s.imagePromptFlow || ""} ${s.animationPrompt || ""}`));
@@ -937,7 +948,7 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
         <p className="text-xs text-slate-500">capitulo.json y personajes.json tienen la estructura del estudio: sirven de plantilla para pedir capítulos a otra IA y se suben en «Nueva historia → Subir capítulo de otra IA» sin gastar IA.</p>
         <p className="text-xs text-slate-500">guion.json es el archivo para el montaje con subtitular.py. El .md trae la ficha del episodio, el guion por escenas, las 3 fases y el paquete de redes.</p>
       </div>}
-      {tab === "mesa" && productionReady && <SceneDesk key={episodeId} onDownloaded={onFinish} publish={pack} cover={{ serie: seriesTitle, frase: (out.cover?.lines || out.guionJson?.gancho || []).slice(0, 2), parte: part }} music={{ series: seriesTitle, logline: out.seriesBible?.logline, episodeTitle: out.title, summary: out.summary, closing: cliffhangerOf(out) }} recap={recap} episodeId={episodeId} scenes={scenes} guion={{ ...(out.guionJson || {}), ...(aspecto === "16:9" ? { formato: "16:9" } : {}) }} title={`${seriesTitle || "serie"} ${part}`} referencesReady={referencesReady} referenceSignature={referenceSignature} style={episodeStyle} part={part} />}
+      {tab === "mesa" && productionReady && <SceneDesk key={episodeId} onDownloaded={onFinish} publish={pack} cover={{ serie: seriesTitle, frase: (out.cover?.lines || out.guionJson?.gancho || []).slice(0, 2), parte: part }} music={{ series: seriesTitle, logline: out.seriesBible?.logline, episodeTitle: out.title, summary: out.summary, closing: cliffhangerOf(out) }} recap={recap} episodeId={episodeId} scenes={scenes} guion={guionMontaje} title={`${seriesTitle || "serie"} ${part}`} referencesReady={referencesReady} referenceSignature={referenceSignature} style={episodeStyle} part={part} />}
       {(tab === "imagenes" || tab === "animacion" || tab === "mesa") && !productionReady && <p className="rounded-xl border border-amber-400/25 bg-amber-400/10 p-4 text-sm text-amber-100">Revisa los personajes canónicos y la versión de sus fichas maestras antes de continuar.</p>}
     </fieldset>
     {(tab === "imagenes" || tab === "animacion") && <aside className="episode-context-inspector"><header className="stage-panel-header"><span className="studio-eyebrow">INSPECTOR DE PRODUCCIÓN</span><span aria-hidden="true">⌘</span></header><div className="stage-inspector-body"><p className="studio-eyebrow cinematic-gold">ESCENA {activeScene?.n || "—"}</p><h3>{activeScene?.title || "Dirección visual"}</h3><p className="stage-inspector-intro">{activeScene?.setting || activeScene?.goal || out.summary}</p><dl><div><dt>Proyecto</dt><dd>{seriesTitle || out.title}</dd></div><div><dt>Duración del episodio</dt><dd>{fullDuration} s</dd></div><div><dt>Estado de continuidad</dt><dd>{productionReady ? "Fichas aprobadas y vigentes" : "Revisión de fichas pendiente"}</dd></div>{activeScene?.shot && <div><dt>Plano</dt><dd>{activeScene.shot}</dd></div>}</dl><p className="studio-eyebrow">REFERENCIAS DEL ELENCO</p><div className="inspector-reference-row">{master.filter(Boolean).map((c: any) => <button key={c.id || c.name} type="button" onClick={() => setTab("elenco")}>{c.imageUrl ? <img src={c.imageUrl} alt={`Referencia de ${c.name}`} /> : <span aria-hidden="true">◎</span>}<small>{c.name}</small></button>)}</div><button type="button" className="studio-secondary-action w-full" onClick={() => setTab("guion")}>Volver al guion ↗</button><p className="stage-inspector-help">Los prompts se preparan aquí. Las imágenes y los clips se generan en el proveedor que elijas.</p></div></aside>}
