@@ -353,6 +353,24 @@ const ir = async (page, espacio, modulo) => {
       ok(!!ep && ep.output.scenes.map(x => x.line).join("|") === escenas.map(x => x.line).join("|") && ser.style === "epica", "el capítulo se importa tal cual (mismos diálogos, estilo del archivo)");
       ok(!!pjs && pjs.length === 2 && /barba blanca/.test(pjs.find(c => c.name === "Daniel")?.visualES || ""), "los personajes canónicos se crean desde personajes.json");
       await ctx.close(); }
+    // 13b. Canal sin formato largo (p. ej. Instagram): si las fichas piden 16:9, el episodio se importa en 16:9.
+    { const { ctx, page } = await abrir(b);
+      const fs = require("fs"), path = require("path");
+      await ir(page, "Creative Studio", "Generador");
+      await page.getByRole("button", { name: /Crear$/ }).first().click(); await page.waitForTimeout(900);
+      await page.getByLabel("Canal de la serie").selectOption({ label: "＋ Conectar una cuenta nueva…" }); await page.waitForTimeout(300);
+      await page.locator("#nueva-cuenta-nombre").fill("Canal corto"); await page.getByRole("button", { name: "Conectar y usar esta cuenta" }).click(); await page.waitForTimeout(500);
+      await page.getByRole("button", { name: /Subir capítulo de otra IA/ }).click();
+      await page.getByLabel("Subir archivo: Capítulo (JSON o texto)").setInputFiles({ name: "c.json", mimeType: "application/json", buffer: fs.readFileSync(path.join(__dirname, "../fixtures/daniel_ep01_capitulo.json")) });
+      await page.getByLabel("Subir archivo: Personajes canónicos (JSON o texto, opcional)").setInputFiles({ name: "p.json", mimeType: "application/json", buffer: fs.readFileSync(path.join(__dirname, "../fixtures/daniel_ep01_personajes.json")) });
+      await page.waitForTimeout(300);
+      ok(await page.getByText(/el episodio se importará en horizontal 16:9/).count() === 1, "canal corto: se avisa de que las fichas piden 16:9");
+      await page.getByRole("button", { name: /Crear serie y episodio 1/ }).click(); await page.waitForTimeout(3000);
+      ok(await page.getByLabel("Formato de imagen del episodio").inputValue() === "16:9", "canal corto: el episodio de Daniel queda en 16:9");
+      const e = await page.evaluate(() => JSON.parse(localStorage.getItem("estudio-viral:episodes")).slice(-1)[0]);
+      ok(e.output.aspecto === "16:9" && !/9:16/.test(JSON.stringify(e.output.scenes)), "canal corto: ningún prompt en 9:16");
+      await ctx.close(); }
+
     // 14. Caso real: Daniel EP01 (clips + biblioteca canónica) en modo fidelidad, serie larga.
     { const { ctx, page } = await abrir(b);
       const fs = require("fs"), path = require("path");
