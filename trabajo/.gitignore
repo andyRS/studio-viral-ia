@@ -1,0 +1,7 @@
+# Solo se suben textos y la hoja de contacto: los vídeos y fotos se quedan en Descargas.
+material/**/*
+!material/**/
+!material/**/manifiesto.json
+!material/**/hoja-contacto.jpg
+!material/**/revision.md
+!material/.gitkeep
