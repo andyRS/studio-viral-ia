@@ -80,6 +80,19 @@ if (-not (Test-Path $lama)) {
   & $py (Join-Path $montaje "borrar_ia.py") --descargar
 }
 
+# Mejorar calidad con IA (GFPGAN para rostros): OpenCV para detectar caras y el modelo (~340 MB), una sola vez.
+$cvOk = $false
+try { & $py -c "import cv2" 2>$null; $cvOk = ($LASTEXITCODE -eq 0) } catch { $cvOk = $false }
+if (-not $cvOk) {
+  Write-Host "Instalando la IA para mejorar la calidad de los rostros (una sola vez) ..." -ForegroundColor Yellow
+  & $py -m pip install -q "opencv-python-headless<4.12"   # 4.12 exige numpy 2 y rompería Whisper
+}
+$gfpgan = Join-Path $env:USERPROFILE ".cache\estudio-viral\gfpgan_1.4.onnx"
+if (-not (Test-Path $gfpgan)) {
+  Write-Host "Descargando el modelo de IA para mejorar rostros (una sola vez, ~340 MB) ..." -ForegroundColor Yellow
+  & $py (Join-Path $montaje "mejorar_rostros.py") --descargar
+}
+
 # El modelo de Whisper (~500 MB) se descarga una sola vez, aquí y no en medio del primer montaje.
 $modelos = Join-Path $env:USERPROFILE ".cache\huggingface\hub\models--Systran--faster-whisper-small"
 if (-not (Test-Path $modelos)) {

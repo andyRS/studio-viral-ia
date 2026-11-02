@@ -121,6 +121,32 @@ function Comprimir({ disabled }: { disabled: boolean }) {
   </section>;
 }
 
+// Calidad con IA (GFPGAN, como el cuaderno de Colab): reconstruye los rostros en cada fotograma y sube la
+// resolución. En el PC con la GPU; trabajo en segundo plano con progreso.
+function CalidadIA({ disabled, disponible }: { disabled: boolean; disponible: boolean }) {
+  const [file, setFile] = useState<File | null>(null);
+  const [alto, setAlto] = useState(1080);
+  const [peso, setPeso] = useState(0.6);
+  const t = useTrabajo();
+  return <section id="tool-ai-quality" className="tool-station studio-panel p-5">
+    <p className="studio-eyebrow">02 / CALIDAD CON IA</p><h3 className="text-lg font-semibold">Mejorar la calidad con IA (rostros nítidos)</h3>
+    <p className="mt-1 text-sm text-slate-400">GFPGAN reconstruye cada rostro (ojos, piel, dientes, pelo) fotograma a fotograma y el vídeo sube de resolución. Ideal para clips de IA de 480p o 720p y planos con caras borrosas. Para personajes de acción real; en la frutinovela animada 3D puede humanizar las caras.</p>
+    {!disponible && <p className="mt-2 text-xs text-amber-200">Tu montaje del PC aún no tiene esta herramienta: <code>git pull</code> y vuelve a abrir «Montar en mi PC» (instala la IA y descarga el modelo de ~340 MB una sola vez).</p>}
+    <div className="mt-4"><FilePick file={file} onFile={setFile} disabled={t.busy} /></div>
+    <div className="mt-3 grid gap-3 sm:grid-cols-2 text-sm">
+      <label className="text-slate-300">Resolución final<select value={alto} onChange={e => setAlto(Number(e.target.value))} disabled={t.busy} className="mt-1">
+        <option value={720}>720p</option><option value={1080}>1080p (recomendado)</option><option value={1440}>1440p (2K)</option></select>
+        <span className="mt-1 block text-xs text-slate-500">Como mucho el doble del original.</span></label>
+      <label className="text-slate-300">Intensidad en los rostros: {Math.round(peso * 100)} %<input type="range" min={0.3} max={1} step={0.05} value={peso} onChange={e => setPeso(Number(e.target.value))} disabled={t.busy} className="mt-2 w-full" />
+        <span className="mt-1 block text-xs text-slate-500">60 % conserva la cara de la ficha; más alto, más nítido pero puede cambiar rasgos.</span></label>
+    </div>
+    <button type="button" disabled={disabled || !disponible || !file || t.busy} onClick={() => { const fd = new FormData(); fd.append("video", file!); t.run(`/mejorar_rostros?alto=${alto}&peso=${peso}`, fd, file!, "calidad-ia"); }}
+      className="mt-4 w-full rounded-xl bg-[#F5BC69] px-4 py-2.5 text-sm font-bold text-[#090D16] disabled:opacity-50">{t.busy ? "Mejorando con IA…" : "✦ Mejorar con IA"}</button>
+    <p className="mt-2 text-xs text-slate-500">Tarda: con la RTX 4060, unos segundos por cada segundo de vídeo con caras. No gasta créditos.</p>
+    <Estado t={t} />
+  </section>;
+}
+
 function QuitarMarca({ disabled }: { disabled: boolean }) {
   const [file, setFile] = useState<File | null>(null);
   const [url, setUrl] = useState("");
@@ -151,7 +177,7 @@ function QuitarMarca({ disabled }: { disabled: boolean }) {
   const pct = (z: Zona) => ({ left: `${(z.x / dim!.w) * 100}%`, top: `${(z.y / dim!.h) * 100}%`, width: `${(z.w / dim!.w) * 100}%`, height: `${(z.h / dim!.h) * 100}%` });
 
   return <section id="tool-watermark" className="tool-station studio-panel p-5">
-    <p className="studio-eyebrow">02 / RETOCAR</p><h3 className="text-lg font-semibold">Quitar marca de agua</h3>
+    <p className="studio-eyebrow">03 / RETOCAR</p><h3 className="text-lg font-semibold">Quitar marca de agua</h3>
     <p className="mt-1 text-sm text-slate-400">Elige el vídeo, pausa donde se vea el logo y dibuja un recuadro encima (puedes marcar varios). El vídeo sale completo, con la misma calidad y el mismo audio.</p>
     <div className="mt-4"><FilePick file={file} onFile={setFile} disabled={t.busy} /></div>
     {url && <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,320px)_1fr]">
@@ -218,8 +244,9 @@ export default function ToolsModule() {
         <button type="button" onClick={check} className="ml-2 font-semibold underline">Volver a comprobar</button>
       </div>}
     </section>
-    <nav className="creative-jump-nav" aria-label="Herramientas de acabado"><a href="#tool-compress"><span>01</span><div><strong>Comprimir y mejorar</strong><small>Calidad y peso del archivo</small></div><b aria-hidden="true">↗</b></a><a href="#tool-watermark"><span>02</span><div><strong>Retocar una marca</strong><small>Selección de zonas y método</small></div><b aria-hidden="true">↗</b></a></nav>
+    <nav className="creative-jump-nav" aria-label="Herramientas de acabado"><a href="#tool-compress"><span>01</span><div><strong>Comprimir y mejorar</strong><small>Calidad y peso del archivo</small></div><b aria-hidden="true">↗</b></a><a href="#tool-ai-quality"><span>02</span><div><strong>Calidad con IA</strong><small>Rostros nítidos y más resolución</small></div><b aria-hidden="true">↗</b></a><a href="#tool-watermark"><span>03</span><div><strong>Retocar una marca</strong><small>Selección de zonas y método</small></div><b aria-hidden="true">↗</b></a></nav>
     <Comprimir disabled={!ready} />
+    <CalidadIA disabled={!ready} disponible={!!caps?.rostros_ia} />
     <QuitarMarca disabled={!ready} />
   </section>;
 }

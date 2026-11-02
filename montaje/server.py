@@ -18,6 +18,7 @@ Montaje en segundo plano, con progreso en vivo (lo que usa la app):
 
 Solo en el PC (modo local):
   GET  /              página «Herramientas del PC»: comprimir un vídeo para revisarlo o mandarlo
+  POST /mejorar_rostros (multipart: video; ?peso=0.6&alto=1080; cabecera X-Montaje-Local) -> {"id"}: GFPGAN + escalado
   POST /comprimir     (multipart: video, calidad=revisar|ligero|redes|mejorar|chat[&mb=29]; cabecera X-Montaje-Local) -> mp4
                       (chat -> {"id"}: un mp4 de menos de mb MB o, si es muy largo, un .zip con partes de menos de mb MB cada una)
                       (también lo usa la app: Crear > Herramientas)
@@ -99,7 +100,7 @@ def autorizado(authorization: str) -> bool:
 @app.get("/salud")
 def salud():
     # «carpeta»: desde dónde corre el montaje del PC (para ver si es la copia actualizada).
-    return {"ok": True, "local": LOCAL, "gpu": GPU, "musica": True, "musica_modo": True, "anterior": True, "recorte": True, "portada": True, "pavo_720": True, "comprimir": LOCAL, "comprimir_chat": LOCAL, "mejorar": LOCAL, "quitar_marca": LOCAL, "logo_propio": True, "dos_logos": True, "borrar_ia": LOCAL, "pro": True, "versiones": True, "revision": True, "velocidad": True, "resumen": True, "pantallas": True, "horizontal": True, "recortes": True, "subtitulos": True, "tiempos": True, "apertura": True, "transiciones": True, "epico": True, "unir": LOCAL, **({"carpeta": os.path.dirname(HERE)} if LOCAL else {})}
+    return {"ok": True, "local": LOCAL, "gpu": GPU, "musica": True, "musica_modo": True, "anterior": True, "recorte": True, "portada": True, "pavo_720": True, "comprimir": LOCAL, "comprimir_chat": LOCAL, "mejorar": LOCAL, "quitar_marca": LOCAL, "logo_propio": True, "dos_logos": True, "borrar_ia": LOCAL, "rostros_ia": LOCAL, "pro": True, "versiones": True, "revision": True, "velocidad": True, "resumen": True, "pantallas": True, "horizontal": True, "recortes": True, "subtitulos": True, "tiempos": True, "apertura": True, "transiciones": True, "epico": True, "unir": LOCAL, **({"carpeta": os.path.dirname(HERE)} if LOCAL else {})}
 
 
 # ---------- Trabajos en segundo plano ----------
@@ -469,6 +470,55 @@ async def comprimir(video: UploadFile = File(...), calidad: str = "revisar", mb:
         shutil.rmtree(work, True)
         raise
     return FileResponse(out, media_type="video/mp4", filename=f"{nombre}-{calidad}.mp4", background=BackgroundTask(shutil.rmtree, work, True))
+
+
+# ---------- Herramientas del PC: mejorar la calidad con IA (rostros GFPGAN + escalado) ----------
+# Como el cuaderno de Colab de GFPGAN, pero local con la GPU: modelos ONNX (mejorar_rostros.py). Trabajo en segundo
+# plano con progreso en /trabajos/{id} y descarga en /trabajos/{id}/video, como el borrado con IA.
+def _ejecutar_rostros(job, src, out, opciones, work):
+    with CUPO:
+        _avisar(job, estado="montando", paso="Preparando la IA", pct=1)
+        try:
+            proc = subprocess.Popen([sys.executable, "-I", "-u", os.path.join(HERE, "mejorar_rostros.py"), src, out, json.dumps(opciones)],
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            errores = []
+            lector = threading.Thread(target=lambda: errores.extend(proc.stderr.readlines()), daemon=True); lector.start()
+            for linea in proc.stdout:
+                if linea.startswith("PROGRESO "):
+                    _, pct, msg = (linea.rstrip().split(" ", 2) + [""])[:3]
+                    _avisar(job, pct=int(pct), paso=msg, log=(job["log"] + [msg])[-40:])
+            proc.wait(); lector.join(5)
+            if proc.returncode != 0 or not os.path.exists(out):
+                _avisar(job, estado="error", error="Falló la mejora con IA: " + ("".join(errores)[-800:] or "sin detalle"))
+            else:
+                _avisar(job, estado="listo", pct=100, paso=job.get("paso") or "Calidad mejorada", out=out, nombre=os.path.basename(out))
+        except Exception as e:
+            _avisar(job, estado="error", error=f"Falló la mejora con IA: {e}")
+        finally:
+            job["terminado"] = time.time()
+    time.sleep(RETENER_SEGUNDOS)
+    shutil.rmtree(work, ignore_errors=True)
+    TRABAJOS.pop(job["id"], None)
+
+
+@app.post("/mejorar_rostros")
+async def mejorar_rostros(video: UploadFile = File(...), peso: float = 0.6, alto: int = 1080, x_montaje_local: str = Header(default="")):
+    if not LOCAL or not x_montaje_local:
+        raise HTTPException(403, "Solo disponible en el montaje de este PC")
+    work = tempfile.mkdtemp(prefix="rostros_")
+    nombre = os.path.splitext(os.path.basename(video.filename or "video"))[0][:80] or "video"
+    src = os.path.join(work, "entrada")
+    try:
+        await save_upload(video, src, MAX_COMPRIMIR)
+    except Exception:
+        shutil.rmtree(work, True); raise
+    jid = uuid.uuid4().hex
+    job = {"id": jid, "estado": "en cola", "pct": 0, "paso": "Vídeo recibido", "log": ["Vídeo recibido"], "seq": 0, "error": "",
+           "out": "", "cond": threading.Condition(), "terminado": 0}
+    TRABAJOS[jid] = job
+    opciones = {"peso": max(0.0, min(1.0, float(peso))), "alto": alto if alto in (720, 1080, 1440) else 1080}
+    threading.Thread(target=_ejecutar_rostros, args=(job, src, os.path.join(work, f"{nombre}-calidad-ia.mp4"), opciones, work), daemon=True).start()
+    return {"id": jid}
 
 
 # Une los actos ya montados en la película completa (mismo códec: copia directa, sin recodificar).
