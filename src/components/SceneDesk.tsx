@@ -9,7 +9,7 @@ import type { Scene } from "@/lib/types";
 import { borrarEpisodio, cargarArchivos, espacio, guardarArchivo, limpiarViejos, pedirPersistencia, quitarArchivo, DIAS_RETENCION } from "@/lib/archivosTrabajo";
 
 type AssetMap = Record<number, File>;
-type Kind = "image" | "clip";
+type Kind = "image" | "clip" | "recurso";
 
 // Número de escena a partir del nombre del archivo. Acepta s01, S02_…, escena 3, scene 4, clip 5,
 // 001 / [001] (como los nombra la extensión de Flow), 001-2 (variante 2), 05_manzanita, manzanita_07.
@@ -25,7 +25,8 @@ export function sceneNumberOf(fileName: string): { n: number; variant: number } 
   const loose = name.match(/(?<![0-9])\d{1,3}(?![0-9])/g) || [];
   return loose.length === 1 && Number(loose[0]) > 0 ? { n: Number(loose[0]), variant: 1 } : null;
 }
-const kindOf = (f: File): Kind | null => f.type.startsWith("video/") || /\.(mp4|mov|webm|m4v)$/i.test(f.name) ? "clip" : f.type.startsWith("image/") || /\.(png|jpe?g|webp)$/i.test(f.name) ? "image" : null;
+// Planos de recurso (formato épico): vídeos con «recurso», «lugar», «reaccion» o «detalle» en el nombre (p. ej. recurso_04.mp4).
+const kindOf = (f: File): Kind | null => (f.type.startsWith("video/") || /\.(mp4|mov|webm|m4v)$/i.test(f.name)) && /recurso|lugar|reacci[oó]n|detalle/i.test(f.name) ? "recurso" : f.type.startsWith("video/") || /\.(mp4|mov|webm|m4v)$/i.test(f.name) ? "clip" : f.type.startsWith("image/") || /\.(png|jpe?g|webp)$/i.test(f.name) ? "image" : null;
 
 export default function SceneDesk({ episodeId, scenes, guion, title, referencesReady, referenceSignature, style, part, onDownloaded, publish, music, cover, recap }: { recap?: string; music?: Record<string, any>; cover?: { serie?: string; frase?: string[]; parte?: number }; episodeId: string; scenes: Scene[]; guion: any; title: string; referencesReady: boolean; referenceSignature: string; style?: string; part?: number; onDownloaded?: () => void; publish?: { platform: string; text: string; hashtags: string; extra?: string }[] }) {
   const { data, insert, update, remove, userId, mode } = useData();
@@ -36,6 +37,10 @@ export default function SceneDesk({ episodeId, scenes, guion, title, referencesR
   const activeScene = scenes.find(s => s.n === selectedScene) || scenes[0];
   const [images, setImages] = useState<AssetMap>({});
   const [clips, setClips] = useState<AssetMap>({});
+  const [recursos, setRecursos] = useState<AssetMap>({});
+  // Formato épico (16:9): un plano de recurso propuesto como mucho por escena (lugar, reacción o detalle).
+  const planRecursos: { n: number; clip: number; tipo: "lugar" | "reaccion" | "detalle"; motivo: string; prompt: string }[] = Array.isArray(guion?.recursos_plan) ? guion.recursos_plan : [];
+  const TIPO_RECURSO = { lugar: "Plano de lugar", reaccion: "Plano de reacción", detalle: "Plano de detalle" } as const;
   const [reasons, setReasons] = useState<Record<number, string>>({});
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState<number | null>(null);
@@ -75,8 +80,8 @@ export default function SceneDesk({ episodeId, scenes, guion, title, referencesR
         await limpiarViejos();
         const a = await cargarArchivos(usuario, episodeId);
         if (!vivo) return;
-        const n = Object.keys(a.image).length + Object.keys(a.clip).length;
-        if (n) { setImages(prev => ({ ...a.image, ...prev })); setClips(prev => ({ ...a.clip, ...prev })); }
+        const n = Object.keys(a.image).length + Object.keys(a.clip).length + Object.keys(a.recurso).length;
+        if (n) { setImages(prev => ({ ...a.image, ...prev })); setClips(prev => ({ ...a.clip, ...prev })); setRecursos(prev => ({ ...a.recurso, ...prev })); }
         const e = await espacio();
         setGuardados({ n, recuperados: n, usado: e?.usado });
         if (n) void pedirPersistencia();
@@ -97,14 +102,14 @@ export default function SceneDesk({ episodeId, scenes, guion, title, referencesR
       }
       if (ok) { void pedirPersistencia(); setGuardados(g => ({ recuperados: g?.recuperados || 0, n: (g?.n || 0) + ok, usado: g?.usado })); }
     })();
-    (kind === "image" ? setImages : setClips)(prev => ({ ...prev, ...mapped }));
-    setDirtyClips(prev => Array.from(new Set([...prev, ...Object.keys(mapped).map(Number)])));
+    (kind === "image" ? setImages : kind === "recurso" ? setRecursos : setClips)(prev => ({ ...prev, ...mapped }));
+    if (kind !== "recurso") setDirtyClips(prev => Array.from(new Set([...prev, ...Object.keys(mapped).map(Number)])));
   }
   // Sube todo de una vez (imágenes y clips mezclados): cada archivo va a su escena por el número del nombre.
   // Si hay variantes (001, 001-2…) se queda la primera; lo que no tiene número se coloca a mano.
   function assignAll(list: FileList | File[] | null) {
     const incoming = Array.from(list || []).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-    const best: Record<Kind, Record<number, { file: File; variant: number }>> = { image: {}, clip: {} };
+    const best: Record<Kind, Record<number, { file: File; variant: number }>> = { image: {}, clip: {}, recurso: {} };
     const leftovers: { file: File; kind: Kind }[] = [];
     const ignored: string[] = [];
     for (const file of incoming) {
@@ -117,11 +122,11 @@ export default function SceneDesk({ episodeId, scenes, guion, title, referencesR
       else leftovers.push({ file, kind });
     }
     const asMap = (k: Kind) => Object.fromEntries(Object.entries(best[k]).map(([n, v]) => [n, v.file])) as AssetMap;
-    place("image", asMap("image")); place("clip", asMap("clip"));
+    place("image", asMap("image")); place("clip", asMap("clip")); place("recurso", asMap("recurso"));
     setUnplaced(prev => [...prev, ...leftovers]);
-    const nClips = Object.keys(best.clip).length, nImages = Object.keys(best.image).length;
+    const nClips = Object.keys(best.clip).length, nImages = Object.keys(best.image).length, nRec = Object.keys(best.recurso).length;
     setMessage([
-      `${nClips} clip(s) y ${nImages} imagen(es) colocados en su escena.`,
+      `${nClips} clip(s)${nRec ? `, ${nRec} plano(s) de recurso` : ""} y ${nImages} imagen(es) colocados en su escena.`,
       leftovers.length ? `${leftovers.length} sin número reconocible o repetidos: colócalos abajo.` : "",
       ignored.length ? `Ignorados (no son vídeo ni imagen): ${ignored.join(", ")}.` : "",
     ].filter(Boolean).join(" "));
@@ -133,9 +138,9 @@ export default function SceneDesk({ episodeId, scenes, guion, title, referencesR
   }
 
   // Quitar lo que no sirve: el archivo subido por error (imagen o clip) o la revisión guardada.
-  function dropFile(n: number, kind: "image" | "clip") {
+  function dropFile(n: number, kind: Kind) {
     const strip = (prev: AssetMap) => { const next = { ...prev }; delete next[n]; return next; };
-    if (kind === "image") setImages(strip); else setClips(strip);
+    if (kind === "image") setImages(strip); else if (kind === "recurso") setRecursos(strip); else setClips(strip);
     void quitarArchivo(usuario, episodeId, kind, n).catch(() => {});
   }
   async function liberarEspacio() {
@@ -205,16 +210,17 @@ export default function SceneDesk({ episodeId, scenes, guion, title, referencesR
       {unplaced.length > 0 && <div className="mt-3 space-y-1.5 rounded-xl border border-white/10 bg-black/20 p-3">
         <p className="text-xs font-semibold text-slate-200">Sin escena asignada: elige dónde va cada uno</p>
         {unplaced.map((u, i) => <div key={u.file.name + i} className="flex flex-wrap items-center gap-2 text-xs">
-          <span className="rounded bg-white/10 px-1.5 text-[10px] text-slate-300">{u.kind === "clip" ? "CLIP" : "IMAGEN"}</span>
+          <span className="rounded bg-white/10 px-1.5 text-[10px] text-slate-300">{u.kind === "clip" ? "CLIP" : u.kind === "recurso" ? "RECURSO" : "IMAGEN"}</span>
           <span className="min-w-0 flex-1 truncate text-slate-300">{u.file.name}</span>
           <select aria-label={`Escena para ${u.file.name}`} defaultValue="" onChange={e => placeManually(i, Number(e.target.value))} className="text-xs">
             <option value="" disabled>Escena…</option>
-            {scenes.map(sc => <option key={sc.n} value={sc.n}>{String(sc.n).padStart(2, "0")} · {sc.speaker}{(u.kind === "clip" ? clips : images)[sc.n] ? " (reemplaza)" : ""}</option>)}
+            {scenes.map(sc => <option key={sc.n} value={sc.n}>{String(sc.n).padStart(2, "0")} · {sc.speaker}{(u.kind === "clip" ? clips : u.kind === "recurso" ? recursos : images)[sc.n] ? " (reemplaza)" : ""}</option>)}
           </select>
           <button type="button" onClick={() => setUnplaced(prev => prev.filter((_, k) => k !== i))} className="text-slate-400 hover:text-red-300">Descartar</button>
         </div>)}
       </div>}
       <p className="mt-2 text-xs text-slate-400">La revisión y los archivos tienen guardados distintos. Los avisos de esta mesa indican qué archivos conserva este navegador.</p>
+      {planRecursos.length > 0 && <p className="mt-2 text-[11px] text-slate-300"><b className="text-amber-100">Formato épico:</b> {guion?.formato_epico}. Subidos {planRecursos.filter(r => recursos[r.n]).length}/{planRecursos.length} planos de recurso (opcionales; nómbralos «recurso_04.mp4» para que vayan solos a su escena).</p>}
       {!referencesReady && <p className="mt-2 text-xs font-semibold text-amber-200">Aprueba primero todas las fichas maestras del elenco.</p>}
       {message && <p role="status" className="mt-2 text-xs text-amber-200">{message}</p>}
     </div></details>
@@ -242,6 +248,13 @@ export default function SceneDesk({ episodeId, scenes, guion, title, referencesR
               <label className="cursor-pointer text-sky-300 hover:text-sky-200">{images[scene.n] ? "Cambiar imagen" : "Subir imagen"}<input type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) place("image", { [scene.n]: f }); e.target.value = ""; }} /></label>
               {check && <button type="button" onClick={() => { void deleteReview(scene.n); }} className="text-slate-400 hover:text-red-300">Borrar revisión</button>}
             </div>
+            {(() => { const r = planRecursos.find(x => x.n === scene.n); if (!r) return null; return <div className="mt-3 rounded-xl border border-amber-400/25 bg-amber-400/[.05] p-2.5 text-[11px]">
+              <p className="font-semibold text-amber-100">{TIPO_RECURSO[r.tipo]} <span className="font-normal text-slate-400">· opcional, formato épico</span></p>
+              <p className="mt-0.5 text-slate-300">{r.motivo}. {r.tipo === "lugar" ? "Entra antes de la escena (1,5-3 s)." : "Se pone encima de la imagen a mitad de la frase (≈2 s); la voz sigue sonando."} Es un clip de 5 s más: genéralo solo si quieres.</p>
+              <div className="mt-1.5 flex flex-wrap items-center gap-3"><CopyButton text={r.prompt} label="Copiar prompt del recurso" />
+                <label className="cursor-pointer text-sky-300 hover:text-sky-200">{recursos[scene.n] ? "Cambiar recurso" : "Subir recurso"}<input type="file" accept="video/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) { place("recurso", { [scene.n]: f }); setMessage(`${TIPO_RECURSO[r.tipo]} de s${String(scene.n).padStart(2, "0")}: «${f.name}».`); } e.target.value = ""; }} /></label>
+                {recursos[scene.n] && <><span className="text-emerald-300">✓ {recursos[scene.n].name}</span><button type="button" onClick={() => dropFile(scene.n, "recurso")} className="text-slate-400 hover:text-red-300">Quitar</button></>}
+              </div></div>; })()}
           </div>
           <div className="review-media">{clipUrls[scene.n] ? <video src={clipUrls[scene.n]} controls preload="metadata" className="w-full rounded-lg bg-black" /> : <div className="review-player-empty"><span aria-hidden="true">▷</span><strong>El próximo plano está por llegar.</strong><p>Sube el clip s{String(scene.n).padStart(2, "0")} para reproducirlo y revisar su continuidad.</p></div>}
             <div className="mt-2 flex gap-2"><button type="button" disabled={busy === scene.n || !referencesReady || !clips[scene.n]} onClick={() => mark(scene.n, true)} className="rounded-lg bg-emerald-400 px-2 py-1.5 text-xs font-bold text-slate-950 disabled:opacity-40">✓ Aprobado</button><button type="button" disabled={busy === scene.n} onClick={() => mark(scene.n, false)} className="rounded-lg border border-white/15 px-2 py-1.5 text-xs text-slate-100">↻ Rehacer</button></div>
@@ -251,7 +264,7 @@ export default function SceneDesk({ episodeId, scenes, guion, title, referencesR
       </li>;
     })}</ol>
     <section className="review-delivery rounded-2xl border border-amber-400/20 bg-amber-400/[.06] p-4"><p className="studio-eyebrow cinematic-gold">ENTREGA / ÚLTIMA REVISIÓN</p><h3 className="mt-2 font-bold">Montar vídeo final</h3><p className="mt-1 text-xs text-slate-300">Se habilita con fichas maestras y todas las escenas aprobadas, y con todos los clips s01… cargados en orden.</p>
-      {ready ? <div className="mt-3"><MontajePanel guion={guion} title={title} filesOverride={ordered} style={style} part={part} musicCues={scenes.map(s => s.music || "")} seconds={Math.round(scenes.length * 4.5) + 3} music={music} cover={cover} recap={recap} onDownloaded={onDownloaded} publish={publish} /></div> : <p className="mt-3 text-sm text-amber-200">Pendiente: {referencesReady ? "" : "fichas maestras; "}{scenes.length - approved} escenas por aprobar; {scenes.length - ordered.length} clips por subir.</p>}
+      {ready ? <div className="mt-3"><MontajePanel guion={guion} title={title} filesOverride={ordered} recursos={planRecursos.filter(r => recursos[r.n]).map(r => ({ file: recursos[r.n], clip: r.clip, tipo: r.tipo }))} style={style} part={part} musicCues={scenes.map(s => s.music || "")} seconds={Math.round(scenes.length * 4.5) + 3} music={music} cover={cover} recap={recap} onDownloaded={onDownloaded} publish={publish} /></div> : <p className="mt-3 text-sm text-amber-200">Pendiente: {referencesReady ? "" : "fichas maestras; "}{scenes.length - approved} escenas por aprobar; {scenes.length - ordered.length} clips por subir.</p>}
     </section>
   </div>;
 }

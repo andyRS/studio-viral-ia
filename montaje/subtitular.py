@@ -294,15 +294,72 @@ for tj in G.get("tarjetas") or []:
         TARJETAS[k] = txt[:60]
 # Transiciones entre secuencias: «negro» = paso por negro (fundido de salida del clip anterior y de entrada del
 # siguiente, 0,35 s cada uno, sin alargar nada). Índice desde 0 como «tarjetas»; donde ya hay tarjeta no se añade.
-TRANS = set()
+# «blanco» = destello a blanco (visión, sueño, recuerdo), 0,5 s.
+TRANS = {}
 for tr in G.get("transiciones") or []:
     try:
         k = int(tr.get("antes"))
     except (TypeError, ValueError, AttributeError):
         continue
-    if 0 < k < len(clips) and k not in TARJETAS and str(tr.get("tipo") or "negro") == "negro":
-        TRANS.add(k)
+    tipo_tr = str(tr.get("tipo") or "negro")
+    if 0 < k < len(clips) and k not in TARJETAS and tipo_tr in ("negro", "blanco"):
+        TRANS[k] = tipo_tr
 FUNDIDO = 0.35
+FUNDIDO_DE = {"negro": FUNDIDO, "blanco": 0.5, "titulo": 1.0}
+# Formato épico (película larga, como los virales de fantasía en YouTube):
+#  - «recursos»: planos sin diálogo subidos aparte. «lugar» (plano general) entra ANTES de su escena, 1,5-3 s;
+#    «reaccion» / «detalle» se ponen ENCIMA de la imagen de su escena a mitad de la frase: la voz sigue sonando
+#    (el que escucha, unas manos, un objeto). Así una frase larga no es un solo plano fijo.
+#  - apertura «titulo_frio»: la historia arranca sin título; tras la primera secuencia, fundido a negro, el título
+#    sobre negro y en silencio (la música calla), y vuelve la imagen.
+REC_LUGAR, REC_SOBRE = {}, {}
+for r in G.get("recursos") or []:
+    try:
+        k, ruta, tipo_r = int(r.get("clip")), str(r.get("ruta") or ""), str(r.get("tipo") or "")
+    except (TypeError, ValueError, AttributeError):
+        continue
+    if not (0 <= k < len(clips)) or not ruta or not os.path.exists(ruta):
+        continue
+    try:
+        dr = dur(ruta)
+    except Exception:
+        continue
+    if tipo_r == "lugar" and dr >= 1.0:
+        REC_LUGAR[k] = (ruta, round(min(3.0, max(1.0, dr - 0.15)), 2))
+    elif tipo_r in ("reaccion", "detalle") and dr >= 1.0:
+        REC_SOBRE[k] = (ruta, tipo_r, dr)
+TP_FRIO = G.get("titulo_pelicula") if isinstance(G.get("titulo_pelicula"), dict) else None
+TITULO_FRIO = str(G.get("apertura") or "").lower() == "titulo_frio" and bool(TP_FRIO and str(TP_FRIO.get("titulo") or "").strip()) and len(clips) > 1
+TIT_S = 6.0
+TITULO_TRAS = TRAS_TITULO = None
+if TITULO_FRIO:
+    try:
+        TITULO_TRAS = int(G.get("titulo_tras"))
+    except (TypeError, ValueError):
+        TITULO_TRAS = None
+    if TITULO_TRAS is None or not 0 < TITULO_TRAS < len(clips):
+        TITULO_TRAS = min(TRANS) if TRANS else min(3, len(clips) - 1)
+    TARJETAS.pop(TITULO_TRAS, None)
+    # El título ya es el paso por negro; si ahí tocaba destello blanco (entrada en la visión), la escena entra
+    # desde blanco después del título.
+    TRAS_TITULO = TRANS.pop(TITULO_TRAS, None)
+PRE = [(TIT_S if TITULO_FRIO and ci == TITULO_TRAS else 0.0) + (REC_LUGAR[ci][1] if ci in REC_LUGAR else 0.0) for ci in range(len(clips))]
+
+
+def entra_de(ci):
+    """Cómo entra la imagen de la escena ci: desde negro, desde blanco o tras el título (None = a corte)."""
+    if TITULO_FRIO and ci == TITULO_TRAS:
+        return "blanco" if TRAS_TITULO == "blanco" else "titulo"
+    return TRANS.get(ci)
+
+
+def sale_a(ci):
+    """Cómo sale la imagen de la escena ci hacia la siguiente (None = a corte)."""
+    if ci + 1 >= len(clips):
+        return None
+    if TITULO_FRIO and ci + 1 == TITULO_TRAS:
+        return "titulo"
+    return TRANS.get(ci + 1)
 # La vida de hoy: chats de WhatsApp dibujados encima de su clip y clips con la voz por teléfono.
 PANTALLAS = {}
 # En 16:9 (proyecto largo) no se dibujan chats de WhatsApp: no se usan en ese formato.
@@ -378,6 +435,7 @@ for ci, clip in enumerate(clips):
     progreso(5 + 55 * ci / len(clips), f"Escuchando el clip {ci + 1} de {len(clips)} con Whisper")
     if ci in TARJETAS:
         t += CARD_S
+    t += PRE[ci]                      # título en frío y plano de lugar, antes de la escena
     offsets.append(t)
     wav = os.path.join(tmp, f"c{ci}.wav")
     run(["ffmpeg", "-v", "error", "-y", "-i", clip, "-ac", "1", "-ar", "16000", wav])
@@ -760,6 +818,7 @@ ZONAS = []   # marcas borradas: (zona, resolución del clip), para poner el embl
 # Imagen y voz se unen por separado (por los cortes J/L): cada tramo de imagen se ajusta al fotograma exacto
 # que le toca en la línea de tiempo, así el redondeo a fotogramas no se acumula y los labios nunca se desfasan.
 VCUENTA = {"seg": 0.0, "fot": 0}
+REC_ENTRADAS = []
 
 
 def ajusta(segundos):
@@ -819,6 +878,45 @@ for ci, c in enumerate(clips):
              + texto_dt(TARJETAS[ci], 76, "white", "'(h-text_h)/2+30*pow(max(0,1-t/0.35),3)'", 5, ":alpha='min(1,t/0.3)'", FUENTE_TIT) + ",format=yuv420p",
              "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", card])
         segmento(card, segundos=CARD_S)
+    if TITULO_FRIO and ci == TITULO_TRAS:
+        # Título sobre negro y en silencio: entra en 1 s, se queda 3 s y se va en 1 s.
+        progreso(66, f"Título tras la primera secuencia: «{str(TP_FRIO.get('titulo')).strip().upper()}»")
+        tit = os.path.join(tmp, "titulo_frio.mp4")
+        a_t = "alpha='if(lt(t,0.8),0,if(lt(t,1.8),t-0.8,if(lt(t,4.6),1,max(0,(5.6-t)))))'"
+        nombre_t = str(TP_FRIO.get("titulo")).strip().upper()
+        sub_t = str(TP_FRIO.get("subtitulo") or "").strip().upper()
+        s_t, l_t = ajustar(nombre_t, 150 if HORIZ else 120, 70)
+        s_s = ajustar(sub_t, 52 if HORIZ else 44, 30)[0] if sub_t else 0
+        yt = H // 2 - (len(l_t) * int(s_t * 0.9) + (int(s_s * 1.3) if sub_t else 0)) // 2
+        capas_t = []
+        for ln in l_t:
+            capas_t.append(texto_dt(ln, s_t, "0xF4ECDD", yt, 3, ":" + a_t, LORA_F)); yt += int(s_t * 0.9)
+        if sub_t:
+            yt += int(s_s * 0.1)
+            for ln in lineas(sub_t, s_s):
+                capas_t.append(texto_dt(ln, s_s, "0xF5BC69", yt, 2, ":" + a_t, LORA_F)); yt += int(s_s * 1.2)
+        run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"color=c=black:s={RESX}:r=24:d={TIT_S}",
+             "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", str(TIT_S), "-vf", ",".join(capas_t) + ",format=yuv420p",
+             "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", tit])
+        segmento(tit, segundos=TIT_S)
+    if ci in REC_LUGAR:
+        # Plano general del lugar antes de la escena (sin diálogo): su propio ambiente, suave.
+        ruta_l, d_l = REC_LUGAR[ci]
+        lug = os.path.join(tmp, f"lugar{ci}.mp4")
+        ent_l = entra_de(ci)
+        fx_l = f",fade=t=in:st=0:d={FUNDIDO_DE[ent_l]}" + (":color=white" if ent_l == "blanco" else "") if ent_l else ""
+        vf_l = f"scale={RES}:force_original_aspect_ratio=increase,crop={RES},setsar=1,fps=24{fx_l},format=yuv420p"
+        af_l = f"aresample=48000,aformat=channel_layouts=stereo,volume=0.6,afade=t=in:d=0.3,afade=t=out:st={max(0, d_l - 0.4):.2f}:d=0.4"
+        con_audio = bool(subprocess.run(["ffprobe", "-v", "error", "-select_streams", "a", "-show_entries", "stream=index", "-of", "csv=p=0", ruta_l],
+                                        capture_output=True, text=True).stdout.strip())
+        if con_audio:
+            run(["ffmpeg", "-v", "error", "-y", "-i", ruta_l, "-t", f"{d_l:.2f}", "-map", "0:v:0", "-map", "0:a:0", "-vf", vf_l, "-af", af_l,
+                 "-c:v", "libx264", "-preset", "veryfast", "-crf", "16", "-c:a", "aac", lug])
+        else:   # el plano no trae audio: silencio
+            run(["ffmpeg", "-v", "error", "-y", "-i", ruta_l, "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", f"{d_l:.2f}",
+                 "-map", "0:v:0", "-map", "1:a", "-vf", vf_l, "-c:v", "libx264", "-preset", "veryfast", "-crf", "16", "-c:a", "aac", "-shortest", lug])
+        progreso(66, f"Escena {ci + 1}: plano de lugar de {d_l:.1f} s antes de la escena")
+        segmento(lug, segundos=d_l)
     inputs += ["-i", c]
     dl = ""
     variantes = MARCAS.get(str(G.get("marca", "")).lower())
@@ -862,11 +960,26 @@ for ci, c in enumerate(clips):
         nf = max(1, int((vb - va) / VEL * 24))
         extra_v.append(f"zoompan=z='1+0.06*on/{nf}':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={RESX}:fps=24,setsar=1")
     dseg = (vb - va) / VEL
-    if ci in TRANS:            # entra desde negro
-        extra_v.append(f"fade=t=in:st=0:d={FUNDIDO}")
-    if ci + 1 in TRANS:        # sale a negro
-        extra_v.append(f"fade=t=out:st={max(0.0, dseg - FUNDIDO):.3f}:d={FUNDIDO}")
-    fc += ",".join(["null"] + extra_v) + f"{chat}{ajusta(dseg)}[v{n}];"
+    ent, sal = entra_de(ci), sale_a(ci)
+    if ent and ci not in REC_LUGAR:      # entra desde negro / blanco (si hay plano de lugar, entra él)
+        extra_v.append(f"fade=t=in:st=0:d={FUNDIDO_DE[ent]}" + (":color=white" if ent == "blanco" else ""))
+    if sal:                              # sale a negro / blanco / al título
+        extra_v.append(f"fade=t=out:st={max(0.0, dseg - FUNDIDO_DE[sal]):.3f}:d={FUNDIDO_DE[sal]}" + (":color=white" if sal == "blanco" else ""))
+    sobre = ""
+    if ci in REC_SOBRE:
+        # Reacción o detalle encima de la imagen, a mitad de la frase; la voz de la escena sigue sonando.
+        ruta_r, tipo_r, dr = REC_SOBRE[ci]
+        vi = (VOZ_INI[ci] - a) / VEL - LIN[ci] / VEL if VOZ_INI[ci] is not None else dseg * 0.2
+        vf_ = (VOZ_FIN[ci] - a) / VEL - LIN[ci] / VEL if VOZ_FIN[ci] is not None else dseg * 0.8
+        d_r = min(2.4, 0.4 * max(0.0, vf_ - vi), dr - 0.1)
+        s_r = max(0.6, vi + 0.45 * max(0.0, vf_ - vi) - d_r / 2)
+        if d_r >= 1.0 and s_r + d_r <= dseg - 0.4:
+            ri = n + 1                       # el plano entra justo después del clip (ver abajo)
+            REC_ENTRADAS.append(ruta_r)
+            sobre = (f"null[b{n}];[{ri}:v]trim=0:{d_r:.3f},setpts=PTS-STARTPTS+{s_r:.3f}/TB,scale={RES}:force_original_aspect_ratio=increase,"
+                     f"crop={RES},setsar=1,fps=24{col}[ro{n}];[b{n}][ro{n}]overlay=enable='between(t,{s_r:.3f},{s_r + d_r:.3f})':eof_action=pass,")
+            progreso(69, f"Escena {ci + 1}: plano de {'reacción' if tipo_r == 'reaccion' else 'detalle'} de {d_r:.1f} s sobre la frase")
+    fc += sobre + ",".join(["null"] + extra_v) + f"{chat}{ajusta(dseg)}[v{n}];"
     gan = f"volume={GANANCIA[ci]:.2f}dB," if abs(GANANCIA[ci]) > 0.3 else ""
     # Fundidos de audio en cada corte. Viral: 0,03/0,04 s (corte seco). Película (16:9): el ambiente de cada plano
     # entra en 0,12 s y se desvanece en 0,35 s, sin tocar nunca la voz (empiezan después de la última palabra y
@@ -878,6 +991,10 @@ for ci, c in enumerate(clips):
            f"afade=t=in:d={fi:.3f},afade=t=out:st={max(0, (b - a) / VEL - fo):.3f}:d={fo:.3f}[a{n}];")
     catv += f"[v{n}]"; cata += f"[a{n}]"
     n += 1
+    for ruta_r in REC_ENTRADAS:          # entrada n+1 del plano de recurso (solo imagen)
+        inputs += ["-i", ruta_r]
+        n += 1
+    REC_ENTRADAS.clear()
 if G.get("cierre"):
     progreso(68, f"Tarjeta final: «{G['cierre']}»" + (f" + «{G['cierre_cta']}»" if G.get("cierre_cta") else ""))
     # Tarjeta final de 3 s: el último cuadro del episodio difuminado y oscurecido, con
@@ -924,8 +1041,10 @@ if G.get("logo", True) is not False and os.path.exists(LOGO) and (ZONAS or G.get
     else:
         W0, H0 = tam(clips[0])
         zona = a_salida(tuple(int(kv.split("=")[1]) for kv in str(G["delogo"]).split(":")), W0, H0)
+TIT_T0 = (offsets[TITULO_TRAS] - PRE[TITULO_TRAS]) if TITULO_FRIO else 0.0
 MUSICA = G.get("musica_archivo") if G.get("musica_archivo") and os.path.exists(G["musica_archivo"]) else ""
-fc += f"{catv}concat=n={n}:v=1:a=0[vc];{cata}concat=n={n}:v=0:a=1[araw];"
+NSEG = catv.count("[v")             # segmentos (las entradas de los planos de recurso no cuentan)
+fc += f"{catv}concat=n={NSEG}:v=1:a=0[vc];{cata}concat=n={NSEG}:v=0:a=1[araw];"
 LOGOS = []   # (archivo, x, y, ancho, alto, nombre): uno por versión del vídeo (p. ej. dos páginas con logos distintos)
 if zona:
     zx, zy, zw, zh = zona
@@ -983,7 +1102,7 @@ if APERTURA_TITULO:
     if epi:
         fc += texto_dt(epi, 34 if HORIZ else 32, "0xE6E6E6", yt + 14, 2, ":" + a_tit) + ","
     progreso(69, f"Apertura de película: «{titulo}»" + (f" · {sub}" if sub else ""))
-gancho = [] if APERTURA_TITULO else G.get("gancho", [])
+gancho = [] if (APERTURA_TITULO or TITULO_FRIO) else G.get("gancho", [])
 size = min([ajustar(line, 66, 46)[0] for line in gancho] or [66])   # las dos líneas, del mismo tamaño
 for k, line in enumerate(gancho):
     col = "white" if k == 0 else ACENTO
@@ -1013,7 +1132,7 @@ SFX_IDX = None
 efectos = []
 if PRO_SFX:
     for ci in TARJETAS:
-        efectos.append(("whoosh", max(0, offsets[ci] - CARD_S - 0.3)))
+        efectos.append(("whoosh", max(0, offsets[ci] - PRE[ci] - CARD_S - 0.3)))
     if RECAP_S:
         efectos.append(("whoosh", max(0, RECAP_S - 0.35)))
     if G.get("gancho"):
@@ -1062,6 +1181,8 @@ if MUSICA:
            + (f"volume='max(clip(4.5-t,0,1),clip(t-{max(5.0, total - 8.5):.2f},0,1))':eval=frame," if EXTREMOS else "")
            # Silencio de tráiler: la música baja casi a cero 0,6 s antes de la revelación.
            + (f"volume='if(between(t,{REVELA - 0.6:.2f},{REVELA:.2f}),0.12,1)':eval=frame," if REVELA else "")
+           # Título en frío: la música calla mientras el título está en pantalla (sale y vuelve en 0,8 s).
+           + (f"volume='1-clip(min((t-{TIT_T0:.2f})/0.8,({TIT_T0 + TIT_S:.2f}-t)/0.8),0,1)':eval=frame," if TITULO_FRIO else "")
            + f"afade=t=in:d=0.6,afade=t=out:st={max(0, total - 1.5):.2f}:d=1.5[mus];"
            f"[voz]asplit[voz1][voz2];[mus][voz1]sidechaincompress=threshold=0.08:ratio={1.5 if EXTREMOS else 2.5}:attack=30:release=400[musb];"
            f"[voz2][musb]amix=inputs=2:duration=first:normalize=0[amx]")
@@ -1205,7 +1326,7 @@ try:
                           "-vf", "blackdetect=d=0.4:pix_th=0.08", "-f", "null", "-"], capture_output=True, text=True).stderr
     fin_util = total - (3 if G.get("cierre") else 0)
     # Las tarjetas de tiempo («Horas después...») son mudas y oscuras a propósito: no cuentan como fallo.
-    tarjetas_t = [(offsets[ci] - CARD_S - 0.3, offsets[ci] + 0.3) for ci in TARJETAS]
+    tarjetas_t = [(offsets[ci] - PRE[ci] - CARD_S - 0.3, offsets[ci] - PRE[ci] + 0.3) for ci in TARJETAS]
     en_tarjeta = lambda a0, b0: any(a0 < tb and b0 > ta for ta, tb in tarjetas_t)
     silencios = [(float(a), float(b)) for a, b in re.findall(r"silence_start: ([\d.]+)[\s\S]*?silence_end: ([\d.]+)", det)
                  if float(a) < fin_util - 0.5 and not en_tarjeta(float(a), float(b))]
@@ -1281,7 +1402,7 @@ try:
         nota -= 5
         avisos.append({"tipo": "orden", "texto": "Clips en otro orden que el guion: " + ", ".join(f"clip {c} = escena {b}" for c, b in REORDENADOS) + ". Los subtítulos ya siguen lo que se oye.",
                        "arreglo": "Comprueba que la historia se entienda en ese orden; si no, coloca bien los clips en la mesa de escenas y vuelve a montar."})
-    if not G.get("gancho") and not APERTURA_TITULO:
+    if not G.get("gancho") and not APERTURA_TITULO and not TITULO_FRIO:
         nota -= 10
         avisos.append({"tipo": "gancho", "texto": "Sin texto de gancho en los primeros 3 s.", "arreglo": "Añade el gancho (2 líneas) en el guion."})
     if total > 90 and not PELICULA:

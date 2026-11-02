@@ -31,6 +31,7 @@ import { ETIQUETA_CLASE, fuenteDeTexto, fuenteSugerida, type Fuente } from "@/li
 import { aplicarTiempos, planTiempos, type Medicion, type ModoMontaje } from "@/lib/tiempos";
 import { medirClip } from "@/lib/medirAudio";
 import { aplicarAccion, costeEstimado, planificarAccion, transicionesDe, type TomaAccion } from "@/lib/accion";
+import { planEpico } from "@/lib/formatoEpico";
 import { motorDe } from "@/lib/tiempos";
 import { conAspecto as conAspectoAccion, refreshPrompts as refrescarAccion } from "@/lib/production";
 import { cargarArchivos } from "@/lib/archivosTrabajo";
@@ -762,6 +763,13 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
     g.titulo_pelicula = { titulo: tit, subtitulo: resto.join(": "), episodio: [`Episodio ${part}`, String(out.title || "").replace(/^episodio\s*\d+\s*[—–-]\s*/i, "")].filter(Boolean).join(" · ") };
     if (aspecto === "16:9" && scenes.length) {
       try { g.transiciones = transicionesDe(scenes, planificarAccion(scenes, master.filter(Boolean).length ? master.filter(Boolean) : cast), g.tarjetas || []); } catch { /* sin plan: sin transiciones */ }
+      // Formato épico: título tras la primera secuencia, destello blanco en la visión y planos de recurso.
+      // Solo para el montaje: el episodio guardado no cambia.
+      const ep = planEpico(scenes, g.transiciones || [], g.tarjetas || []);
+      g.transiciones = ep.transiciones;
+      if (ep.tituloTras != null) g.titulo_tras = ep.tituloTras;
+      g.recursos_plan = ep.recursos;
+      g.formato_epico = ep.resumen;
     }
     return g;
   // eslint-disable-next-line react-hooks/exhaustive-deps

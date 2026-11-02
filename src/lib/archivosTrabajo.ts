@@ -3,7 +3,7 @@
 // (IndexedDB), por usuario y episodio. Así una recarga no obliga a subir otra vez 20 clips.
 // No es almacenamiento en la nube (gratis y sin límite de 50 MB por archivo): si se cambia de navegador
 // o se borran los datos del sitio, hay que volver a subirlos. Se limpian solos a los 30 días sin uso.
-export type Clase = "image" | "clip";
+export type Clase = "image" | "clip" | "recurso";   // recurso: plano sin diálogo del formato épico (uno por escena)
 type Registro = { clave: string; usuario: string; episodio: string; clase: Clase; n: number; nombre: string; tipo: string; blob: Blob; at: number };
 
 const DB = "estudio-viral-archivos", ST = "archivos";
@@ -43,7 +43,7 @@ export async function quitarArchivo(usuario: string, episodio: string, clase: Cl
 }
 export async function cargarArchivos(usuario: string, episodio: string) {
   const regs = (await tx<Registro[]>("readonly", s => s.index("episodio").getAll([usuario, episodio]))) || [];
-  const out: Record<Clase, Record<number, File>> = { image: {}, clip: {} };
+  const out: Record<Clase, Record<number, File>> = { image: {}, clip: {}, recurso: {} };
   for (const r of regs) out[r.clase][r.n] = new File([r.blob], r.nombre, { type: r.tipo });
   if (regs.length) await tx("readwrite", s => { for (const r of regs) s.put({ ...r, at: Date.now() }); });   // marca de uso: no caducan mientras se usan
   return out;

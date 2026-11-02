@@ -99,7 +99,7 @@ def autorizado(authorization: str) -> bool:
 @app.get("/salud")
 def salud():
     # «carpeta»: desde dónde corre el montaje del PC (para ver si es la copia actualizada).
-    return {"ok": True, "local": LOCAL, "gpu": GPU, "musica": True, "musica_modo": True, "anterior": True, "recorte": True, "portada": True, "pavo_720": True, "comprimir": LOCAL, "comprimir_chat": LOCAL, "mejorar": LOCAL, "quitar_marca": LOCAL, "logo_propio": True, "dos_logos": True, "borrar_ia": LOCAL, "pro": True, "versiones": True, "revision": True, "velocidad": True, "resumen": True, "pantallas": True, "horizontal": True, "recortes": True, "subtitulos": True, "tiempos": True, "apertura": True, "transiciones": True, "unir": LOCAL, **({"carpeta": os.path.dirname(HERE)} if LOCAL else {})}
+    return {"ok": True, "local": LOCAL, "gpu": GPU, "musica": True, "musica_modo": True, "anterior": True, "recorte": True, "portada": True, "pavo_720": True, "comprimir": LOCAL, "comprimir_chat": LOCAL, "mejorar": LOCAL, "quitar_marca": LOCAL, "logo_propio": True, "dos_logos": True, "borrar_ia": LOCAL, "pro": True, "versiones": True, "revision": True, "velocidad": True, "resumen": True, "pantallas": True, "horizontal": True, "recortes": True, "subtitulos": True, "tiempos": True, "apertura": True, "transiciones": True, "epico": True, "unir": LOCAL, **({"carpeta": os.path.dirname(HERE)} if LOCAL else {})}
 
 
 # ---------- Trabajos en segundo plano ----------
@@ -214,7 +214,27 @@ async def _guardar_musica(musica: Optional[UploadFile], gpath: str, work: str, a
     json.dump(g, open(gpath, "w", encoding="utf-8"), ensure_ascii=False)
 
 
-async def _guardar_entrada(guion: UploadFile, clips: List[UploadFile], musica: Optional[UploadFile] = None, anterior: Optional[UploadFile] = None, logo: Optional[UploadFile] = None, logo2: Optional[UploadFile] = None):
+async def _guardar_recursos(recursos: Optional[List[UploadFile]], gpath: str, work: str, total_bytes: int):
+    """Planos de recurso (formato épico): el guion los cita por «archivo» (orden de subida); la ruta la pone el servidor."""
+    g = json.load(open(gpath, encoding="utf-8"))
+    rutas = []
+    for k, r in enumerate([r for r in (recursos or []) if r is not None and r.filename][:MAX_CLIPS]):
+        p = os.path.join(work, f"recurso{k:02d}.mp4")
+        total_bytes += await save_upload(r, p, min(MAX_CLIP_BYTES, MAX_TOTAL_BYTES - total_bytes))
+        rutas.append(p)
+    lista = []
+    for item in g.get("recursos") or []:
+        try:
+            k = int(item.get("archivo"))
+        except (TypeError, ValueError, AttributeError):
+            continue
+        if 0 <= k < len(rutas):
+            lista.append({**{x: item.get(x) for x in ("clip", "tipo")}, "ruta": rutas[k]})
+    g["recursos"] = lista
+    json.dump(g, open(gpath, "w", encoding="utf-8"), ensure_ascii=False)
+
+
+async def _guardar_entrada(guion: UploadFile, clips: List[UploadFile], musica: Optional[UploadFile] = None, anterior: Optional[UploadFile] = None, logo: Optional[UploadFile] = None, logo2: Optional[UploadFile] = None, recursos: Optional[List[UploadFile]] = None):
     if not 1 <= len(clips) <= MAX_CLIPS:
         raise HTTPException(400, f"Se admiten entre 1 y {MAX_CLIPS} clips")
     work = tempfile.mkdtemp(prefix="montaje_")
@@ -227,16 +247,17 @@ async def _guardar_entrada(guion: UploadFile, clips: List[UploadFile], musica: O
             total_bytes += await save_upload(c, p, min(MAX_CLIP_BYTES, MAX_TOTAL_BYTES - total_bytes))
             paths.append(p)
         await _guardar_musica(musica, gpath, work, anterior, logo, logo2)
+        await _guardar_recursos(recursos, gpath, work, total_bytes)
     except Exception:
         shutil.rmtree(work, ignore_errors=True); raise
     return work, gpath, paths
 
 
 @app.post("/trabajos")
-async def crear_trabajo(guion: UploadFile = File(...), clips: List[UploadFile] = File(...), musica: Optional[UploadFile] = File(None), anterior: Optional[UploadFile] = File(None), logo: Optional[UploadFile] = File(None), logo2: Optional[UploadFile] = File(None), authorization: str = Header(default=""), x_montaje_local: str = Header(default="")):
+async def crear_trabajo(guion: UploadFile = File(...), clips: List[UploadFile] = File(...), musica: Optional[UploadFile] = File(None), anterior: Optional[UploadFile] = File(None), logo: Optional[UploadFile] = File(None), logo2: Optional[UploadFile] = File(None), recursos: Optional[List[UploadFile]] = File(None), authorization: str = Header(default=""), x_montaje_local: str = Header(default="")):
     if not (autorizado(authorization) or (LOCAL and x_montaje_local == "1")):
         raise HTTPException(401, "Token inválido")
-    work, gpath, paths = await _guardar_entrada(guion, clips, musica, anterior, logo, logo2)
+    work, gpath, paths = await _guardar_entrada(guion, clips, musica, anterior, logo, logo2, recursos)
     jid = uuid.uuid4().hex
     en_cola = sum(1 for j in TRABAJOS.values() if j["estado"] in ("en cola", "montando"))
     job = {"id": jid, "estado": "en cola", "pct": 0, "paso": f"En cola ({en_cola} por delante)" if en_cola else "Clips recibidos",
