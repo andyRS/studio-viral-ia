@@ -256,11 +256,11 @@ export default function SceneDesk({ episodeId, scenes, guion, title, referencesR
               <label className="cursor-pointer text-sky-300 hover:text-sky-200">{images[scene.n] ? "Cambiar imagen" : "Subir imagen"}<input type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) place("image", { [scene.n]: f }); e.target.value = ""; }} /></label>
               {check && <button type="button" onClick={() => { void deleteReview(scene.n); }} className="text-slate-400 hover:text-red-300">Borrar revisión</button>}
             </div>
-            {(() => { const r = planRecursos.find(x => x.n === scene.n); if (!r) return null; return <div className="mt-3 rounded-xl border border-amber-400/25 bg-amber-400/[.05] p-2.5 text-[11px]">
+            {(() => { const r = planRecursos.find(x => x.n === scene.n); if (!r) return null; return <div className="review-resource">
               <p className="font-semibold text-amber-100">{TIPO_RECURSO[r.tipo]} <span className="font-normal text-slate-400">· opcional, formato épico</span></p>
               <p className="mt-0.5 text-slate-300">{r.motivo}. {r.tipo === "lugar" ? "Entra antes de la escena (1,5-3 s)." : "Se pone encima de la imagen a mitad de la frase (≈2 s); la voz sigue sonando."} Es un clip de 5 s más: genéralo solo si quieres.</p>
               <div className="mt-1.5 flex flex-wrap items-center gap-3"><CopyButton text={r.prompt} label="Copiar prompt del recurso" />
-                <label className="cursor-pointer text-sky-300 hover:text-sky-200">{recursos[scene.n] ? "Cambiar recurso" : "Subir recurso"}<input type="file" accept="video/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) { place("recurso", { [scene.n]: f }); setMessage(`${TIPO_RECURSO[r.tipo]} de s${String(scene.n).padStart(2, "0")}: «${f.name}».`); } e.target.value = ""; }} /></label>
+                <label className="import-file-button cursor-pointer text-sky-300 hover:text-sky-200">{recursos[scene.n] ? "Cambiar recurso" : "Subir recurso"}<input type="file" accept="video/*" aria-label={`Subir recurso de la escena ${scene.n}`} className="sr-only" onChange={e => { const f = e.target.files?.[0]; if (f) { place("recurso", { [scene.n]: f }); setMessage(`${TIPO_RECURSO[r.tipo]} de s${String(scene.n).padStart(2, "0")}: «${f.name}».`); } e.target.value = ""; }} /></label>
                 {recursos[scene.n] && <><span className="text-emerald-300">✓ {recursos[scene.n].name}</span><button type="button" onClick={() => dropFile(scene.n, "recurso")} className="text-slate-400 hover:text-red-300">Quitar</button></>}
               </div></div>; })()}
           </div>
@@ -273,7 +273,7 @@ export default function SceneDesk({ episodeId, scenes, guion, title, referencesR
     })}</ol>
     <section className="review-delivery rounded-2xl border border-amber-400/20 bg-amber-400/[.06] p-4"><p className="studio-eyebrow cinematic-gold">ENTREGA / ÚLTIMA REVISIÓN</p><h3 className="mt-2 font-bold">Montar vídeo final</h3><p className="mt-1 text-xs text-slate-300">Se habilita con fichas maestras y todas las escenas aprobadas, y con todos los clips s01… cargados en orden.</p>
       {ready ? <div className="mt-3">
-        {partes.length > 1 && <div className="mb-3 space-y-2 rounded-xl border border-white/10 bg-black/20 p-3 text-xs">
+        {partes.length > 1 && <div className="film-parts"><h4>Tu película, por partes</h4>
           <p className="text-slate-300"><b className="text-white">Película de {scenes.length} tomas:</b> el montaje del PC admite {MAX_CLIPS_PARTE} por vez, así que se monta en {partes.length} partes (cortadas en los cambios de secuencia). Monta cada parte, descárgala y al final únelas sin perder calidad.</p>
           <div className="flex flex-wrap gap-2" role="group" aria-label="Parte de la película">{partes.map(p => <button type="button" key={p.k} aria-pressed={p.k === parte.k} onClick={() => setParteSel(p.k)}
             className={`rounded-lg border px-3 py-1.5 ${p.k === parte.k ? "border-amber-300 bg-amber-400/15 text-amber-100" : "border-white/15 text-slate-300"}`}>Parte {p.k + 1} · escenas {p.desde + 1}–{p.hasta}</button>)}</div>
