@@ -341,8 +341,8 @@ export default function MontajePanel({ guion, title, filesOverride, recursos = [
   const pct = live ? live.pct : Math.round(uploadPct * 0.02);
   const fname = `${(title || "episodio").replace(/[^\w\-áéíóúñ ]+/gi, "").trim().replace(/\s+/g, "-") || "episodio"}.mp4`;
 
-  return <div className="rounded-xl bg-[#121826] p-4 space-y-3">
-    <p className="text-sm text-slate-300">Sube los clips del episodio <b>en orden</b> y el servidor devuelve el vídeo final con gancho, subtítulos de colores, tarjetas y cierre.</p>
+  return <div className="assembly-workspace space-y-3">
+    <header className="assembly-heading"><p className="studio-eyebrow">ACABADO / MONTAJE</p><h3>Prepara la versión final.</h3><p>Sube los clips en orden y revisa la presentación, el sonido y el ritmo antes de montar.</p></header>
     <div className="space-y-1.5">
       <p className="text-xs text-slate-300">Dónde montar</p>
       <div className="flex flex-wrap gap-2">
@@ -373,17 +373,20 @@ export default function MontajePanel({ guion, title, filesOverride, recursos = [
         <label className="flex items-center gap-2 text-xs text-slate-300"><input type="checkbox" className="w-auto" checked={!!logo2} disabled={busy} onChange={e => { const v = e.target.checked ? (logo === FRUTI ? "un-minuto-en-oracion" : FRUTI) : ""; setLogo2(v); rememberLogo(logoKey2, v); }} /> <b>Sacar también otra versión con otro logo</b> <span className="text-slate-500">(para publicar en dos páginas; sale en el mismo montaje)</span></label>
         {!!logo2 && <div><p className="mb-2 text-xs text-slate-400">Logo de la segunda versión</p><LogoPicker value={logo2} onChange={id => { setLogo2(id); rememberLogo(logoKey2, id); }} disabled={busy} />{logo2 === logo && <p className="mt-1 text-[11px] text-amber-200">Elige un logo distinto al de arriba.</p>}</div>}
       </div>}</div>
+    <fieldset className="assembly-presentation"><legend>Presentación de la película</legend><p>Define cómo entra la historia y cómo se lee. Estos ajustes se usan al montar.</p><div className="assembly-presentation-fields">
     <label className="block text-xs text-slate-300">Subtítulos <select aria-label="Estilo de subtítulos" className="mt-1 w-auto" value={subtitulos} onChange={e => setSubtitulos(e.target.value as "pelicula" | "karaoke" | "no")}>
-      <option value="pelicula">Película: frase completa en blanco, 1-2 líneas, narrador en cursiva</option>
-      <option value="karaoke">Karaoke viral: 3 palabras con el color de quien habla</option>
-      <option value="no">Sin subtítulos</option></select></label>
+      <option value="pelicula">Película · frase completa</option>
+      <option value="karaoke">Karaoke viral · por palabras</option>
+      <option value="no">Sin subtítulos</option></select><small>{subtitulos === "pelicula" ? "Frase blanca en 1–2 líneas; narrador en cursiva." : subtitulos === "karaoke" ? "Tres palabras con el color de quien habla." : "El vídeo final sale sin subtítulos."}</small></label>
     {guion?.titulo_pelicula?.titulo && <label className="block text-xs text-slate-300">Apertura <select aria-label="Apertura del montaje" className="mt-1 w-auto" value={apertura} onChange={e => setApertura(e.target.value as "titulo" | "titulo_frio" | "gancho")}>
-      {tituloFrio && <option value="titulo_frio">Formato épico: título tras la primera secuencia (antes de la escena {guion.titulo_tras + 1}), sobre negro y en silencio</option>}
-      <option value="titulo">Título de película: «{String(guion.titulo_pelicula.titulo).toUpperCase()}»{guion.titulo_pelicula.subtitulo ? ` · ${guion.titulo_pelicula.subtitulo}` : ""}</option>
-      <option value="gancho">Gancho viral (texto grande los 3 primeros segundos)</option></select></label>}
-    {transicionesPropuestas.length > 0 && <label className="flex items-start gap-2 text-xs text-slate-300"><input type="checkbox" checked={conTransiciones} onChange={e => setConTransiciones(e.target.checked)} aria-label="Pasos por negro entre secuencias" />
+      {tituloFrio && <option value="titulo_frio">Épica · título tras la primera secuencia</option>}
+      <option value="titulo">Título de película al inicio</option>
+      <option value="gancho">Gancho viral · primeros 3 segundos</option></select><small>{apertura === "titulo_frio" ? `El título aparece antes de la escena ${guion.titulo_tras + 1}, sobre negro y en silencio.` : apertura === "titulo" ? `«${String(guion.titulo_pelicula.titulo).toUpperCase()}»${guion.titulo_pelicula.subtitulo ? ` · ${guion.titulo_pelicula.subtitulo}` : ""}` : "Texto grande durante los primeros 3 segundos."}</small></label>}
+    </div>
+    {transicionesPropuestas.length > 0 && <label className="assembly-transition flex items-start gap-2 text-xs text-slate-300"><input type="checkbox" checked={conTransiciones} onChange={e => setConTransiciones(e.target.checked)} aria-label="Pasos por negro entre secuencias" />
       <span>Transiciones entre secuencias ({transicionesPropuestas.map((t: any) => `${t.tipo === "blanco" ? "destello blanco" : "negro"} antes de la escena ${t.antes + 1}`).join(", ")}). Lo demás va a corte, como en las películas.</span></label>}
-    {horizontal && Array.isArray(guion?.recursos_plan) && guion.recursos_plan.length > 0 && <p className="text-[11px] text-slate-400">Planos de recurso: {recursos.length}/{guion.recursos_plan.length} subidos{recursos.length ? ` (${recursos.map(r => `${r.tipo === "lugar" ? "lugar" : r.tipo === "reaccion" ? "reacción" : "detalle"} en la escena ${r.clip + 1}`).join(", ")})` : ""}. Se suben en la mesa de cada escena.</p>}
+    {horizontal && Array.isArray(guion?.recursos_plan) && guion.recursos_plan.length > 0 && <p className="assembly-resource-count">Planos de recurso: {recursos.length}/{guion.recursos_plan.length} subidos{recursos.length ? ` (${recursos.map(r => `${r.tipo === "lugar" ? "lugar" : r.tipo === "reaccion" ? "reacción" : "detalle"} en la escena ${r.clip + 1}`).join(", ")})` : ""}. Se suben en la mesa de cada escena.</p>}
+    </fieldset>
     {!horizontal && <div className="space-y-2">
       <label htmlFor="cierre-cta" className="block text-xs text-slate-300">Llamada final <span className="text-slate-500">(línea amarilla bajo «{lastEpisode ? "FIN" : guion?.cierre || "Continuará..."}» en la tarjeta de cierre)</span></label>
       <input id="cierre-cta" value={cta} maxLength={40} onChange={e => { setCta(e.target.value); setCtaEdited(true); }} disabled={busy} className="max-w-sm" />

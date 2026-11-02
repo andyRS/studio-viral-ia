@@ -63,10 +63,10 @@ export function UnirActos({ n, nombre = "actos" }: { n: number; nombre?: string 
       setEstado("Listo: película completa descargada.");
     } catch (e: any) { setEstado(`No se pudieron unir: ${e?.message || e}. ¿Está abierto «Montar en mi PC» y actualizado (git pull)?`); }
   };
-  return <div className="rounded-xl border border-white/10 p-3">
+  return <div className="film-join">
     <p className="font-semibold text-slate-200">Unir {nombre === "actos" ? "los actos" : `las ${nombre}`} en la película completa</p>
     <p className="mt-0.5 text-slate-400">Cuando tengas {nombre === "actos" ? `los ${n} actos montados` : `las ${n} ${nombre} montadas`}, súbelos aquí en orden (se unen sin perder calidad, en tu PC).</p>
-    <input type="file" accept="video/mp4" multiple onChange={e => setFiles(Array.from(e.target.files || []).sort((a, b) => a.name.localeCompare(b.name, "es", { numeric: true })))} className="mt-2 text-xs" />
+    <label className="film-join-files">Archivos para unir<input type="file" accept="video/mp4" multiple onChange={e => setFiles(Array.from(e.target.files || []).sort((a, b) => a.name.localeCompare(b.name, "es", { numeric: true })))} className="mt-2 text-xs" /></label>
     {!!files.length && <ol className="mt-1 list-decimal pl-5 text-slate-300">{files.map(f => <li key={f.name}>{f.name}</li>)}</ol>}
     <button type="button" disabled={files.length < 2 || estado.startsWith("Uniendo")} onClick={unir} className="mt-2 rounded-lg bg-emerald-500 px-3 py-2 font-bold text-black disabled:opacity-50">Unir {files.length || ""} {nombre}</button>
     {estado && <p role="status" className="mt-1 text-slate-300">{estado}</p>}
