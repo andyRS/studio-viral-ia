@@ -40,6 +40,25 @@ opencode run --agent guionista "Escribe el ACTO I de docs/peliculas/daniel-la-gu
 opencode run --agent buscador "Para trabajo/guiones/daniel-21-dias: planos de lugar de desierto al amanecer, río ancho antiguo y cielo de tormenta, 1080p, proyecto daniel-21-dias"
 ```
 
+## Pedírselo a Claude (él lanza los agentes)
+
+Puedes pedírselo todo a Claude en el chat, y Claude lanza los agentes desde su sesión en la nube:
+
+- **Guionista:** Claude ejecuta `opencode run --agent guionista --model deepseek/deepseek-flash "…"`, revisa el resultado y lo sube a GitHub. Tú solo haces `git pull`.
+- **Buscador:** Claude elige el material y sube el manifiesto. En tu PC ejecutas una sola orden para que se descargue en Descargas:
+  ```powershell
+  git pull
+  node scripts/material/descargar.mjs bajar --proyecto <proyecto>
+  ```
+
+**Requisito:** el modelo gratuito de OpenCode no funciona desde la nube; responde «Free usage limit reached». Por eso la sesión de Claude necesita una clave de pago en la configuración del entorno (menú del entorno en la barra de título de la sesión → *Edit* → *Network secrets* o variables de entorno):
+- `DEEPSEEK_API_KEY` (de https://platform.deepseek.com) para DeepSeek V4.1 Flash;
+- opcionales para el buscador: `PEXELS_API_KEY` y `PIXABAY_API_KEY`.
+
+La sesión nueva la recoge sola. Nunca pegues la clave en el chat.
+
+En tu PC puedes seguir usando el modelo gratuito con `opencode` como siempre.
+
 ## El ciclo con Claude
 
 1. El agente termina y hace commit de su carpeta. **Tú haces `git push`** (el agente no puede hacerlo sin tu permiso).

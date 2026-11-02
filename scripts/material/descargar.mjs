@@ -13,6 +13,8 @@
 //   node scripts/material/descargar.mjs traer  --fuente ... --tipo ... --q "..." --proyecto daniel [--n 5] [--min 1080] [--para "escena 4: plano de lugar"]
 //   node scripts/material/descargar.mjs hoja   --proyecto daniel      (hoja de contacto JPG con ffmpeg, para revisar)
 //   node scripts/material/descargar.mjs lista  --proyecto daniel
+//   node scripts/material/descargar.mjs bajar  --proyecto daniel      (en el PC: baja lo que el manifiesto del repo tenga y falte,
+//                                                                     p. ej. cuando el buscador trabajó desde la sesión de Claude)
 import { createWriteStream, existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, copyFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, extname, dirname } from "node:path";
@@ -163,10 +165,31 @@ function lista(o) {
   if (!m.archivos.length) console.log("Sin material todavía.");
 }
 
-const CMDS = { buscar: async o => console.log(JSON.stringify(await buscar(o), null, 2)), traer, hoja, lista };
+// En el PC: descarga a Descargas/EstudioViral/<proyecto> todo lo del manifiesto del repositorio que aún no esté.
+async function bajar(o) {
+  const r = rutas(o.proyecto || "");
+  const delRepo = join(r.repo, "manifiesto.json");
+  if (!existsSync(delRepo)) throw new Error(`No hay trabajo/material/${r.p}/manifiesto.json (¿hiciste git pull?).`);
+  const m = JSON.parse(readFileSync(delRepo, "utf8"));
+  mkdirSync(r.dir, { recursive: true });
+  let n = 0;
+  for (const a of m.archivos || []) {
+    if (a.revision === "rechazado") continue;
+    const destino = join(r.dir, a.archivo);
+    if (existsSync(destino)) continue;
+    const res = await fetch(a.url, { headers: { "User-Agent": UA } });
+    if (!res.ok || !res.body) { console.error(`✗ ${a.archivo}: HTTP ${res.status}`); continue; }
+    await pipeline(Readable.fromWeb(res.body), createWriteStream(destino)); n++;
+    console.log(`✓ ${a.archivo}`);
+  }
+  writeFileSync(r.manifiesto, JSON.stringify(m, null, 2));
+  console.log(`\n${n} archivo(s) descargados en ${r.dir}`);
+}
+
+const CMDS = { buscar: async o => console.log(JSON.stringify(await buscar(o), null, 2)), traer, hoja, lista, bajar };
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const o = args(process.argv.slice(2)); const cmd = CMDS[o._[0]];
-  if (!cmd) { console.error("Uso: node scripts/material/descargar.mjs buscar|traer|hoja|lista [opciones] (ver cabecera del archivo)"); process.exit(2); }
+  if (!cmd) { console.error("Uso: node scripts/material/descargar.mjs buscar|traer|hoja|lista|bajar [opciones] (ver cabecera del archivo)"); process.exit(2); }
   Promise.resolve(cmd(o)).catch(e => { console.error(`✗ ${e.message}`); process.exit(1); });
 }
 export { buscar, traer, FUENTES, LIBRES };
