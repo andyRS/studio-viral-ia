@@ -208,7 +208,7 @@ export function planificarAccion(escenas: any[], cast: any[], opciones: { motor?
       const bloqueo = inicial.length ? `${inicial.map(describe).join("; ")}${eje && v.includes(eje[0]) && v.includes(eje[1]) ? `; eje de acción entre ${eje[0]} (izquierda) y ${eje[1]} (derecha): la cámara no lo cruza` : ""}` : "";
       const estadoInicial = inicial.map(e => `${e.nombre}: ${e.postura}`).join("; ");
       const estadoFinal = final.map(e => `${e.nombre}: ${e.postura}${e.desplaza === "izquierda" || e.desplaza === "derecha" ? `, avanzando hacia la ${e.desplaza}` : e.desplaza === "abajo" && !/desciende/.test(e.postura) ? ", descendiendo" : e.desplaza === "arriba" ? ", ascendiendo" : ""}`).join("; ");
-      const seg = Number(s.tomaSeg) || Number((String(s.animationPrompt || "").match(/(\d+)\s*(?:seconds|segundos)/) || [])[1]) || 5;
+      const seg = Number(s.tomaSeg) || Number((String(s.animationPrompt || "").match(/(\d+)\s*(?:seconds|segundos)/) || [])[1]) || 8;
       const dividir = sg.peso >= 0.95 && seg < 8 ? `La ${sg.beat === "llegada" ? "llegada" : "acción"} necesita más tiempo del que da una toma de ${seg} s: propuesta (no aplicada) de generarla a 8 s o dividirla en dos tomas (revelación de la silueta · rostro y descenso).` : undefined;
       tomas.push({ escena: c.n, secuencia: id, tipo: sg.tipo || tipo, fase, funcion: escenas[i].goal || "", visibles: v, inicial, final, eje, accionPrincipal, consecuencia, camara, vfx, bloqueo, estadoInicial, estadoFinal, continuidad: [], ...(dividir ? { dividir } : {}) });
     });

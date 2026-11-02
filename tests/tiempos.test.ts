@@ -14,8 +14,8 @@ const pjTxt = readFileSync("tests/fixtures/daniel_ep01_personajes.json", "utf8")
 const orig = JSON.parse(capTxt);
 const imp: any = importarFiel({ capitulo: capTxt, personajes: pjTxt, formato: "largo" });
 const ep: any = redirigirEpisodio(imp.episode, imp.characters, "epica", "16:9").propuesta;
-// Episodio como está guardado: dato de toma a 8 s pero prompts a 5 s.
-const guardado = { ...ep, scenes: ep.scenes.map((s: any) => ({ ...s, durationSec: 8 })) };
+// Episodio guardado antes de los 8 s por defecto: dato de toma a 8 s pero prompts a 5 s (sin toma por escena).
+const guardado = { ...ep, scenes: ep.scenes.map((s: any) => ({ ...s, durationSec: 8, tomaSeg: undefined, animationPrompt: String(s.animationPrompt).replace(/\b8 seconds\b/, "5 seconds") })) };
 const opts = { tomaBase: 5, tarjetas: ep.guionJson.tarjetas, cierre: true };
 const P = planTiempos(guardado.scenes, opts);
 const F = (n: number) => P.filas[n - 1];

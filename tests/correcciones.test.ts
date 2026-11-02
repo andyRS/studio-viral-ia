@@ -33,4 +33,19 @@ const r3 = redirigirEpisodio(ep, cast, "epica", "16:9", { correcciones: fr.corre
 ok(r3.filas[5].line === "Señor, sigo aquí. No me iré sin tu respuesta." && r3.filas[5].lineaAntes === ep.scenes[5].line && r3.filas[5].correccion!.includes("line"), "un capitulo.json corrige la frase y se marca con la frase de antes");
 ok(r3.filas.filter(f => f.lineaAntes || f.hablanteAntes).length === 1 && r3.propuesta.scenes[5].line.startsWith("Señor, sigo aquí") && r3.propuesta.scenes.length === ep.scenes.length, "solo cambia esa frase; la cantidad de escenas se mantiene");
 ok(correccionesDeJson("no es json") === null && correccionesDeJson(JSON.stringify({ hola: 1 })) === null, "un archivo sin correcciones se rechaza con aviso");
+// 4. Luz y sonido del JSON reemplazan su grupo (no se suman a lo automático).
+const auto = sin.filas[0].despues;
+ok(!!auto.atmosphere && !!auto.music, "(la dirección automática de la escena 1 trae ambiente y música)");
+const ls = correccionesDeJson(JSON.stringify({ escenas: [{ n: 1, luz: "Luz de antorchas en la calle de la aldea", sonido: "Música contenida: cuerdas suaves" }] }))!;
+const r4 = redirigirEpisodio(ep, cast, "epica", "16:9", { correcciones: ls.correcciones });
+const d1 = r4.filas[0].despues, s1 = r4.propuesta.scenes[0];
+ok(d1.lighting === "Luz de antorchas en la calle de la aldea" && d1.atmosphere === "" && d1.vfx === "", "la luz del JSON reemplaza luz, ambiente y efectos automáticos (no quedan dos instrucciones)");
+ok(d1.sfx === "Música contenida: cuerdas suaves" && d1.music === "", "el sonido del JSON reemplaza sonido y música automáticos");
+ok(!/Atmosphere:|Visual effects:|VFX:/.test(s1.imagePromptFlow + s1.animationPrompt) && /Luz de antorchas/.test(s1.imagePromptFlow), "los prompts solo llevan la luz del JSON");
+const r5 = redirigirEpisodio(ep, cast, "epica", "16:9", { correcciones: [{ n: 1, lighting: "Contraluz", atmosphere: "Niebla baja" }] });
+ok(r5.filas[0].despues.atmosphere === "Niebla baja" && r5.filas[0].despues.vfx === "", "si el JSON trae luz y ambiente, se quedan los dos y solo se vacía lo que no trae");
+// 5. Toma de 8 s por defecto; la que ya tiene la escena se conserva.
+ok(r.propuesta.scenes.every((x: any) => x.durationSec === 8 && x.tomaSeg === 8 && /\b8 seconds\b/.test(x.animationPrompt)) && !r.validacion.some((v: any) => v.codigo === "duracion-toma") && r.duraciones.noCaben.length === 0, "todas las tomas quedan en 8 s, datos y prompts de acuerdo, y todas las frases caben");
+const con10 = redirigirEpisodio({ ...ep, scenes: ep.scenes.map((x: any, i: number) => i === 2 ? { ...x, tomaSeg: 10 } : x) }, cast, "epica", "16:9");
+ok(con10.propuesta.scenes[2].tomaSeg === 10 && /\b10 seconds\b/.test(con10.propuesta.scenes[2].animationPrompt) && con10.propuesta.scenes[3].tomaSeg === 8, "una toma elegida a mano (10 s) se respeta");
 console.log(`${checks} comprobaciones de correcciones correctas.`);

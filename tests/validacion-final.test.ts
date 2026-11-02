@@ -1,7 +1,7 @@
 // Validación final antes de generar: texto frente a la fuente, duraciones reales, identidad visual y apariciones. npm test
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { importarFiel, redirigirEpisodio, validarImportacion, vistaPreviaRevision } from "../src/lib/importacion";
+import { estimarDuraciones, importarFiel, redirigirEpisodio, validarImportacion, vistaPreviaRevision } from "../src/lib/importacion";
 import { clasificarFrase, fuenteDeTexto, fuenteSugerida, type Fuente } from "../src/lib/fuentes";
 
 let checks = 0;
@@ -13,7 +13,7 @@ const fuente: Fuente = JSON.parse(readFileSync("src/data/fuentes/daniel-10-rv190
 const imp: any = importarFiel({ capitulo: capTxt, personajes: pjTxt, formato: "largo" });
 
 // Episodio guardado como estaba antes de esta revisión: tomas a 8 s en los datos, prompts a 5 s, montaje 90 s.
-const guardado = JSON.parse(JSON.stringify({ ...imp.episode, duration: 160, editDuration: 90, scenes: imp.episode.scenes.map((s: any) => ({ ...s, durationSec: 8 })) }));
+const guardado = JSON.parse(JSON.stringify({ ...imp.episode, duration: 160, editDuration: 90, scenes: imp.episode.scenes.map((s: any) => ({ ...s, durationSec: 8, tomaSeg: undefined, animationPrompt: String(s.animationPrompt).replace(/\b8 seconds\b/, "5 seconds") })) }));
 const maestros = imp.characters.map((c: any, i: number) => ({ ...c, id: `c${i}`, referenceApprovedAt: i < 2 ? "2026-11-01" : undefined }));
 const antes = JSON.stringify(guardado);
 const rev = redirigirEpisodio(guardado, maestros, "epica", "16:9", { fuente });
@@ -21,9 +21,10 @@ const F = rev.filas, P = rev.propuesta.scenes;
 
 // --- 1. Duración ---
 ok(validarImportacion({ episodio: guardado, cast: imp.characters, modo: "fidelidad", aspecto: "16:9" }).some(p => p.codigo === "duracion-toma"), "1 · se detecta la discrepancia: tomas de 8 s en los datos y prompts que piden 5 s");
-ok(rev.duraciones.tomas.actual === 100 && P.every((s: any) => s.durationSec === 5) && rev.propuesta.duration === 100, "1 · fuente real: 20 tomas de 5 s = 100 s (lo que piden los prompts)");
-ok(rev.duraciones.desglose.tarjetas === 3.9 && rev.duraciones.desglose.cierre === 3 && rev.duraciones.montajeActual === 80 && rev.duraciones.montaje === 82 && rev.propuesta.editDuration === 80, "1 · montaje estimado ~80 s (clips recortados a la voz + 3 tarjetas + cierre); ~82 s con la propuesta");
-ok(rev.duraciones.noCaben.map(f => f.n).join() === "19" && rev.duraciones.alLimite.map(f => f.n).join() === "1,11,18", "1 · la 19 no cabe en 5 s; la 1, 11 y 18 van al límite");
+ok(rev.duraciones.tomas.actual === 160 && P.every((s: any) => s.durationSec === 8 && s.tomaSeg === 8 && /\b8 seconds\b/.test(s.animationPrompt)) && rev.propuesta.duration === 160, "1 · la revisión deja datos y prompts de acuerdo: 20 tomas de 8 s (por defecto) = 160 s");
+ok(rev.duraciones.desglose.tarjetas === 3.9 && rev.duraciones.desglose.cierre === 3 && rev.duraciones.montajeActual === 82 && rev.duraciones.montaje === 82 && rev.propuesta.editDuration === 82 && rev.duraciones.noCaben.length === 0, "1 · con tomas de 8 s todas las frases caben: montaje ~82 s (clips + 3 tarjetas + cierre), igual que con la propuesta");
+{ const d5 = estimarDuraciones(guardado.scenes.map((s: any) => ({ ...s, tomaSeg: 5 })), 5);
+  ok(d5.noCaben.map(f => f.n).join() === "19" && d5.alLimite.map(f => f.n).join() === "1,11,18" && rev.duraciones.alLimite.length === 0, "1 · en tomas de 5 s la 19 no cabe y la 1, 11 y 18 van al límite; con 8 s ninguna"); }
 ok(JSON.stringify(guardado) === antes, "1 · calcular la revisión no modifica el episodio guardado");
 
 // --- 2. Clasificación del texto ---

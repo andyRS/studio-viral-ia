@@ -55,7 +55,7 @@ ok(estimarDuraciones([{ speaker: "Ana", line: "Hola." }], 8).noCaben.length === 
 
 // --- Revisión de un episodio guardado: solo metadatos, nada del guion ---
 {
-  const viejo = JSON.parse(JSON.stringify({ ...imp.episode, scenes: imp.episode.scenes.map((s: any, i: number) => ({ ...s, visualAction: "Daniel de pie", setting: "Daniel de pie", title: "La confrontación", goal: sceneRole(i, 20).goal, visibleCharacters: [s.speaker].filter(x => x !== NARRATOR), characters: [s.speaker].filter(x => x !== NARRATOR) })) }));
+  const viejo = JSON.parse(JSON.stringify({ ...imp.episode, scenes: imp.episode.scenes.map((s: any, i: number) => ({ ...s, tomaSeg: 5, visualAction: "Daniel de pie", setting: "Daniel de pie", title: "La confrontación", goal: sceneRole(i, 20).goal, visibleCharacters: [s.speaker].filter(x => x !== NARRATOR), characters: [s.speaker].filter(x => x !== NARRATOR) })) }));
   const antes = JSON.stringify(viejo);
   const rev = redirigirEpisodio(viejo, imp.characters, "epica", "16:9");
   ok(JSON.stringify(viejo) === antes, "proponer la revisión no modifica el episodio guardado");

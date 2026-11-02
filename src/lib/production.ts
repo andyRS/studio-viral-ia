@@ -15,9 +15,14 @@ const REAL_LOOK: Record<string, { img: string; vid: string; es: string }> = {
   epica: { img: "Cinematic epic biblical still, anamorphic lens flare, volumetric light, 35mm grain", vid: "Cinematic epic biblical film, anamorphic lens flare, volumetric light, 35mm grain", es: "Cine épico bíblico, destellos anamórficos, luz volumétrica, grano de 35 mm" },
 };
 const guardOf = (style: StyleKey) => style === "epica" ? EPIC_GUARD_EN : BIBLE_GUARD_EN;
-const seconds = (style: StyleKey) => style === "epica" ? 5 : 8;
+// Todas las tomas se generan de 8 s por defecto (en todos los estilos y formatos): la frase cabe con margen de acción.
+// Una escena puede pedir otra duración (tomaSeg: 5 o 10) en «Tiempos del montaje».
+export const TOMA_POR_DEFECTO = 8;
+const seconds = (_style?: StyleKey) => TOMA_POR_DEFECTO;
 // Segundos que dura cada toma generada (los prompts de vídeo la piden así).
 export const segundosClip = seconds;
+// Toma por defecto de un episodio (8 s en todo). Una toma elegida en la escena (tomaSeg) siempre manda.
+export const tomaPorDefecto = (style?: StyleKey, _aspecto?: string) => seconds(style);
 const look = (style: StyleKey) => REAL_LOOK[style] || REAL_LOOK.cine90;
 const bibleImg = (style: StyleKey) => isBibleStyle(style) ? ` Modest, covered clothing, nothing suggestive. ${guardOf(style)}.` : "";
 const bibleVid = (style: StyleKey) => isBibleStyle(style)
@@ -495,7 +500,7 @@ export function buildProduction(raw: any, ctx: Ctx) {
   const bible = isBibleStyle(style) ? { story: clean(raw?.bible?.story), verse: clean(raw?.bible?.verse), verseText: clean(raw?.bible?.verseText), message: clean(raw?.bible?.message),
     ...(style === "epica" ? { invisible: clean(raw?.bible?.invisible), impact: clean(raw?.bible?.impact), apocryphal: !!raw?.bible?.apocryphal } : {}) } : undefined;
   const guionJson = { colores, gancho: hook, cierre: bible?.verse || "Continuará...", ...(bible?.verse ? { versiculo: bible.verse } : {}), clips: scenes.map(s => [[s.speaker, s.line]]), ...(tarjetas.length ? { tarjetas } : {}), ...phoneMontage(scenes) };
-  // Duración real de las tomas generadas: la que piden los prompts de vídeo (5 s en la épica bíblica, 8 s en el resto).
+  // Duración real de las tomas generadas: la que piden los prompts de vídeo (8 s por defecto; la toma de la escena manda).
   const seg = seconds(style);
   const total = scenes.length * seg;
   const scriptBlocks = scenes.map(s => ({ block: s.n, time: `${(s.n - 1) * seg}-${s.n * seg}s`, scene: s.setting, dialogue: [{ speaker: s.speaker, text: s.line }], onScreen: s.speaker === NARRATOR ? [] : [s.speaker] }));

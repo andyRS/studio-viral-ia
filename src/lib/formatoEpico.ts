@@ -14,7 +14,7 @@ const norm = (s: unknown) => String(s ?? "").normalize("NFD").replace(/[̀-ͯ]/g
 const VISION = /\b(vision|sueno|suena|recuerdo|flashback|celestial|resplandor|aparicion|revelacion divina|trance)\b/;
 const esNarrador = (s: any) => /^narrador/i.test(String(s?.speaker || ""));
 const palabras = (t: unknown) => String(t ?? "").split(/\s+/).filter(Boolean).length;
-const durDe = (s: any) => Number(s?.tomaSeg) || Number(s?.durationSec) || 5;
+const durDe = (s: any) => Number(s?.tomaSeg) || Number(s?.durationSec) || 8;
 const lugarDe = (s: any) => String(s?.location || "").replace(/^recuerdo:\s*/i, "").trim();
 const limpio = (t: unknown) => String(t ?? "").replace(/\s+/g, " ").replace(/[.\s]+$/, "").trim();
 const esVision = (s: any) => VISION.test(norm(`${s?.location || ""} ${s?.title || ""} ${s?.visualAction || ""}`));

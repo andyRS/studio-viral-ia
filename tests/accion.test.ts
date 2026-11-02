@@ -44,7 +44,8 @@ ok(T(11).fase === "preparacion" && T(12).fase === "accion" && T(13).fase === "re
 ok(/Grúa/.test(T(11).camara.movimiento) && /escala monumental/.test(T(11).camara.razon) && /Primer plano/.test(T(13).camara.plano) && /Travelling/.test(T(14).camara.movimiento) && plan.tomas.every(t => t.camara.razon.length > 20), "cada plano tiene una razón: grúa para la llegada, primer plano para la reacción, travelling para el avance");
 ok(plan.tomas.every(t => !/orbit|órbita/i.test(t.camara.movimiento)), "no se piden órbitas que el motor no ejecuta con fiabilidad");
 ok(plan.tomas.every(t => t.vfx.every(v => v.proposito.length > 10)) && T(11).vfx.some(v => /llegada/.test(v.proposito)), "cada efecto tiene un propósito narrativo");
-ok(!!T(11).dividir && !/8 s/.test(String(ep.scenes[10].tomaSeg)), "la llegada propone dividir o alargar la toma, sin aplicarlo");
+{ const p5 = planificarAccion(ep.scenes.map((s: any) => ({ ...s, tomaSeg: 5, durationSec: 5 })), imp.characters);
+  ok(!!p5.tomas.find(t => t.escena === 11)!.dividir && !T(11).dividir, "en tomas de 5 s la llegada propone dividir o alargar la toma (sin aplicarlo); con los 8 s por defecto ya cabe"); }
 
 // 3/2. Fichas canónicas y personajes.
 const aprobado: any = conAspecto(refreshPrompts(aplicarAccion(ep, plan, batalla.escenas), "epica"), "16:9");

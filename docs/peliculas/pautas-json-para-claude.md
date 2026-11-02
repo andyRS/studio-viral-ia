@@ -201,6 +201,8 @@ Pídele a Claude: *«Corrige estas escenas y devuélveme solo el JSON de correcc
 **Cómo funciona:**
 - **`n`** es el número de la escena, tal como lo muestra la app (desde 1).
 - **Solo se cambia lo que traes;** el resto de campos sigue con la dirección automática.
+- **Luz y sonido van por grupo.** Si traes la luz (`luz`/`lighting`), se reemplaza también el ambiente y los efectos automáticos que no traigas. Si traes el sonido (`sonido`/`sfx`) o la música, se reemplazan los dos. Así nunca quedan dos instrucciones que se contradicen.
+- **Las tomas son de 8 s por defecto.** Una escena que ya tenga otra duración (por ejemplo, 10 s elegidos en «Tiempos del montaje») la conserva.
 - **Campos admitidos:** `visibles`, `visualAction`, `videoAction`, `shotType`, `camera`, `lighting`, `atmosphere`, `vfx`, `expression`, `conflict`, `continuity`, `sfx`, `music`, `title` y `goal`. También se aceptan los nombres en español: `plano`, `camara`, `imagen`, `video`, `luz`, `beat`…
 - **En `visibles`** solo entran personajes que tienen ficha. Un nombre sin ficha se ignora y la app avisa.
 - **Para corregir frases,** sube un `capitulo.json` con los `clips` corregidos, o pon `"speaker"` y `"line"` en la escena. La vista previa marca cada frase que cambia con la frase anterior, para que la revises antes de guardar.
