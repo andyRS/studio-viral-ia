@@ -26,7 +26,7 @@ import type { StoryIdea } from "@/lib/ideas";
 import SceneDesk from "./SceneDesk";
 import StoryArchitect from "./StoryArchitect";
 import { EPIC_NOTICE, STYLES, type StyleKey } from "@/lib/knowledge";
-import { normalizarCapitulo, normalizarPersonajes, importarFiel, estiloDeTexto, redirigirEpisodio, vistaPreviaRevision } from "@/lib/importacion";
+import { correccionesDeJson, normalizarCapitulo, normalizarPersonajes, importarFiel, estiloDeTexto, redirigirEpisodio, vistaPreviaRevision, type Correccion } from "@/lib/importacion";
 import { ETIQUETA_CLASE, fuenteDeTexto, fuenteSugerida, type Fuente } from "@/lib/fuentes";
 import { aplicarTiempos, planTiempos, type Medicion, type ModoMontaje } from "@/lib/tiempos";
 import { medirClip } from "@/lib/medirAudio";
@@ -1376,6 +1376,7 @@ function RevisionImportacion({ out }: { out: any }) {
 
 // Revisión de dirección cinematográfica de un episodio guardado: se calcula sin IA ni créditos, se revisa como
 // vista previa textual y solo se guarda si se aprueba (como versión nueva; la anterior queda en el historial).
+const ETIQUETA_CAMPO: Record<string, string> = { visibles: "en cuadro", visualAction: "imagen", videoAction: "vídeo", shotType: "plano", camera: "cámara", lighting: "luz", atmosphere: "atmósfera", vfx: "efectos", expression: "expresión", conflict: "conflicto", continuity: "continuidad", sfx: "sonido", music: "música", title: "título", goal: "beat", speaker: "hablante", line: "frase" };
 function RevisionDireccion({ out, titulo, maestros, aspecto, onAplicar }: { out: any; titulo: string; maestros: any[]; aspecto: "9:16" | "16:9"; onAplicar: (p: any) => Promise<any> }) {
   const [rev, setRev] = useState<ReturnType<typeof redirigirEpisodio> | null>(null);
   const [estado, setEstado] = useState(""); const [guardando, setGuardando] = useState(false);
@@ -1385,7 +1386,18 @@ function RevisionDireccion({ out, titulo, maestros, aspecto, onAplicar }: { out:
   const [fuente, setFuente] = useState<Fuente | null | undefined>(undefined);
   const fuenteActiva = fuente === undefined ? sugerida : fuente;
   async function subirFuente(file?: File) { if (!file) return; const f = fuenteDeTexto(await file.text(), file.name.replace(/\.[^.]+$/, "")); if (f) { setFuente(f); setRev(null); } else setEstado("No se reconocieron pasajes («Libro 1:2 texto» por línea o JSON con «pasajes»)."); }
-  function proponer() { try { setRev(redirigirEpisodio(out, maestros, style, aspecto, { fuente: fuenteActiva })); setEstado(""); } catch (e: any) { setEstado(`No se pudo calcular: ${e?.message || e}`); } }
+  // Correcciones en JSON de otra IA (dirección por escena o capitulo.json con frases corregidas).
+  const [correcciones, setCorrecciones] = useState<{ nombre: string; lista: Correccion[]; avisos: string[] } | null>(null);
+  async function subirCorreccion(file?: File) {
+    if (!file) return;
+    const r = correccionesDeJson(await file.text());
+    if (!r) { setEstado("Ese JSON no trae correcciones reconocibles: se espera {\"escenas\":[{\"n\":1, \"visibles\":[…], \"visualAction\":\"…\", \"camera\":\"…\"…}]} o un capitulo.json con «clips»."); return; }
+    const fuera = r.correcciones.filter(c => c.n < 1 || c.n > (out?.scenes?.length || 0)).map(c => c.n);
+    setCorrecciones({ nombre: file.name, lista: r.correcciones, avisos: [...r.avisos, ...(fuera.length ? [`Escenas que no existen en este episodio: ${fuera.join(", ")} (se ignoran).`] : [])] });
+    setRev(null);
+    setEstado(`«${file.name}»: correcciones para ${r.correcciones.length} escena(s). Pulsa «Proponer revisión» para verlas aplicadas antes de guardar.`);
+  }
+  function proponer() { try { setRev(redirigirEpisodio(out, maestros, style, aspecto, { fuente: fuenteActiva, correcciones: correcciones?.lista })); setEstado(""); } catch (e: any) { setEstado(`No se pudo calcular: ${e?.message || e}`); } }
   async function aprobar() {
     if (!rev) return; setGuardando(true);
     try { await onAplicar(rev.propuesta); setEstado("Revisión guardada como versión nueva. La anterior quedó en el historial del episodio. No se generó ninguna imagen ni vídeo."); setRev(null); }
@@ -1400,12 +1412,18 @@ function RevisionDireccion({ out, titulo, maestros, aspecto, onAplicar }: { out:
     <div className="mt-2 flex flex-wrap items-center gap-2 text-slate-300"><span><b>Texto de referencia:</b> {fuenteActiva ? `${fuenteActiva.titulo}${fuenteActiva.version ? ` · ${fuenteActiva.version}` : ""}${fuenteActiva.licencia ? ` (${fuenteActiva.licencia})` : ""}` : "ninguno (no se clasifican las frases)"}</span>
       {fuenteActiva && <button type="button" className="underline" onClick={() => { setFuente(null); setRev(null); }}>Quitar</button>}
       <label className="import-file-button cursor-pointer underline">Subir otro texto<input type="file" className="sr-only" accept=".txt,.md,.json" aria-label="Subir texto de referencia" onChange={e => { void subirFuente(e.target.files?.[0]); e.target.value = ""; }} /></label></div>
+    <div className="mt-2 flex flex-wrap items-center gap-2 text-slate-300"><span><b>Correcciones de otra IA:</b> {correcciones ? `«${correcciones.nombre}» · ${correcciones.lista.length} escena(s)` : "ninguna"}</span>
+      {correcciones && <button type="button" className="underline" onClick={() => { setCorrecciones(null); setRev(null); }}>Quitar</button>}
+      <label className="import-file-button cursor-pointer underline">{correcciones ? "Subir otro JSON" : "Subir JSON de corrección"}<input type="file" className="sr-only" accept=".json,application/json" aria-label="Subir JSON de corrección" onChange={e => { void subirCorreccion(e.target.files?.[0]); e.target.value = ""; }} /></label>
+      <span className="w-full text-[11px] text-slate-400">Dirección por escena (<code>{"{\"escenas\":[{\"n\":4,\"visibles\":[\"Kael\"],\"shotType\":\"Plano general\",\"camera\":\"…\",\"visualAction\":\"…\",\"videoAction\":\"…\"}]}"}</code>) o un capitulo.json con las frases corregidas. Solo cambia lo que trae; lo verás marcado aquí antes de guardar.</span>
+      {correcciones?.avisos.map((a, k) => <span key={k} className="w-full text-[11px] text-amber-200">{a}</span>)}</div>
     {!rev && <button type="button" onClick={proponer} className="mt-2 rounded-lg bg-amber-400 px-3 py-2 text-xs font-bold text-slate-950">✦ Proponer revisión de dirección</button>}
     {rev && <div className="mt-3 space-y-2">
-      <p role="status"><b>{rev.filas.length} escenas</b> · {cambiosPresencia} con cambios de quién está en cuadro · revisión: {errores ? `${errores} error(es)` : "sin errores"}, {rev.validacion.length - errores} aviso(s)</p>
+      <p role="status"><b>{rev.filas.length} escenas</b>{rev.filas.some(f => f.correccion) ? ` · ${rev.filas.filter(f => f.correccion).length} corregidas por JSON` : ""}{rev.filas.some(f => f.lineaAntes || f.hablanteAntes) ? ` (${rev.filas.filter(f => f.lineaAntes || f.hablanteAntes).length} con diálogo cambiado)` : ""} · {cambiosPresencia} con cambios de quién está en cuadro · revisión: {errores ? `${errores} error(es)` : "sin errores"}, {rev.validacion.length - errores} aviso(s)</p>
       <p><b>Duración:</b> tomas {rev.filas.length} × {rev.filas[0]?.duracion.toma} s = {rev.duraciones.tomas.actual} s · montaje tal cual ~{rev.duraciones.montajeActual} s (clips {rev.duraciones.desglose.clipsActual} s + tarjetas {rev.duraciones.desglose.tarjetas} s + cierre {rev.duraciones.desglose.cierre} s){rev.duraciones.noCaben.length ? <> · <b>{rev.duraciones.noCaben.length} frase(s) no caben ({rev.duraciones.noCaben.map(f => `${f.n}`).join(", ")})</b>: con la propuesta ~{rev.duraciones.montaje} s</> : " · todas las frases caben"}. No se cambia el montaje hasta que lo decidas.</p>
       <ol className="direction-scenes" aria-label="Vista previa de dirección por escena" tabIndex={0}>{rev.filas.map(f => <li key={f.n}>
-        <header><span className="import-step">ESCENA {String(f.n).padStart(2, "0")}</span><h4>{f.despues.title}</h4></header><blockquote><b>{f.speaker}</b><p>«{f.line}»</p></blockquote>
+        <header><span className="import-step">ESCENA {String(f.n).padStart(2, "0")}</span><h4>{f.despues.title}</h4>{f.correccion && <span className="text-[11px] font-semibold text-emerald-300">✎ Corregido por JSON: {f.correccion.map(k => ETIQUETA_CAMPO[k] || k).join(", ")}</span>}</header><blockquote><b>{f.speaker}</b><p>«{f.line}»</p></blockquote>
+        {(f.lineaAntes || f.hablanteAntes) && <div className="text-amber-200"><b>Antes:</b> {f.hablanteAntes || f.speaker}: «{f.lineaAntes || f.line}» — cambia el diálogo; revísalo antes de guardar.</div>}
         <div className="mt-1 text-slate-300"><b>Beat:</b> {f.despues.goal}</div>
         <div className="text-slate-300"><b>En cuadro:</b> {f.despues.visibles.join(", ") || "nadie"}{f.antes.visibles.join(",") !== f.despues.visibles.join(",") && <span className="text-amber-200"> (antes: {f.antes.visibles.join(", ") || "nadie"})</span>}</div>
         <div className="text-slate-300"><b>{f.despues.shotType}.</b> {f.despues.camera}</div>

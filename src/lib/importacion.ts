@@ -590,10 +590,46 @@ export function bibliotecaDesdeElenco(cast: any[]): BibliotecaNormalizada {
     }),
   };
 }
-export type FilaRevision = { texto?: Clasificacion; n: number; speaker: string; line: string; antes: { visibles: string[]; imagen: string; titulo: string; objetivo: string }; despues: DireccionEscena & { visibles: string[] }; duracion: DuracionEscena };
-export function redirigirEpisodio(out: any, castMaestro: any[], style: StyleKey, aspecto: Aspecto, opciones: { fuente?: Fuente | null } = {}) {
-  const escenas: any[] = Array.isArray(out?.scenes) ? out.scenes : [];
+// ---------- Correcciones de otra IA (JSON) para la revisión de dirección ----------
+// Acepta: {"escenas":[{n, visibles, visualAction, videoAction, shotType, camera, …, title, goal, speaker, line}]},
+// el mismo objeto con «scenes», una lista suelta, o un capitulo.json con «clips» (corrige hablante y frase).
+// Solo se aplica lo que viene; lo demás sigue con la dirección automática. Nada se guarda sin aprobar.
+export type Correccion = DireccionIA & { speaker?: string; line?: string; title?: string; goal?: string };
+const ALIAS: Record<string, string> = { imagen: "visualAction", accion_visual: "visualAction", video: "videoAction", accion_video: "videoAction", plano: "shotType", camara: "camera", cámara: "camera",
+  luz: "lighting", iluminacion: "lighting", atmosfera: "atmosphere", efectos_visuales: "vfx", expresion: "expression", conflicto: "conflict", continuidad: "continuity", sonido: "sfx", musica: "music",
+  titulo: "title", beat: "goal", objetivo: "goal", hablante: "speaker", frase: "line", dialogo: "line", texto: "line" };
+export function correccionesDeJson(texto: string): { correcciones: Correccion[]; avisos: string[] } | null {
+  let d: any; try { d = JSON.parse(texto); } catch { return null; }
+  const ep = d?.episode || d?.episodio || d?.capitulo || d;
+  const avisos: string[] = [];
+  if (Array.isArray(ep?.clips) && !Array.isArray(ep?.scenes) && !Array.isArray(ep?.escenas)) {
+    const correcciones = ep.clips.map((c: any, i: number) => { const par = (Array.isArray(c) ? c : []).find((x: any) => Array.isArray(x) && x.length >= 2); return par ? { n: i + 1, speaker: limpio(par[0]), line: limpio(par[1]) } : null; }).filter(Boolean) as Correccion[];
+    if (ep.clips.some((c: any) => Array.isArray(c) && c.length > 1)) avisos.push("Algún clip trae varias frases: se usa la primera (una frase por escena).");
+    return correcciones.length ? { correcciones, avisos } : null;
+  }
+  const lista: any[] = Array.isArray(d) ? d : Array.isArray(ep?.escenas) ? ep.escenas : Array.isArray(ep?.scenes) ? ep.scenes : [];
+  const correcciones: Correccion[] = [];
+  lista.forEach((e: any, i: number) => {
+    if (!e || typeof e !== "object") return;
+    const c: any = { n: Number(e.n ?? e.escena ?? e.scene) || i + 1 };
+    for (const [k0, v] of Object.entries(e)) {
+      const k = ALIAS[norm(k0).replace(/\s+/g, "_")] || ALIAS[k0] || k0;
+      if ((CAMPOS_IA.includes(k) || ["title", "goal", "speaker", "line"].includes(k)) && typeof v === "string" && limpio(v)) c[k] = limpio(v);
+      if (["visibles", "visibleCharacters", "en_cuadro", "enCuadro", "characters"].includes(k0) && Array.isArray(v)) c.visibles = v.map(limpio).filter(Boolean);
+    }
+    if (Object.keys(c).length > 1) correcciones.push(c);
+  });
+  return correcciones.length ? { correcciones, avisos } : null;
+}
+
+export type FilaRevision = { correccion?: string[]; lineaAntes?: string; hablanteAntes?: string; texto?: Clasificacion; n: number; speaker: string; line: string; antes: { visibles: string[]; imagen: string; titulo: string; objetivo: string }; despues: DireccionEscena & { visibles: string[] }; duracion: DuracionEscena };
+export function redirigirEpisodio(out: any, castMaestro: any[], style: StyleKey, aspecto: Aspecto, opciones: { fuente?: Fuente | null; correcciones?: Correccion[] } = {}) {
+  const originales: any[] = Array.isArray(out?.scenes) ? out.scenes : [];
   const castBase = (castMaestro?.length ? castMaestro : out?.cast || []).filter((c: any) => c?.name && !esNarrador(c.name));
+  // Correcciones subidas (JSON de otra IA): hablante y frase primero, para que la presencia y los beats se recalculen.
+  const corr = new Map((opciones.correcciones || []).map(c => [Number(c.n), c]));
+  const nombreDe = (n: string) => esNarrador(n) ? NARRATOR : castBase.find((c: any) => norm(c.name) === norm(n))?.name || n;
+  const escenas: any[] = originales.map((s, i) => { const c = corr.get(i + 1); return c && (c.speaker || c.line) ? { ...s, ...(c.speaker ? { speaker: nombreDe(c.speaker) } : {}), ...(c.line ? { line: c.line } : {}) } : s; });
   const bib = bibliotecaDesdeElenco(castBase);
   const clips: ClipOriginal[] = escenas.map((s, i) => ({ n: i + 1, speaker: String(s.speaker), line: String(s.line) }));
   const presencia = asignarPresencia(clips, bib, castBase);
@@ -604,13 +640,20 @@ export function redirigirEpisodio(out: any, castMaestro: any[], style: StyleKey,
   const fichaDe = (n: string) => bib.personajes.find(p => norm(p.name) === norm(n));
   const clasif: (Clasificacion | null)[] = escenas.map(s => opciones.fuente ? clasificarFrase(String(s.line), opciones.fuente, { narrador: esNarrador(s.speaker), sinVozEnFuente: !!fichaDe(s.speaker)?.dialogoDramatizado }) : null);
   const filas: FilaRevision[] = escenas.map((s, i) => {
-    const d = dir[i];
-    const visibles = presencia[i].visibles.filter(n => !(d.quitarDeCuadro || []).includes(n));
+    const c0 = corr.get(i + 1);
+    const campos = c0 ? Object.entries(c0).filter(([k, v]) => (CAMPOS_IA.includes(k) || k === "title" || k === "goal") && typeof v === "string" && v) : [];
+    const d = c0 ? { ...dir[i], ...Object.fromEntries(campos.map(([k, v]) => [k, sinPunto(String(v))])) } as DireccionEscena : dir[i];
+    const validos = new Set(castBase.map((c: any) => norm(c.name)));
+    const visCorr = c0?.visibles ? c0.visibles.filter(n => validos.has(norm(n)) && !esNarrador(n)).map(nombreDe) : null;
+    if (c0?.visibles && visCorr && visCorr.length < c0.visibles.length) presencia[i].avisos.push(`Escena ${i + 1}: la corrección pone en cuadro a ${c0.visibles.filter(n => !validos.has(norm(n)) || esNarrador(n)).join(", ")}, que no tiene ficha: no se pone.`);
+    const visibles = visCorr || presencia[i].visibles.filter(n => !(d.quitarDeCuadro || []).includes(n));
     if (d.quitarDeCuadro?.length) presencia[i].avisos.push(`Escena ${i + 1}: ${d.quitarDeCuadro.join(", ")} sale del encuadre de la anticipación para no sugerir un encuentro que el texto no narra. Revísalo.`);
     const c = clasif[i];
     // Con fuente, la clasificación sustituye a la marca genérica de «frase dramatizada».
     const nota = c ? [d.fidelityNote.replace(/\s*Frase de [^.]+dramatizada[^.]*\./, ""), `Texto: ${ETIQUETA_CLASE[c.clase]}${c.refs.length ? ` (${c.refs.join(", ")})` : ""}.`].filter(Boolean).join(" ") : d.fidelityNote;
-    return { n: i + 1, speaker: s.speaker, line: s.line, antes: { visibles: s.visibleCharacters || s.characters || [], imagen: s.visualAction || s.setting || "", titulo: s.title || "", objetivo: s.goal || "" }, despues: { ...d, fidelityNote: nota, visibles }, duracion: durs.filas[i], ...(c ? { texto: c } : {}) };
+    const o = originales[i];
+    const corregidos = [...campos.map(([k]) => k), ...(visCorr ? ["visibles"] : []), ...(o.speaker !== s.speaker ? ["speaker"] : []), ...(o.line !== s.line ? ["line"] : [])];
+    return { ...(corregidos.length ? { correccion: corregidos } : {}), ...(o.line !== s.line ? { lineaAntes: o.line } : {}), ...(o.speaker !== s.speaker ? { hablanteAntes: o.speaker } : {}), n: i + 1, speaker: s.speaker, line: s.line, antes: { visibles: s.visibleCharacters || s.characters || [], imagen: s.visualAction || s.setting || "", titulo: s.title || "", objetivo: s.goal || "" }, despues: { ...d, fidelityNote: nota, visibles }, duracion: durs.filas[i], ...(c ? { texto: c } : {}) };
   });
   const scenes = escenas.map((s, i) => {
     const d = filas[i].despues;

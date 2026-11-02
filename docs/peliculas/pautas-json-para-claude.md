@@ -171,3 +171,36 @@ Vas a escribir el guion de una película épica bíblica para **Estudio Viral**,
 - [ ] La película entera tiene como mucho 330 clips (unos 220 para 30 minutos); si va por actos, cada archivo tiene como mucho 80.
 - [ ] Las fichas aprobadas están copiadas sin cambios.
 - [ ] La tabla final clasifica cada frase con su referencia.
+
+---
+
+## Anexo: JSON de corrección (para el panel «Dirección cinematográfica»)
+
+Úsalo **después** de importar, cuando quieras que otra IA corrija la dirección de algunas escenas. En el episodio, abre **Dirección cinematográfica → «Subir JSON de corrección»**, pulsa «Proponer revisión», revisa lo marcado con ✎ y guarda.
+
+Pídele a Claude: *«Corrige estas escenas y devuélveme solo el JSON de corrección con este formato»*.
+
+```json
+{
+  "escenas": [
+    {
+      "n": 4,
+      "visibles": ["Kael", "Eli"],
+      "shotType": "Plano general",
+      "camera": "Grúa que sube lentamente sobre la muralla.",
+      "visualAction": "Kael en lo alto de la muralla, Eli detrás, la ciudad en llamas al fondo",
+      "videoAction": "Kael alza la espada y la luz recorre la hoja",
+      "lighting": "Contraluz de fuego, humo dorado",
+      "title": "La muralla",
+      "goal": "Kael decide quedarse a defender la puerta"
+    }
+  ]
+}
+```
+
+**Cómo funciona:**
+- **`n`** es el número de la escena, tal como lo muestra la app (desde 1).
+- **Solo se cambia lo que traes;** el resto de campos sigue con la dirección automática.
+- **Campos admitidos:** `visibles`, `visualAction`, `videoAction`, `shotType`, `camera`, `lighting`, `atmosphere`, `vfx`, `expression`, `conflict`, `continuity`, `sfx`, `music`, `title` y `goal`. También se aceptan los nombres en español: `plano`, `camara`, `imagen`, `video`, `luz`, `beat`…
+- **En `visibles`** solo entran personajes que tienen ficha. Un nombre sin ficha se ignora y la app avisa.
+- **Para corregir frases,** sube un `capitulo.json` con los `clips` corregidos, o pon `"speaker"` y `"line"` en la escena. La vista previa marca cada frase que cambia con la frase anterior, para que la revises antes de guardar.
