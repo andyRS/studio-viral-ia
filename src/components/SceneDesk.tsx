@@ -5,6 +5,8 @@ import PromptWorkbench from "./PromptWorkbench";
 import ReferencePreview from "./ReferencePreview";
 import CopyButton from "./CopyButton";
 import MontajePanel from "./MontajePanel";
+import { UnirActos } from "./DistribucionPanels";
+import { guionDeParte, MAX_CLIPS_PARTE, partesDeMontaje } from "@/lib/partes";
 import type { Scene } from "@/lib/types";
 import { borrarEpisodio, cargarArchivos, espacio, guardarArchivo, limpiarViejos, pedirPersistencia, quitarArchivo, DIAS_RETENCION } from "@/lib/archivosTrabajo";
 
@@ -185,6 +187,12 @@ export default function SceneDesk({ episodeId, scenes, guion, title, referencesR
   const approved = scenes.filter(s => !dirtyClips.includes(s.n) && checks.some(c => c.clipIndex === s.n - 1 && c.approved && c.referenceSignature === referenceSignature)).length;
   const ordered = scenes.map(s => clips[s.n]).filter((f): f is File => !!f);
   const ready = referencesReady && approved === scenes.length && ordered.length === scenes.length;
+  // Película larga: más de 80 tomas se montan por partes (cortando en los cambios de secuencia) y se unen al final.
+  const partes = useMemo(() => partesDeMontaje(scenes.length, [...(guion?.transiciones || []).map((t: any) => t.antes), ...(guion?.tarjetas || []).map((t: any) => t.antes)]), [scenes.length, guion]);
+  const [parteSel, setParteSel] = useState(0);
+  const parte = partes[Math.min(parteSel, partes.length - 1)];
+  const guionParte = useMemo(() => partes.length > 1 ? guionDeParte(guion, parte, partes.length) : guion, [guion, parte, partes.length]);
+  const recursosParte = planRecursos.filter(r => recursos[r.n] && r.clip >= parte.desde && r.clip < parte.hasta).map(r => ({ file: recursos[r.n], clip: r.clip - parte.desde, tipo: r.tipo }));
 
   return <div className="review-studio space-y-4">
     <header className="review-studio-heading"><div><p className="studio-eyebrow cinematic-gold">SALA DE REVISIÓN / MONTAJE</p><h3>Cada plano cuenta.</h3><p>Revisa la continuidad, aprueba las tomas y prepara tu entrega.</p></div><div className="review-stats"><span><strong>{approved}/{scenes.length}</strong> aprobadas</span><span><strong>{ordered.length}/{scenes.length}</strong> clips en sesión</span></div></header>
@@ -264,7 +272,15 @@ export default function SceneDesk({ episodeId, scenes, guion, title, referencesR
       </li>;
     })}</ol>
     <section className="review-delivery rounded-2xl border border-amber-400/20 bg-amber-400/[.06] p-4"><p className="studio-eyebrow cinematic-gold">ENTREGA / ÚLTIMA REVISIÓN</p><h3 className="mt-2 font-bold">Montar vídeo final</h3><p className="mt-1 text-xs text-slate-300">Se habilita con fichas maestras y todas las escenas aprobadas, y con todos los clips s01… cargados en orden.</p>
-      {ready ? <div className="mt-3"><MontajePanel guion={guion} title={title} filesOverride={ordered} recursos={planRecursos.filter(r => recursos[r.n]).map(r => ({ file: recursos[r.n], clip: r.clip, tipo: r.tipo }))} style={style} part={part} musicCues={scenes.map(s => s.music || "")} seconds={Math.round(scenes.length * 4.5) + 3} music={music} cover={cover} recap={recap} onDownloaded={onDownloaded} publish={publish} /></div> : <p className="mt-3 text-sm text-amber-200">Pendiente: {referencesReady ? "" : "fichas maestras; "}{scenes.length - approved} escenas por aprobar; {scenes.length - ordered.length} clips por subir.</p>}
+      {ready ? <div className="mt-3">
+        {partes.length > 1 && <div className="mb-3 space-y-2 rounded-xl border border-white/10 bg-black/20 p-3 text-xs">
+          <p className="text-slate-300"><b className="text-white">Película de {scenes.length} tomas:</b> el montaje del PC admite {MAX_CLIPS_PARTE} por vez, así que se monta en {partes.length} partes (cortadas en los cambios de secuencia). Monta cada parte, descárgala y al final únelas sin perder calidad.</p>
+          <div className="flex flex-wrap gap-2" role="group" aria-label="Parte de la película">{partes.map(p => <button type="button" key={p.k} aria-pressed={p.k === parte.k} onClick={() => setParteSel(p.k)}
+            className={`rounded-lg border px-3 py-1.5 ${p.k === parte.k ? "border-amber-300 bg-amber-400/15 text-amber-100" : "border-white/15 text-slate-300"}`}>Parte {p.k + 1} · escenas {p.desde + 1}–{p.hasta}</button>)}</div>
+        </div>}
+        <MontajePanel key={`parte-${parte.k}`} guion={guionParte} title={partes.length > 1 ? `${title} · Parte ${parte.k + 1}` : title} filesOverride={ordered.slice(parte.desde, parte.hasta)} recursos={recursosParte} style={style} part={part} musicCues={scenes.slice(parte.desde, parte.hasta).map(s => s.music || "")} seconds={Math.round((parte.hasta - parte.desde) * 4.5) + 3} music={music} cover={parte.k === 0 ? cover : undefined} recap={parte.k === 0 ? recap : ""} onDownloaded={onDownloaded} publish={publish} />
+        {partes.length > 1 && <div className="mt-3"><UnirActos n={partes.length} nombre="partes" /></div>}
+      </div> : <p className="mt-3 text-sm text-amber-200">Pendiente: {referencesReady ? "" : "fichas maestras; "}{scenes.length - approved} escenas por aprobar; {scenes.length - ordered.length} clips por subir.</p>}
     </section>
   </div>;
 }

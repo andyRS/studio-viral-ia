@@ -13,7 +13,7 @@
 // Antes de guardar se ejecuta validarImportacion (continuidad, narrador, restricciones, formato, diálogos).
 import { normalizeCast, norm, type CastMember } from "./cast";
 import { STYLES, type StyleKey } from "./knowledge";
-import { aspectoDe, buildProduction, conAspecto, MAX_SCENES, NARRATOR, refreshPrompts, segundosClip, selectShortScenes, type Aspecto } from "./production";
+import { aspectoDe, buildProduction, conAspecto, MAX_ESCENAS_PELICULA, NARRATOR, refreshPrompts, segundosClip, selectShortScenes, type Aspecto } from "./production";
 import type { Canon } from "./personajes";
 import { clasificarFrase, ETIQUETA_CLASE, type Clasificacion, type Fuente } from "./fuentes";
 
@@ -521,7 +521,8 @@ export function importarFiel(input: { capitulo: string; personajes?: string; sty
   if (sinFicha.length) { cast = [...cast, ...normalizeCast(sinFicha.map(name => ({ name })), style, { taken: cast })]; avisos.push(`Sin ficha canónica: ${sinFicha.join(", ")}. Se añadieron con ficha genérica para completarla.`); }
 
   // Cantidad: la configuración manda; en fidelidad nunca se inventan escenas.
-  const pedidas = Math.min(MAX_SCENES, Number(input.scenes) || cap.clips.length);
+  // Sin tope de episodio corto: una película importada puede traer cientos de tomas (hasta MAX_ESCENAS_PELICULA ≈ 40 min).
+  const pedidas = Math.min(MAX_ESCENAS_PELICULA, Number(input.scenes) || cap.clips.length);
   let clips = cap.clips;
   if (pedidas < clips.length) {
     clips = selectShortScenes(clips, pedidas);

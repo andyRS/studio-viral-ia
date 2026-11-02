@@ -38,7 +38,7 @@ import { cargarArchivos } from "@/lib/archivosTrabajo";
 import { segundosClip } from "@/lib/production";
 import { adaptarPersonajesLocal, escenasDelGuion, templateSeries, templateNext } from "@/lib/story";
 import { fichaGenerica, isGenericName } from "@/lib/cast";
-import { aspectoDe, buildFlowBatch, conAspecto, escenasEnTexto, MAX_SCENES, MIN_SCENES, refreshPrompts, PROMPT_RULES_VERSION, sceneCountFor } from "@/lib/production";
+import { aspectoDe, buildFlowBatch, conAspecto, escenasEnTexto, MAX_ESCENAS_PELICULA, MAX_SCENES, MIN_SCENES, refreshPrompts, PROMPT_RULES_VERSION, sceneCountFor } from "@/lib/production";
 import { seriesSignals } from "@/lib/seriesSignals";
 import { stylePublish, formatDescription, sinLlamadas, viralHashtags } from "@/lib/platforms";
 import { profileText } from "@/lib/profiles";
@@ -1280,7 +1280,7 @@ function AdaptarGuionEpisodio({ onAdaptar, ocupado, escenas }: { onAdaptar: (t: 
         <select id="episodio-guion-escenas" className="w-auto" value={cuantas} onChange={e => setCuantas(Number(e.target.value))}>
           <option value={0}>{delGuion ? `Las del guion · ${sceneCountFor(88, delGuion)}` : `Automático · ${final}`}</option>
           {Array.from({ length: MAX_SCENES - MIN_SCENES + 1 }, (_, k) => MIN_SCENES + k).map(n => <option key={n} value={n}>{n} escenas</option>)}</select>
-        {delGuion && delGuion > MAX_SCENES && !cuantas && <span className="text-xs text-amber-200">El guion trae {delGuion}; el máximo es {MAX_SCENES}: se unirán las menores.</span>}</div>
+        {delGuion && delGuion > MAX_SCENES && !cuantas && <span className="text-xs text-amber-200">El guion trae {delGuion}; la adaptación con IA llega a {MAX_SCENES} (se unirán las menores). Para conservarlas todas (película de hasta {MAX_ESCENAS_PELICULA} tomas ≈ 40 min), súbelo como JSON en «Nueva historia» en modo fidelidad.</span>}</div>
       <p className="text-xs text-slate-400">Pulsa «Adaptar con IA» y listo: la IA conserva la historia y el sentido de los diálogos, usa el elenco fijo de la serie y rehace escenas, fichas y prompts. Después revisa el Guion y aprueba las fichas de personajes nuevos.</p>
       {error && <p role="alert" className="text-xs text-rose-200">{error}</p>}
       <button type="button" disabled={ocupado} onClick={() => { void enviar(); }} className="rounded-lg bg-cyan-400 px-4 py-2 text-sm font-bold text-slate-950 disabled:opacity-60">{ocupado ? "Adaptando…" : "✦ Adaptar con IA"}</button>

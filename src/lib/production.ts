@@ -84,8 +84,12 @@ const clean = (v: unknown) => String(v ?? "").replace(/\s+/g, " ").trim();
 // Ritmo viral: cada clip se genera de 8 s, pero el montaje lo recorta a su frase + reacción (~4,5 s).
 // La duración pedida es la del vídeo montado: 88 s ≈ 20 escenas (como los virales: una frase cada 3-4 s).
 export const EDIT_SECONDS = 4.5;
-export const MAX_SCENES = 30;
+export const MAX_SCENES = 30;          // lo que la IA escribe de una vez (un episodio viral)
 export const MIN_SCENES = 8;
+// Película larga importada (guion JSON de otra IA en modo fidelidad): sin el tope de 30.
+// 330 tomas ≈ 40 min con tomas de 5-8 s. El montaje la parte en bloques de hasta 80 y los une.
+export const MAX_ESCENAS_PELICULA = 330;
+export const MINUTOS_MAX_PELICULA = 40;
 // Cantidad de escenas: la elegida a mano (si la hay) manda; si no, sale de la duración.
 export const sceneCountFor = (duration: number, escenas?: number) => {
   const elegidas = Math.round(Number(escenas) || 0);
@@ -412,7 +416,9 @@ function buildDolaPrompt(dolaScenes: { n: number; setting: string; speaker: stri
 // Construye todo el paquete de producción del episodio a partir de lo que devolvió la IA.
 export function buildProduction(raw: any, ctx: Ctx) {
   const { style, characters: cast } = ctx;
-  const target = sceneCountFor(ctx.duration, ctx.scenes);
+  // Fidelidad: la cantidad es la del guion importado (hasta MAX_ESCENAS_PELICULA), no la de un episodio corto.
+  const tope = ctx.fidelidad ? MAX_ESCENAS_PELICULA : MAX_SCENES;
+  const target = ctx.fidelidad ? Math.min(tope, Math.max(1, Math.round(Number(ctx.scenes) || 0)) || tope) : sceneCountFor(ctx.duration, ctx.scenes);
   const byName = new Map(cast.map(c => [c.name, c]));
   let base = rawScenes(raw)
     .map((r: any) => ({
@@ -453,7 +459,7 @@ export function buildProduction(raw: any, ctx: Ctx) {
       base.push({ phone: undefined, location: last?.location || "", shot: "", setting: last?.setting || "iglesia evangélica sencilla", speaker: NARRATOR, line: msg, emotion: "esperanza", present: [], title: "Cierre", goal: "El mensaje de la historia", sfx: "Silencio y respiración suave", music: "Piano emotivo que se apaga", transition: "Fundido a negro", link: "" });
     }
   }
-  base = assignLocations(selectShortScenes(base, Math.min(MAX_SCENES, target)));
+  base = assignLocations(selectShortScenes(base, Math.min(tope, target)));
 
   const ids: Record<string, string> = Object.fromEntries(cast.map((c, k) => [c.name.toLowerCase(), sheetId(k + 1)]));
   const scenes: Scene[] = base.map((s, i) => {

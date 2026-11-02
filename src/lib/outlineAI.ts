@@ -45,7 +45,7 @@ const contexto = (o: Outline) => o.acts.map((a, i) => `ACTO ${i + 1} «${a.title
 export async function generateOutline(input: any) {
   const style = styleOf(input?.style);
   const structure: 3 | 5 = Number(input?.structure) === 5 ? 5 : 3;
-  const minutes = Math.min(30, Math.max(8, Number(input?.minutes) || 20));
+  const minutes = Math.min(40, Math.max(8, Number(input?.minutes) || 20));
   const system = `${brief(style)}${contextoCanon(input)}
 
 TAREA: crea la ESTRUCTURA de un episodio largo de ${minutes} minutos en ${structure} actos (${structure === 3 ? "planteamiento ~25 %, confrontación ~50 %, resolución ~25 %" : "exposición, acción creciente, clímax, acción descendente y desenlace"}). Cada acto en 2-4 secuencias; cada secuencia en 2-5 escenas de 0,5 a 3 minutos. La suma de minutos ≈ ${minutes}. Tensión de 1 a 10 por escena, subiendo hacia el clímax.

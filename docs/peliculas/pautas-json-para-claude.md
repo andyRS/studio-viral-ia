@@ -27,7 +27,9 @@ Vas a escribir el guion de una película épica bíblica para **Estudio Viral**,
    - hablante;
    - número de palabras de la frase;
    - clase de fidelidad (cita / paráfrasis / inspirada / dramatización) con su referencia bíblica.
-3. **Un archivo por acto, con un máximo de 80 clips.** Para una película de 30 minutos hacen falta unos 220 clips de 8 s, repartidos en 4 actos de 50 a 60 clips cada uno.
+3. **Tamaño:** la app admite hasta **330 clips en un solo `capitulo.json`** (unos 40 minutos). Para una película de 30 minutos hacen falta unos 220 clips de 8 s, en 4 actos de 50 a 60 clips cada uno. Puedes entregarlo de dos maneras:
+   - **Película entera (recomendado):** escribe los actos por turnos y, cuando te diga «une todo», entrega un único `capitulo.json` con todos los clips seguidos (las `tarjetas` cuentan desde 0 sobre el total) y un único `personajes.json` con todos los personajes. La app la monta sola por partes de 80 y las une.
+   - **Un archivo por acto** (como mucho 80 clips): cada acto es un episodio aparte.
 4. Si un acto no cabe en una respuesta, escríbelo en dos partes y espera a que te diga «sigue». No resumas ni te saltes clips.
 
 ### Archivo 1: `capitulo.json`
@@ -166,6 +168,6 @@ Vas a escribir el guion de una película épica bíblica para **Estudio Viral**,
 - [ ] Cada clip tiene una sola frase y un solo hablante, de 6 a 18 palabras (las de batalla, de 4 a 10).
 - [ ] Todos los hablantes están en `colores` y en `personajes.json` con el mismo nombre (salvo el Narrador, que va en `narrador`).
 - [ ] Las `tarjetas` cuentan desde 0 y `participa_en_clips` cuenta desde 1.
-- [ ] El acto tiene como mucho 80 clips, y la suma de los actos ronda los 220.
+- [ ] La película entera tiene como mucho 330 clips (unos 220 para 30 minutos); si va por actos, cada archivo tiene como mucho 80.
 - [ ] Las fichas aprobadas están copiadas sin cambios.
 - [ ] La tabla final clasifica cada frase con su referencia.

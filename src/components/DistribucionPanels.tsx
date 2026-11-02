@@ -49,12 +49,12 @@ export function MontajeLargo({ outline, series, style, characters }: Base & { st
   </div>;
 }
 
-function UnirActos({ n }: { n: number }) {
+export function UnirActos({ n, nombre = "actos" }: { n: number; nombre?: string }) {
   const [files, setFiles] = useState<File[]>([]);
   const [estado, setEstado] = useState("");
   if (n < 2) return null;
   const unir = async () => {
-    setEstado("Uniendo los actos en tu PC…");
+    setEstado(`Uniendo ${nombre === "actos" ? "los actos" : `las ${nombre}`} en tu PC…`);
     try {
       const fd = new FormData(); for (const f of files) fd.append("partes", f, f.name);
       const r = await fetch(`${PC_URL}/unir`, { method: "POST", headers: { "X-Montaje-Local": "1" }, body: fd });
@@ -64,11 +64,11 @@ function UnirActos({ n }: { n: number }) {
     } catch (e: any) { setEstado(`No se pudieron unir: ${e?.message || e}. ¿Está abierto «Montar en mi PC» y actualizado (git pull)?`); }
   };
   return <div className="rounded-xl border border-white/10 p-3">
-    <p className="font-semibold text-slate-200">Unir los actos en la película completa</p>
-    <p className="mt-0.5 text-slate-400">Cuando tengas los {n} actos montados, súbelos aquí en orden (se unen sin perder calidad, en tu PC).</p>
+    <p className="font-semibold text-slate-200">Unir {nombre === "actos" ? "los actos" : `las ${nombre}`} en la película completa</p>
+    <p className="mt-0.5 text-slate-400">Cuando tengas {nombre === "actos" ? `los ${n} actos montados` : `las ${n} ${nombre} montadas`}, súbelos aquí en orden (se unen sin perder calidad, en tu PC).</p>
     <input type="file" accept="video/mp4" multiple onChange={e => setFiles(Array.from(e.target.files || []).sort((a, b) => a.name.localeCompare(b.name, "es", { numeric: true })))} className="mt-2 text-xs" />
     {!!files.length && <ol className="mt-1 list-decimal pl-5 text-slate-300">{files.map(f => <li key={f.name}>{f.name}</li>)}</ol>}
-    <button type="button" disabled={files.length < 2 || estado.startsWith("Uniendo")} onClick={unir} className="mt-2 rounded-lg bg-emerald-500 px-3 py-2 font-bold text-black disabled:opacity-50">Unir {files.length || ""} actos</button>
+    <button type="button" disabled={files.length < 2 || estado.startsWith("Uniendo")} onClick={unir} className="mt-2 rounded-lg bg-emerald-500 px-3 py-2 font-bold text-black disabled:opacity-50">Unir {files.length || ""} {nombre}</button>
     {estado && <p role="status" className="mt-1 text-slate-300">{estado}</p>}
   </div>;
 }

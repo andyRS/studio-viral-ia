@@ -311,13 +311,28 @@ TAREA: mejora SOLO la dirección visual de cada escena (no el guion):
 - "visualAction" es el fotograma fijo para la imagen (composición, posición, expresión); "videoAction" es la acción física y el movimiento para el vídeo: una sola acción principal y un solo movimiento de cámara por toma, posible en un clip corto de vídeo con IA.
 - Alas, armas, ejércitos y combates son dramatización artística, no hechos bíblicos literales: preséntalos como representación.
 Responde SOLO JSON: {"escenas":[{"n":1,"visibles":[],"visualAction":"","videoAction":"","shotType":"","camera":"","lighting":"","atmosphere":"","vfx":"","expression":"","conflict":"","continuity":"","sfx":"","music":""}]}`;
-    const user = JSON.stringify({
+    const userDe = (escenasBloque: any[]) => JSON.stringify({
       elenco: base.characters.map((c: any) => ({ name: c.name, rol: c.role, apariencia: c.visualES, vestuario: c.clothing, ...(c.bible?.canon ? { tipo: c.bible.canon.tipo, apariciones: c.bible.canon.apariciones, soloEnApariciones: c.bible.canon.soloEnApariciones, reglas: c.bible.canon.reglas } : {}) })),
-      escenas: base.episode.scenes.map((s: any) => ({ n: s.n, speaker: s.speaker, line: s.line, visibles: s.visibleCharacters, propuesta: Object.fromEntries(CAMPOS_IA.map(k => [k, s[k]]).filter(([, v]) => v)) })),
+      escenas: escenasBloque.map((s: any) => ({ n: s.n, speaker: s.speaker, line: s.line, visibles: s.visibleCharacters, propuesta: Object.fromEntries(CAMPOS_IA.map(k => [k, s[k]]).filter(([, v]) => v)) })),
     });
-    const parsed = await askJson(system, user);
-    const r: any = importarFiel({ ...datos, direccionIA: Array.isArray(parsed?.escenas) ? parsed.escenas : [] });
-    return { ...r, mode: "importado-ia", notice: `${r.notice} Dirección visual mejorada con IA (diálogos intactos).` };
+    // Película larga: la dirección se pide en bloques de 30 escenas (4 a la vez) para no pasar el límite de
+    // respuesta de la IA ni el tiempo del servidor. Un bloque que falla se queda con la dirección automática.
+    const escenas: any[] = base.episode.scenes;
+    const bloques: any[][] = [];
+    for (let k = 0; k < escenas.length; k += 30) bloques.push(escenas.slice(k, k + 30));
+    const direccion: any[] = [];
+    let fallidos = 0;
+    for (let k = 0; k < bloques.length; k += 4) {
+      const res = await Promise.allSettled(bloques.slice(k, k + 4).map(b => askJson(system, userDe(b))));
+      for (const r of res) {
+        if (r.status === "fulfilled" && Array.isArray(r.value?.escenas)) direccion.push(...r.value.escenas);
+        else fallidos++;
+      }
+    }
+    if (!direccion.length) throw new Error(fallidos ? "ningún bloque respondió" : "respuesta vacía");
+    const r: any = importarFiel({ ...datos, direccionIA: direccion });
+    const parcial = fallidos ? ` (${fallidos} de ${bloques.length} bloques con dirección automática)` : "";
+    return { ...r, mode: "importado-ia", notice: `${r.notice} Dirección visual mejorada con IA (diálogos intactos)${parcial}.` };
   } catch (error) {
     return { ...base, notice: `${base.notice} La IA no pudo mejorar la dirección visual (${error instanceof Error ? error.message : String(error)}): se usó la dirección automática.` };
   }

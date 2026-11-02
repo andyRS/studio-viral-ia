@@ -139,7 +139,7 @@ export default function StoryArchitect({ series, style, cast, characters = [], d
     <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} className="flex w-full items-center gap-3 p-4 text-left">
       <span className="grid h-9 w-9 place-items-center rounded-lg bg-teal-700/20 text-teal-200">🎬</span>
       <span className="min-w-0 flex-1"><b className="block">Mesa de dirección · actos y escenas</b>
-        <span className="text-xs text-slate-400">{saved && r ? `${saved.acts.length} actos · ${r.escenas} escenas · ${mmss(r.total)} de ${saved.targetMinutes} min · ${r.conGuion} con guion · ${r.aprobadas} aprobadas` : "Para Facebook y YouTube (15-25 min): estructura por actos, guion por escena, candados y versiones."}</span></span>
+        <span className="text-xs text-slate-400">{saved && r ? `${saved.acts.length} actos · ${r.escenas} escenas · ${mmss(r.total)} de ${saved.targetMinutes} min · ${r.conGuion} con guion · ${r.aprobadas} aprobadas` : "Para Facebook y YouTube (15-40 min): estructura por actos, guion por escena, candados y versiones."}</span></span>
       <span className="text-slate-400">{open ? "▲" : "▼"}</span>
     </button>
     {open && <div className="space-y-4 border-t border-white/10 p-4">
@@ -182,7 +182,7 @@ export default function StoryArchitect({ series, style, cast, characters = [], d
 
       {pestaña === "estructura" && !saved?.acts.length && <div className="grid gap-3 sm:grid-cols-3">
         <label className="text-xs text-slate-300">Estructura<select value={estructura} onChange={e => setEstructura(Number(e.target.value) as 3 | 5)} className="mt-1"><option value={3}>3 actos</option><option value={5}>5 actos</option></select></label>
-        <label className="text-xs text-slate-300">Duración del episodio<select value={minutos} onChange={e => setMinutos(Number(e.target.value))} className="mt-1">{[10, 15, 20, 25, 30].map(m => <option key={m} value={m}>{m} min</option>)}</select></label>
+        <label className="text-xs text-slate-300">Duración del episodio<select value={minutos} onChange={e => setMinutos(Number(e.target.value))} className="mt-1">{[10, 15, 20, 25, 30, 35, 40].map(m => <option key={m} value={m}>{m} min</option>)}</select></label>
         <label className="text-xs text-slate-300 sm:col-span-3">Notas para la IA (opcional)<textarea value={notas} onChange={e => setNotas(e.target.value)} rows={2} className="mt-1" placeholder="Ej.: fuente principal Daniel 10; anticipar el conflicto con el príncipe de Grecia…" /></label>
         <button type="button" disabled={!!busy} onClick={crear} className="rounded-xl bg-teal-700 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50 sm:col-span-3">Crear la estructura con IA</button>
       </div>}
