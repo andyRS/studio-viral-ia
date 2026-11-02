@@ -428,7 +428,8 @@ const ir = async (page, espacio, modulo) => {
       ok(ep2.versions.length === versionesAntes + 1 && ep2.output.scenes.every((x, i) => x.line === orig.clips[i][0][1]) && !!ep2.output.revisionDireccion, "Daniel: aprobar guarda una versión nueva con los mismos diálogos y la anterior en el historial");
       // Tiempos del montaje: escena 19 a 8 s, aprobar; el guion no cambia.
       await page.getByText("Tiempos del montaje · vídeo, voz, acción y montaje por escena").click(); await page.waitForTimeout(300);
-      ok(await page.getByLabel("Toma de la escena 19").count() === 1 && await page.getByText(/no cabe en la toma de 5 s/).count() >= 1, "Daniel: el panel de tiempos muestra la escena 19 truncada en 5 s");
+      // Tomas de 8 s por defecto: la frase larga de la escena 19 ya cabe (antes, en 5 s, se cortaba).
+      ok(await page.getByLabel("Toma de la escena 19").count() === 1 && await page.getByLabel("Toma de la escena 19").inputValue() === "8" && await page.getByText(/no cabe en la toma de 5 s/).count() === 0, "Daniel: el panel de tiempos muestra la escena 19 en 8 s, sin frase cortada");
       await page.getByLabel("Toma de la escena 19").selectOption("8");
       await page.getByRole("button", { name: /Aprobar y guardar tiempos/ }).click(); await page.waitForTimeout(1500);
       const ep3 = await page.evaluate(id => JSON.parse(localStorage.getItem("estudio-viral:episodes")).find(e => e.id === id), ep.id);

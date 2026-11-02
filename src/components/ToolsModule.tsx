@@ -127,10 +127,11 @@ function CalidadIA({ disabled, disponible }: { disabled: boolean; disponible: bo
   const [file, setFile] = useState<File | null>(null);
   const [alto, setAlto] = useState(1080);
   const [peso, setPeso] = useState(0.6);
+  const [caras, setCaras] = useState(true);
   const t = useTrabajo();
   return <section id="tool-ai-quality" className="tool-station studio-panel p-5">
-    <p className="studio-eyebrow">02 / CALIDAD CON IA</p><h3 className="text-lg font-semibold">Mejorar la calidad con IA (rostros nítidos)</h3>
-    <p className="mt-1 text-sm text-slate-400">GFPGAN reconstruye cada rostro (ojos, piel, dientes, pelo) fotograma a fotograma y el vídeo sube de resolución. Ideal para clips de IA de 480p o 720p y planos con caras borrosas. Para personajes de acción real; en la frutinovela animada 3D puede humanizar las caras.</p>
+    <p className="studio-eyebrow">02 / CALIDAD CON IA</p><h3 className="text-lg font-semibold">Mejorar la calidad con IA</h3>
+    <p className="mt-1 text-sm text-slate-400"><b>Real-ESRGAN</b> limpia la compresión y escala todo el plano (bordes, telas, piedra, cielo) y <b>GFPGAN</b> reconstruye cada rostro (ojos, piel, dientes, pelo). Ideal para clips de IA de 480p o 720p. En el montaje puedes hacerlo automáticamente a todos los clips («Calidad IA antes de montar»).</p>
     {!disponible && <p className="mt-2 text-xs text-amber-200">Tu montaje del PC aún no tiene esta herramienta: <code>git pull</code> y vuelve a abrir «Montar en mi PC» (instala la IA y descarga el modelo de ~340 MB una sola vez).</p>}
     <div className="mt-4"><FilePick file={file} onFile={setFile} disabled={t.busy} /></div>
     <div className="mt-3 grid gap-3 sm:grid-cols-2 text-sm">
@@ -140,9 +141,11 @@ function CalidadIA({ disabled, disponible }: { disabled: boolean; disponible: bo
       <label className="text-slate-300">Intensidad en los rostros: {Math.round(peso * 100)} %<input type="range" min={0.3} max={1} step={0.05} value={peso} onChange={e => setPeso(Number(e.target.value))} disabled={t.busy} className="mt-2 w-full" />
         <span className="mt-1 block text-xs text-slate-500">60 % conserva la cara de la ficha; más alto, más nítido pero puede cambiar rasgos.</span></label>
     </div>
-    <button type="button" disabled={disabled || !disponible || !file || t.busy} onClick={() => { const fd = new FormData(); fd.append("video", file!); t.run(`/mejorar_rostros?alto=${alto}&peso=${peso}`, fd, file!, "calidad-ia"); }}
+    <label className="mt-3 flex items-start gap-2 text-sm text-slate-300"><input type="checkbox" className="mt-1 w-auto" checked={caras} onChange={e => setCaras(e.target.checked)} disabled={t.busy} />
+      <span>Mejorar también los rostros (GFPGAN)<span className="block text-xs text-slate-500">Desmárcalo en la frutinovela animada 3D: puede humanizar las caras de fruta.</span></span></label>
+    <button type="button" disabled={disabled || !disponible || !file || t.busy} onClick={() => { const fd = new FormData(); fd.append("video", file!); t.run(`/mejorar_rostros?alto=${alto}&peso=${peso}&fondo=true&caras=${caras}`, fd, file!, "calidad-ia"); }}
       className="mt-4 w-full rounded-xl bg-[#F5BC69] px-4 py-2.5 text-sm font-bold text-[#090D16] disabled:opacity-50">{t.busy ? "Mejorando con IA…" : "✦ Mejorar con IA"}</button>
-    <p className="mt-2 text-xs text-slate-500">Tarda: con la RTX 4060, unos segundos por cada segundo de vídeo con caras. No gasta créditos.</p>
+    <p className="mt-2 text-xs text-slate-500">Se hace en tu PC con la tarjeta gráfica y no gasta créditos. Tarda más que comprimir: deja la ventana abierta.</p>
     <Estado t={t} />
   </section>;
 }
