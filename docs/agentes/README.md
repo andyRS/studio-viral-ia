@@ -14,6 +14,10 @@ Modelo: **`opencode/deepseek-v4.1-flash-free`**, el **DeepSeek V4.1 Flash gratis
 
 ## Instalación en Windows (una vez)
 
+**La forma fácil:** pega `docs/agentes/COWORK.md` en Claude Cowork y lo deja todo configurado. También puedes ejecutar tú mismo `powershell -ExecutionPolicy Bypass -File scripts\agentes\instalar-agentes.ps1`, que instala, comprueba y crea los accesos directos **Agente guionista**, **Agente buscador** y **Bajar material** en el escritorio.
+
+Paso a paso, a mano:
+
 1. **OpenCode:** `npm install -g opencode-ai` (necesitas Node 18 o superior; ya lo tienes por la app).
 2. **Modelo:** no hace falta clave, porque se usa el DeepSeek V4.1 Flash gratis de OpenCode. Solo si cambias al de pago: `setx DEEPSEEK_API_KEY "sk-..."` (se crea en https://platform.deepseek.com).
 3. **Claves gratis del buscador (opcionales pero recomendadas):**
