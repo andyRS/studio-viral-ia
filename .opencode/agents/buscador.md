@@ -1,7 +1,7 @@
 ---
 description: Buscador de material de Estudio Viral. Encuentra y descarga vídeos, fotos y fondos con licencia libre (Pexels, Pixabay, Wikimedia Commons) en Descargas/EstudioViral/<proyecto>, con manifiesto de licencias para que Claude lo revise.
 mode: primary
-model: deepseek/deepseek-flash
+model: opencode/deepseek-v4.1-flash-free
 temperature: 0.3
 permission:
   read: allow

@@ -8,16 +8,14 @@ Dos agentes que **ejecutan** y Claude, que **revisa**:
 | **buscador** | Vídeos, fotos y fondos con licencia libre (Pexels, Pixabay, Wikimedia Commons) para editar | Los archivos en `Descargas\EstudioViral\<proyecto>\`; el manifiesto de licencias y la hoja de contacto en `trabajo/material/<proyecto>/` | Solo `scripts/material/descargar.mjs` y `git add` / `git commit` |
 | **Claude** (el cerebro) | Revisa cada entrega: guion, fidelidad bíblica, personajes, licencias y calidad del material. Aprueba o pide cambios | `revision.md` en la carpeta de cada entrega | Todo (en su sesión) |
 
-Modelo: **`deepseek/deepseek-flash`**, que en OpenCode es **DeepSeek V4.1 Flash** (17/10/2026). Si quieres más calidad en los guiones a cambio de más coste, cambia el `model:` de `.opencode/agents/guionista.md` a `deepseek/deepseek-v4-pro`.
+Modelo: **`opencode/deepseek-v4.1-flash-free`**, el **DeepSeek V4.1 Flash gratis** que ofrece OpenCode («Modelos gratuitos proporcionados por OpenCode»). No necesita clave de DeepSeek ni cuesta dinero.
+- Si algún día el gratuito va lento o tiene límite, cambia el `model:` de `.opencode/agents/guionista.md` y `buscador.md` por `deepseek/deepseek-flash`, que es el mismo modelo pagando directamente a DeepSeek con tu `DEEPSEEK_API_KEY`.
+- Para guiones de más calidad, `deepseek/deepseek-v4-pro`, también de pago.
 
 ## Instalación en Windows (una vez)
 
 1. **OpenCode:** `npm install -g opencode-ai` (necesitas Node 18 o superior; ya lo tienes por la app).
-2. **Clave de DeepSeek:** créala en https://platform.deepseek.com, en *API keys*. Después, en PowerShell:
-   ```powershell
-   setx DEEPSEEK_API_KEY "sk-..."
-   ```
-   Cierra y vuelve a abrir la terminal.
+2. **Modelo:** no hace falta clave, porque se usa el DeepSeek V4.1 Flash gratis de OpenCode. Solo si cambias al de pago: `setx DEEPSEEK_API_KEY "sk-..."` (se crea en https://platform.deepseek.com).
 3. **Claves gratis del buscador (opcionales pero recomendadas):**
    ```powershell
    setx PEXELS_API_KEY "..."     # https://www.pexels.com/api/
@@ -29,7 +27,7 @@ Modelo: **`deepseek/deepseek-flash`**, que en OpenCode es **DeepSeek V4.1 Flash*
    cd "C:\tmp\Estudio Viral IA"
    git pull
    opencode agent list      # deben salir guionista y buscador
-   opencode models deepseek # debe salir deepseek/deepseek-flash
+   opencode models opencode # debe salir opencode/deepseek-v4.1-flash-free
    ```
 
 ## Uso diario
@@ -59,4 +57,4 @@ opencode run --agent buscador "Para trabajo/guiones/daniel-21-dias: planos de lu
 - Solo escriben en su carpeta. No tocan el código de la app.
 - El buscador solo descarga de Pexels, Pixabay y Wikimedia Commons (en Wikimedia, solo dominio público, CC0, CC BY y CC BY-SA). **Nada de YouTube, TikTok, Instagram, Facebook ni películas**; no usa yt-dlp ni se salta protecciones.
 - Los vídeos descargados no se suben al repositorio (solo el manifiesto y la hoja de contacto).
-- No gastan créditos de generación de vídeo o imagen: solo los tokens de DeepSeek de cada conversación.
+- No gastan créditos de generación de vídeo o imagen, y con el modelo gratuito tampoco tokens de pago.

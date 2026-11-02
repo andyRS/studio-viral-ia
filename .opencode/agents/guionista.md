@@ -1,7 +1,7 @@
 ---
 description: Guionista de Estudio Viral. Escribe guiones, capítulos y fichas de personajes en el JSON que importa la app (capitulo.json + personajes.json), los valida y los deja listos para que Claude los revise.
 mode: primary
-model: deepseek/deepseek-flash
+model: opencode/deepseek-v4.1-flash-free
 temperature: 0.8
 permission:
   read: allow
