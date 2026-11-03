@@ -55,6 +55,8 @@ Variables de entorno: FONT_DIR (carpeta con Poppins-Bold.ttf), WHISPER_MODEL (sm
 """
 import sys, os, json, math, re, shutil, subprocess, tempfile, unicodedata, difflib, wave
 import numpy as np
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from comando_ffmpeg import filtros_en_archivos
 
 FONTDIR = os.environ.get("FONT_DIR") or (os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts") if os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts", "Poppins-Bold.ttf")) else "/usr/share/fonts/truetype/google-fonts")
 FONT = os.path.join(FONTDIR, "Poppins-Bold.ttf")
@@ -228,7 +230,8 @@ def nucleo_alfa(path, w, h):
 
 
 def run(cmd):
-    subprocess.run(cmd, check=True)
+    with filtros_en_archivos(cmd) as corto:
+        subprocess.run(corto, check=True)
 
 
 def progreso(pct, msg):
@@ -1218,16 +1221,16 @@ def codificar(vcodec):
     cmd_out = []
     for vl, al, ruta in salidas:
         cmd_out += ["-map", vl, "-map", al, *vcodec, "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", ruta]
-    enc = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-nostats", "-progress", "pipe:1", *inputs, "-filter_complex", fc, *cmd_out],
-                           stdout=subprocess.PIPE, text=True)
-    last_pct = -1
-    for row in enc.stdout:
-        if row.startswith("out_time_us=") and row[12:].strip().isdigit():
-            done = int(row[12:]) / 1e6
-            pct = 70 + 29 * min(1, done / max(total, 1))
-            if int(pct) != last_pct:
-                last_pct = int(pct); progreso(pct, f"Codificando el vídeo final: {mmss(done)} de {mmss(total)}")
-    return enc.wait()
+    with filtros_en_archivos(["ffmpeg", "-v", "error", "-y", "-nostats", "-progress", "pipe:1", *inputs, "-filter_complex", fc, *cmd_out]) as corto:
+        with subprocess.Popen(corto, stdout=subprocess.PIPE, text=True) as enc:
+            last_pct = -1
+            for row in enc.stdout:
+                if row.startswith("out_time_us=") and row[12:].strip().isdigit():
+                    done = int(row[12:]) / 1e6
+                    pct = 70 + 29 * min(1, done / max(total, 1))
+                    if int(pct) != last_pct:
+                        last_pct = int(pct); progreso(pct, f"Codificando el vídeo final: {mmss(done)} de {mmss(total)}")
+            return enc.wait()
 
 
 if codificar(VCODEC) != 0:
