@@ -3,9 +3,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import LogoPicker, { FRUTI, defaultLogo, logoFile, logoName, rememberLogo } from "./LogoPicker";
 import { postApi, isAuthError } from "@/lib/api-client";
 import CopyButton from "./CopyButton";
+import MontajesActivos from "./MontajesActivos";
 import { episodeTrackPrompt, seriesThemePrompt, type MusicContext } from "@/lib/music";
 import { useData } from "@/lib/DataContext";
-import { guardarMontaje, leerMontajes } from "@/lib/montajesGuardados";
+import { correspondeMontaje, guardarMontaje, leerMontajes } from "@/lib/montajesGuardados";
 
 // Marcas de agua conocidas: el servidor reescala a 720x1280 (Dola) o 704x1280 (Pavo) y las borra (ver montaje/README.md).
 type Watermark = "none" | "dola" | "pavo" | "custom";
@@ -143,7 +144,7 @@ async function setSong(serie: string, file: File | null) {
   try { const st = db.transaction("canciones", "readwrite").objectStore("canciones"); if (file) st.put(file, serie); else st.delete(serie); } catch {}
 }
 
-export default function MontajePanel({ guion, title, filesOverride, recursos = [], style = "frutinovela", part = 1, musicCues = [], seconds = 0, onDownloaded, publish = [], music: musicCtx = {}, cover: coverData, recap = "" }: { recursos?: { file: File; clip: number; tipo: string }[]; recap?: string; music?: Partial<MusicContext>; cover?: { serie?: string; frase?: string[]; parte?: number }; guion: any; title: string; filesOverride?: File[]; style?: string; part?: number; musicCues?: string[]; seconds?: number; onDownloaded?: () => void; publish?: { platform: string; text: string; hashtags: string; extra?: string }[] }) {
+export default function MontajePanel({ guion, title, filesOverride, recursos = [], style = "frutinovela", part = 1, musicCues = [], seconds = 0, onDownloaded, publish = [], music: musicCtx = {}, cover: coverData, recap = "", recoveryKey, recoveryEpisodeId }: { recoveryKey?:string; recoveryEpisodeId?:string; recursos?: { file: File; clip: number; tipo: string }[]; recap?: string; music?: Partial<MusicContext>; cover?: { serie?: string; frase?: string[]; parte?: number }; guion: any; title: string; filesOverride?: File[]; style?: string; part?: number; musicCues?: string[]; seconds?: number; onDownloaded?: () => void; publish?: { platform: string; text: string; hashtags: string; extra?: string }[] }) {
   const { userId } = useData();
   const montado = useRef(true);
   const [avisoSeguimiento, setAvisoSeguimiento] = useState("");
@@ -267,8 +268,8 @@ export default function MontajePanel({ guion, title, filesOverride, recursos = [
   }
 
   async function montar() {
-    const pendiente=leerMontajes(userId || "local").find(x=>x.titulo===(title || "Montaje de episodio") && x.estado!=="listo" && x.estado!=="error");
-    if(pendiente){setError("Este episodio ya tiene un montaje guardado. Consulta «Montajes y progreso» para reconectarte. Si el servidor perdió el trabajo, retíralo de ese panel antes de iniciar otro.");return;}
+    const pendiente=leerMontajes(userId || "local").find(x=>correspondeMontaje(x,title || "Montaje de episodio",recoveryKey) && x.estado!=="listo" && x.estado!=="error");
+    if(pendiente){setError("Este episodio ya tiene un montaje guardado. Consulta «Progreso y resultado» debajo de este botón para reconectarte. Si el servidor perdió el trabajo, retíralo de ese panel antes de iniciar otro.");return;}
     if (!files.length) { setError("Elige los clips primero."); return; }
     const custom = `x=${rect.x}:y=${rect.y}:w=${rect.w}:h=${rect.h}`;
     if (watermark === "custom" && (!/^x=\d{1,4}:y=\d{1,4}:w=\d{1,4}:h=\d{1,4}$/.test(custom) || Number(rect.w) < 1 || Number(rect.h) < 1)) { setError("Indica x, y, ancho y alto positivos en píxeles para el área de la marca."); return; }
@@ -316,7 +317,7 @@ export default function MontajePanel({ guion, title, filesOverride, recursos = [
       setNames(dual ? [await logoName(logo), await logoName(logo2)] : ["", ""]);
       // 1) Subida: el servidor responde al instante con el número de trabajo.
       const { id } = await upload(`${base}/trabajos`, headers, fd, setUploadPct);
-      try { guardarMontaje(userId || "local", { id, base, titulo:title || "Montaje de episodio", inicio:t0 }); }
+      try { guardarMontaje(userId || "local", { id, base, titulo:title || "Montaje de episodio", inicio:t0, ubicacion:recoveryKey || title || "Montaje de episodio", episodioId:recoveryEpisodeId }); }
       catch { setAvisoSeguimiento(`No se pudo recordar este trabajo en el navegador. Guarda su identificador: ${id}.`); }
       // 2) Progreso en vivo: cada respuesta llega en cuanto hay un paso nuevo (o a los 20 s).
       let seq = -1, fails = 0, state: any = null;
@@ -460,11 +461,12 @@ export default function MontajePanel({ guion, title, filesOverride, recursos = [
       {music && <audio src={musicUrl} controls className="h-8 w-full max-w-sm" />}
     </div>
     <button type="button" disabled={busy || !files.length} onClick={montar} className="rounded bg-amber-500 px-5 py-2.5 font-bold disabled:opacity-50">{busy ? "Montando…" : "Montar vídeo final"}</button>
+    {!busy && !video && <MontajesActivos titulo={title || "Montaje de episodio"} ubicacion={recoveryKey} episodioId={recoveryEpisodeId} onDownloaded={onDownloaded} />}
     {busy && <div className="space-y-3">
       <div>
         <div className="flex justify-between text-xs text-slate-300"><span>{live ? live.paso : uploadPct < 100 ? `Subiendo clips al servidor… ${uploadPct}%` : "Clips subidos, arrancando el servidor…"}</span><b>{pct}%</b></div>
         <div className="mt-1 h-2 overflow-hidden rounded bg-white/10"><div className="h-full bg-amber-400 transition-all" style={{ width: `${pct}%` }} /></div>
-        <p className="mt-1 text-xs text-slate-500">{Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")} · progreso real del servidor. Puedes retomarlo en «Montajes y progreso» después de subir los clips.</p>
+        <p className="mt-1 text-xs text-slate-500">{Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")} · progreso real del servidor. Al volver, encontrarás el seguimiento debajo de este botón, en «Progreso y resultado».</p>
       </div>
       {/* Montaje en vivo: el clip que está procesando el servidor, con su subtítulo, y el registro de pasos. */}
       <div className="flex flex-wrap gap-3">

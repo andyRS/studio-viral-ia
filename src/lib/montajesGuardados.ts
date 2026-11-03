@@ -1,4 +1,7 @@
-export type MontajeGuardado = { id: string; base: string; titulo: string; inicio: number; estado?: string };
+export type MontajeGuardado = { id: string; base: string; titulo: string; inicio: number; estado?: string; ubicacion?: string; episodioId?: string };
+export function correspondeMontaje(trabajo:MontajeGuardado,titulo:string,ubicacion?:string) {
+  return trabajo.ubicacion ? trabajo.ubicacion===(ubicacion || titulo) : trabajo.titulo===titulo;
+}
 const prefijo = "estudio-viral:montajes:v1:";
 export const CAMBIO_MONTAJES = "estudio-viral:montajes";
 export const PC_MONTAJE = "http://127.0.0.1:8765";

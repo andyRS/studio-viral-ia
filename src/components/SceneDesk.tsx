@@ -5,6 +5,7 @@ import PromptWorkbench from "./PromptWorkbench";
 import ReferencePreview from "./ReferencePreview";
 import CopyButton from "./CopyButton";
 import MontajePanel from "./MontajePanel";
+import MontajesActivos from "./MontajesActivos";
 import { UnirActos } from "./DistribucionPanels";
 import { guionDeParte, MAX_CLIPS_PARTE, partesDeMontaje } from "@/lib/partes";
 import type { Scene } from "@/lib/types";
@@ -278,9 +279,10 @@ export default function SceneDesk({ episodeId, scenes, guion, title, referencesR
           <div className="flex flex-wrap gap-2" role="group" aria-label="Parte de la película">{partes.map(p => <button type="button" key={p.k} aria-pressed={p.k === parte.k} onClick={() => setParteSel(p.k)}
             className={`rounded-lg border px-3 py-1.5 ${p.k === parte.k ? "border-amber-300 bg-amber-400/15 text-amber-100" : "border-white/15 text-slate-300"}`}>Parte {p.k + 1} · escenas {p.desde + 1}–{p.hasta}</button>)}</div>
         </div>}
-        <MontajePanel key={`parte-${parte.k}`} guion={guionParte} title={partes.length > 1 ? `${title} · Parte ${parte.k + 1}` : title} filesOverride={ordered.slice(parte.desde, parte.hasta)} recursos={recursosParte} style={style} part={part} musicCues={scenes.slice(parte.desde, parte.hasta).map(s => s.music || "")} seconds={Math.round((parte.hasta - parte.desde) * 4.5) + 3} music={music} cover={parte.k === 0 ? cover : undefined} recap={parte.k === 0 ? recap : ""} onDownloaded={onDownloaded} publish={publish} />
+        <MontajePanel key={`parte-${parte.k}`} recoveryKey={`${episodeId}:parte:${parte.k}`} recoveryEpisodeId={episodeId} guion={guionParte} title={partes.length > 1 ? `${title} · Parte ${parte.k + 1}` : title} filesOverride={ordered.slice(parte.desde, parte.hasta)} recursos={recursosParte} style={style} part={part} musicCues={scenes.slice(parte.desde, parte.hasta).map(s => s.music || "")} seconds={Math.round((parte.hasta - parte.desde) * 4.5) + 3} music={music} cover={parte.k === 0 ? cover : undefined} recap={parte.k === 0 ? recap : ""} onDownloaded={onDownloaded} publish={publish} />
         {partes.length > 1 && <div className="mt-3"><UnirActos n={partes.length} nombre="partes" /></div>}
       </div> : <p className="mt-3 text-sm text-amber-200">Pendiente: {referencesReady ? "" : "fichas maestras; "}{scenes.length - approved} escenas por aprobar; {scenes.length - ordered.length} clips por subir.</p>}
+      {!ready && <MontajesActivos titulo={partes.length>1 ? `${title} · Parte ${parte.k+1}` : title} ubicacion={`${episodeId}:parte:${parte.k}`} episodioId={episodeId} onDownloaded={onDownloaded} />}
     </section>
   </div>;
 }

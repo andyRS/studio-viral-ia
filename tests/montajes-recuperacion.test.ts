@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { guardarMontaje, leerMontajes, montajeValido, PC_MONTAJE, seguirMontaje } from "../src/lib/montajesGuardados";
+import { correspondeMontaje, guardarMontaje, leerMontajes, montajeValido, PC_MONTAJE, seguirMontaje } from "../src/lib/montajesGuardados";
 
 async function main(){
   const datos=new Map<string,string>();
@@ -17,6 +17,17 @@ async function main(){
   assert.throws(()=>guardarMontaje("a",trabajo,{getItem:()=>null,setItem:()=>{throw new Error("cuota llena");}}),/cuota llena/);
   for(const base of ["javascript:alert(1)","http://evil.test","https://user:pass@example.com","https://example.com/ruta"]){assert.equal(montajeValido({...trabajo,base}),false);}
   assert.equal(montajeValido({...trabajo,id:"../otro"}),false);
+  assert.equal(correspondeMontaje(trabajo,trabajo.titulo,"episodio-a:parte:0"),true);
+  const ubicado={...trabajo,ubicacion:"episodio-a:parte:0",episodioId:"episodio-a"};
+  assert.equal(correspondeMontaje(ubicado,"Título renombrado","episodio-a:parte:0"),true);
+  assert.equal(correspondeMontaje(ubicado,trabajo.titulo,"episodio-a:parte:1"),false);
+  assert.equal(correspondeMontaje(ubicado,trabajo.titulo,"episodio-b:parte:0"),false);
+  assert.equal(correspondeMontaje({...trabajo,titulo:"Montaje recuperado del PC"},"Otra película","episodio-b"),false);
+  guardarMontaje("usuario-a",ubicado,storage);
+  assert.equal(leerMontajes("usuario-a",storage)[0].id,trabajo.id);
+  assert.equal(leerMontajes("usuario-a",storage)[0].episodioId,"episodio-a");
+  assert.equal(leerMontajes("usuario-a",storage).length,1);
+  console.log("ok · vincular conserva el mismo ID y separa episodios, partes y actos; no asigna trabajos anónimos por suposición");
   console.log("ok · recuperación conserva ID, separa cuentas, no duplica y avisa de almacenamiento lleno");
   const llamadas:string[]=[];const vistos:number[]=[];
   const respuesta=(estado:string,pct:number,seq:number)=>new Response(JSON.stringify({estado,pct,seq,paso:estado,log:[]}));

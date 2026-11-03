@@ -43,7 +43,7 @@ export function MontajeLargo({ outline, series, style, characters }: Base & { st
     <button type="button" onClick={() => setVerOrden(!verOrden)} className="text-sky-300 underline">{verOrden ? "Ocultar" : "Ver"} el orden de los clips para subirlos</button>
     {verOrden && <ol className="max-h-64 list-decimal space-y-0.5 overflow-auto rounded-lg border border-white/10 p-2 pl-8 text-slate-300">{lista.map(({ toma, escena }, i) =>
       <li key={toma.id}><span className="text-slate-500">{escena.heading} ·</span> {toma.dialogo ? `${toma.dialogo.speaker}: «${toma.dialogo.text.slice(0, 60)}»` : toma.accion.slice(0, 70)} <span className="text-slate-500">({duracionClip(toma.duracion, p)} s · {toma.estado})</span></li>)}</ol>}
-    {lista.length > 0 && lista.length <= 80 && <MontajePanel key={`acto-${acto}`} guion={guion} title={`${series.title} · Acto ${acto + 1}`} style={style} part={acto + 1}
+    {lista.length > 0 && lista.length <= 80 && <MontajePanel key={`acto-${acto}`} recoveryKey={`proyecto:${series.id}:acto:${outline.acts[acto].id}`} guion={guion} title={`${series.title} · Acto ${acto + 1}`} style={style} part={acto + 1}
       cover={acto === 0 ? { serie: series.title, frase: [titulo] } : undefined} />}
     <UnirActos n={outline.acts.length} />
   </div>;
