@@ -7,6 +7,7 @@ import MontajesActivos from "./MontajesActivos";
 import { episodeTrackPrompt, seriesThemePrompt, type MusicContext } from "@/lib/music";
 import { useData } from "@/lib/DataContext";
 import { correspondeMontaje, guardarMontaje, leerMontajes } from "@/lib/montajesGuardados";
+import { ACABADO_KEY, ACABADO_ORIGINAL, leerAcabadoMontaje } from "@/lib/acabadoMontaje";
 
 // Marcas de agua conocidas: el servidor reescala a 720x1280 (Dola) o 704x1280 (Pavo) y las borra (ver montaje/README.md).
 type Watermark = "none" | "dola" | "pavo" | "custom";
@@ -179,9 +180,9 @@ export default function MontajePanel({ guion, title, filesOverride, recursos = [
   // Ritmo: los clips de IA hablan lento; 1.1 acelera voz y vídeo juntos un 10 % (mismo tono).
   const [velocidad, setVelocidad] = useState("1.1");
   // Acabado profesional (como un editor de Premiere/After Effects): cada parte se puede apagar.
-  const [pro, setPro] = useState({ sonido: true, sfx: true, color: true, camara: true });
-  useEffect(() => { try { const v = localStorage.getItem("estudio-viral:pro"); if (v) setPro(p => ({ ...p, ...JSON.parse(v) })); } catch {} }, []);
-  const togglePro = (k: keyof typeof pro) => setPro(p => { const n = { ...p, [k]: !p[k] }; try { localStorage.setItem("estudio-viral:pro", JSON.stringify(n)); } catch {} return n; });
+  const [pro, setPro] = useState({...ACABADO_ORIGINAL});
+  useEffect(() => { setPro(leerAcabadoMontaje()); }, []);
+  const togglePro = (k: keyof typeof pro) => setPro(p => { const n = { ...p, [k]: !p[k] }; try { localStorage.setItem(ACABADO_KEY, JSON.stringify(n)); } catch {} return n; });
   // Kit de marca: acento dorado y títulos en Lora en las cuentas cristianas y en el cine de los 90; amarillo y Poppins en frutinovelas.
   const kit = style === "frutinovela" ? { acento: "FFD23F", titulos: "poppins" } : { acento: "F2C14E", titulos: "lora" };
   // Logo que tapa la marca de agua: el de la página donde se publica (se recuerda por serie).
@@ -425,7 +426,7 @@ export default function MontajePanel({ guion, title, filesOverride, recursos = [
         {([
           ["sonido", "Sonido profesional", "voz igualada clip a clip, voz limpia, cortes J/L y volumen de redes (-14 LUFS)"],
           ["sfx", "Efectos de sonido", "whoosh en los saltos de tiempo, golpe en el gancho y en la revelación, riser antes del giro y silencio de tráiler"],
-          ["color", "Color de cine", "igualar el color entre clips y el look del estilo (viñeta y grano)"],
+          ["color", "Igualar color entre clips (opcional)", "ajusta tonos y luminosidad entre tomas; sin viñeta, grano ni look oscuro. Desactivado conserva el color original"],
           ["camara", "Cámara y textos animados", "punch-in en la palabra fuerte, temblor en la revelación, movimiento lento en el Narrador, textos con entrada suave"],
         ] as [keyof typeof pro, string, string][]).map(([k, label, desc]) => <label key={k} className="flex items-start gap-2 text-xs text-slate-300"><input type="checkbox" className="mt-0.5 w-auto" checked={pro[k]} onChange={() => togglePro(k)} disabled={busy} /><span><b>{label}</b> · <span className="text-slate-400">{desc}</span></span></label>)}
       </fieldset>

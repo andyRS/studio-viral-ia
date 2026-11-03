@@ -279,10 +279,10 @@ except (TypeError, ValueError):
     VEL = 1.0
 # Acabado profesional (como un editor de Premiere/After Effects), cada parte con su interruptor:
 # sonido (volumen igual por clip, voz limpia, cortes J y -14 LUFS), efectos de sonido, color (igualar clips y
-# look del estilo) y cámara (punch-in, temblor en el golpe y movimiento lento en el Narrador).
+# sin look oscuro) y cámara (punch-in, temblor en el golpe y movimiento lento en el Narrador).
 PRO = G.get("pro") if isinstance(G.get("pro"), dict) else {}
 PRO_SONIDO, PRO_SFX = PRO.get("sonido", True) is not False, PRO.get("sfx", True) is not False
-PRO_COLOR, PRO_CAMARA = PRO.get("color", True) is not False, PRO.get("camara", True) is not False
+PRO_COLOR, PRO_CAMARA = PRO.get("color", False) is True, PRO.get("camara", True) is not False
 ESTILO = str(G.get("estilo") or "")
 # Kit de marca de la cuenta: color de acento y fuente de títulos (gancho, tarjetas, versículo).
 KIT = G.get("kit") if isinstance(G.get("kit"), dict) else {}
@@ -802,14 +802,9 @@ if PRO_CAMARA:
             T = to_clip(ws[len(ws) // 2]["s"])
         if T is not None and v0 + 0.6 <= T <= v1 - 0.5:
             PUNCH[ci] = T
-LOOKS = {   # look de cada estilo (como una LUT en Premiere), sobre la imagen sin textos
-    "epica": "eq=contrast=1.08:saturation=1.06:gamma=0.98,colorbalance=rs=0.03:bs=-0.04:rm=0.02:bm=-0.02:rh=0.03:bh=-0.03,vignette=PI/4.5,noise=alls=5:allf=t",
-    "biblica": "eq=contrast=1.04:saturation=1.02,vignette=PI/5,noise=alls=3:allf=t",
-    "cine90": "curves=all='0/0.04 0.5/0.52 1/0.96',eq=saturation=0.95,colorbalance=rs=0.04:bs=-0.03,vignette=PI/4.5,noise=alls=7:allf=t",
-    "cristiana": "eq=contrast=1.04:saturation=1.07,vignette=PI/5",
-    "frutinovela": "eq=contrast=1.04:saturation=1.08,vignette=PI/5",
-}
-LOOK = LOOKS.get(ESTILO, "") if PRO_COLOR else ""
+# No imponer una LUT/viñeta/grano al metraje: conserva la iluminación de los clips.
+# Si el usuario elige igualar color, solo se aplica GAIN_RGB (sin look adicional).
+LOOK = ""
 if PRO_SONIDO or PRO_CAMARA:
     progreso(66, f"Acabado: {sum(1 for x in LIN if x > 0)} cortes J y {sum(1 for x in LIN if x < 0)} cortes L, {sum(1 for x in PUNCH if x is not None)} punch-in"
              + (f", temblor en el clip {FUERTE + 1}" if PRO_CAMARA and FUERTE is not None else "")

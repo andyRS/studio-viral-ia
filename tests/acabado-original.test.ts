@@ -1,0 +1,12 @@
+import assert from "node:assert/strict";
+import {ACABADO_KEY,ACABADO_ORIGINAL,leerAcabadoMontaje} from "../src/lib/acabadoMontaje";
+const lectura=(datos:Record<string,string>)=>({getItem:(k:string)=>datos[k] || null});
+assert.equal(ACABADO_ORIGINAL.color,false);
+assert.deepEqual(leerAcabadoMontaje(lectura({})),ACABADO_ORIGINAL);
+const antiguo={sonido:false,sfx:false,color:true,camara:false};
+assert.deepEqual(leerAcabadoMontaje(lectura({"estudio-viral:pro":JSON.stringify(antiguo)})),{...antiguo,color:false});
+assert.deepEqual(leerAcabadoMontaje(lectura({[ACABADO_KEY]:JSON.stringify(antiguo)})),antiguo);
+assert.equal(leerAcabadoMontaje(lectura({[ACABADO_KEY]:'{"color":"true"}'})).color,false);
+assert.deepEqual(leerAcabadoMontaje(lectura({[ACABADO_KEY]:'{roto'})),ACABADO_ORIGINAL);
+assert.deepEqual(leerAcabadoMontaje({getItem:()=>{throw new Error("sin almacenamiento");}}),ACABADO_ORIGINAL);
+console.log("ok · color original por defecto; preferencias antiguas no reactivan el efecto; se conserva la elección nueva y los demás ajustes");
