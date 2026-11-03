@@ -20,6 +20,9 @@ Uso:
 - Imprime «PROGRESO <0-100> <mensaje>» como el montaje.
 """
 import json, os, subprocess, sys, urllib.request
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from salida_utf8 import configurar_salida
+configurar_salida()
 import numpy as np
 
 CACHE = os.path.join(os.path.expanduser("~"), ".cache", "estudio-viral")

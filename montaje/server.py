@@ -147,8 +147,8 @@ def _calidad_clips(job, gpath, paths):
             os.utime(dest, None)                                                # se usó: no caduca
         else:
             tmp = dest + ".tmp.mp4"
-            proc = subprocess.Popen([sys.executable, "-I", "-u", os.path.join(HERE, "mejorar_rostros.py"), p, tmp, json.dumps(op)],
-                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            proc = subprocess.Popen([sys.executable, "-X", "utf8", "-I", "-u", os.path.join(HERE, "mejorar_rostros.py"), p, tmp, json.dumps(op)],
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace")
             errores = []
             lector = threading.Thread(target=lambda: errores.extend(proc.stderr.readlines()), daemon=True); lector.start()
             for linea in proc.stdout:
@@ -172,8 +172,8 @@ def _ejecutar(job, gpath, out, paths, work):
         _avisar(job, estado="montando", paso="Empezando", pct=1)
         try:
             paths = _calidad_clips(job, gpath, paths)
-            proc = subprocess.Popen([sys.executable, "-I", "-u", os.path.join(HERE, "subtitular.py"), gpath, out, *paths],
-                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            proc = subprocess.Popen([sys.executable, "-X", "utf8", "-I", "-u", os.path.join(HERE, "subtitular.py"), gpath, out, *paths],
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace")
             # stderr se lee aparte para que no se llene el búfer y bloquee el proceso.
             errores = []
             lector = threading.Thread(target=lambda: errores.extend(proc.stderr.readlines()), daemon=True); lector.start()
@@ -391,7 +391,7 @@ async def montar(guion: UploadFile = File(...), clips: List[UploadFile] = File(.
             paths.append(p)
         await _guardar_musica(musica, gpath, work, anterior)
         out = os.path.join(work, f"montaje_{uuid.uuid4().hex[:8]}.mp4")
-        r = await asyncio.to_thread(subprocess.run, [sys.executable, "-I", os.path.join(HERE, "subtitular.py"), gpath, out, *paths], capture_output=True, text=True, timeout=1800)
+        r = await asyncio.to_thread(subprocess.run, [sys.executable, "-X", "utf8", "-I", os.path.join(HERE, "subtitular.py"), gpath, out, *paths], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=1800)
         if r.returncode != 0 or not os.path.exists(out):
             raise HTTPException(500, "Falló el montaje: " + (r.stderr[-1500:] or r.stdout[-500:]))
     except subprocess.TimeoutExpired:
@@ -530,8 +530,8 @@ def _ejecutar_rostros(job, src, out, opciones, work):
     with CUPO:
         _avisar(job, estado="montando", paso="Preparando la IA", pct=1)
         try:
-            proc = subprocess.Popen([sys.executable, "-I", "-u", os.path.join(HERE, "mejorar_rostros.py"), src, out, json.dumps(opciones)],
-                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            proc = subprocess.Popen([sys.executable, "-X", "utf8", "-I", "-u", os.path.join(HERE, "mejorar_rostros.py"), src, out, json.dumps(opciones)],
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace")
             errores = []
             lector = threading.Thread(target=lambda: errores.extend(proc.stderr.readlines()), daemon=True); lector.start()
             for linea in proc.stdout:
@@ -683,8 +683,8 @@ def _ejecutar_borrar_ia(job, src, out, zonas, work):
     with CUPO:
         _avisar(job, estado="montando", paso="Preparando la IA", pct=1)
         try:
-            proc = subprocess.Popen([sys.executable, "-I", "-u", os.path.join(HERE, "borrar_ia.py"), src, out, json.dumps(zonas)],
-                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            proc = subprocess.Popen([sys.executable, "-X", "utf8", "-I", "-u", os.path.join(HERE, "borrar_ia.py"), src, out, json.dumps(zonas)],
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace")
             errores = []
             lector = threading.Thread(target=lambda: errores.extend(proc.stderr.readlines()), daemon=True); lector.start()
             for linea in proc.stdout:

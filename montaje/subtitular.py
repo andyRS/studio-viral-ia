@@ -56,6 +56,8 @@ Variables de entorno: FONT_DIR (carpeta con Poppins-Bold.ttf), WHISPER_MODEL (sm
 import sys, os, json, math, re, shutil, subprocess, tempfile, unicodedata, difflib, wave
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from salida_utf8 import configurar_salida
+configurar_salida()
 from comando_ffmpeg import filtros_en_archivos
 
 FONTDIR = os.environ.get("FONT_DIR") or (os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts") if os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts", "Poppins-Bold.ttf")) else "/usr/share/fonts/truetype/google-fonts")
