@@ -4,6 +4,8 @@ import LogoPicker, { FRUTI, defaultLogo, logoFile, logoName, rememberLogo } from
 import { postApi, isAuthError } from "@/lib/api-client";
 import CopyButton from "./CopyButton";
 import { episodeTrackPrompt, seriesThemePrompt, type MusicContext } from "@/lib/music";
+import { useData } from "@/lib/DataContext";
+import { guardarMontaje, leerMontajes } from "@/lib/montajesGuardados";
 
 // Marcas de agua conocidas: el servidor reescala a 720x1280 (Dola) o 704x1280 (Pavo) y las borra (ver montaje/README.md).
 type Watermark = "none" | "dola" | "pavo" | "custom";
@@ -142,6 +144,10 @@ async function setSong(serie: string, file: File | null) {
 }
 
 export default function MontajePanel({ guion, title, filesOverride, recursos = [], style = "frutinovela", part = 1, musicCues = [], seconds = 0, onDownloaded, publish = [], music: musicCtx = {}, cover: coverData, recap = "" }: { recursos?: { file: File; clip: number; tipo: string }[]; recap?: string; music?: Partial<MusicContext>; cover?: { serie?: string; frase?: string[]; parte?: number }; guion: any; title: string; filesOverride?: File[]; style?: string; part?: number; musicCues?: string[]; seconds?: number; onDownloaded?: () => void; publish?: { platform: string; text: string; hashtags: string; extra?: string }[] }) {
+  const { userId } = useData();
+  const montado = useRef(true);
+  const [avisoSeguimiento, setAvisoSeguimiento] = useState("");
+  useEffect(() => { montado.current=true; return () => { montado.current=false; }; }, []);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const files = filesOverride ?? selectedFiles;
   const [watermark, setWatermark] = useState<Watermark>("none");
@@ -261,12 +267,14 @@ export default function MontajePanel({ guion, title, filesOverride, recursos = [
   }
 
   async function montar() {
+    const pendiente=leerMontajes(userId || "local").find(x=>x.titulo===(title || "Montaje de episodio") && x.estado!=="listo" && x.estado!=="error");
+    if(pendiente){setError("Este episodio ya tiene un montaje guardado. Consulta «Montajes y progreso» para reconectarte. Si el servidor perdió el trabajo, retíralo de ese panel antes de iniciar otro.");return;}
     if (!files.length) { setError("Elige los clips primero."); return; }
     const custom = `x=${rect.x}:y=${rect.y}:w=${rect.w}:h=${rect.h}`;
     if (watermark === "custom" && (!/^x=\d{1,4}:y=\d{1,4}:w=\d{1,4}:h=\d{1,4}$/.test(custom) || Number(rect.w) < 1 || Number(rect.h) < 1)) { setError("Indica x, y, ancho y alto positivos en píxeles para el área de la marca."); return; }
     const marca = watermark === "dola" || watermark === "pavo" ? watermark : undefined;
     const delogo = watermark === "custom" ? custom : "";
-    setBusy(true); setError(""); setElapsed(0); setUploadPct(0); setLive(null);
+    setBusy(true); setError(""); setAvisoSeguimiento(""); setElapsed(0); setUploadPct(0); setLive(null);
     if (video) { URL.revokeObjectURL(video); setVideo(""); }
     if (video2) { URL.revokeObjectURL(video2); setVideo2(""); }
     setExtras([]); setRevision(null); setJob(null);
@@ -308,11 +316,15 @@ export default function MontajePanel({ guion, title, filesOverride, recursos = [
       setNames(dual ? [await logoName(logo), await logoName(logo2)] : ["", ""]);
       // 1) Subida: el servidor responde al instante con el número de trabajo.
       const { id } = await upload(`${base}/trabajos`, headers, fd, setUploadPct);
+      try { guardarMontaje(userId || "local", { id, base, titulo:title || "Montaje de episodio", inicio:t0 }); }
+      catch { setAvisoSeguimiento(`No se pudo recordar este trabajo en el navegador. Guarda su identificador: ${id}.`); }
       // 2) Progreso en vivo: cada respuesta llega en cuanto hay un paso nuevo (o a los 20 s).
       let seq = -1, fails = 0, state: any = null;
       while (true) {
+        if (!montado.current) return;
         try {
           const r = await fetch(`${base}/trabajos/${id}?desde=${seq}`);
+          if (!montado.current) return;
           if (r.status === 404) throw Object.assign(new Error("el servidor perdió el montaje (¿se reinició?). Vuelve a pulsar «Montar vídeo final»."), { fatal: true });
           if (!r.ok) throw new Error(`HTTP ${r.status}`);
           state = await r.json(); fails = 0; seq = state.seq;
@@ -345,6 +357,7 @@ export default function MontajePanel({ guion, title, filesOverride, recursos = [
   const fname = `${(title || "episodio").replace(/[^\w\-áéíóúñ ]+/gi, "").trim().replace(/\s+/g, "-") || "episodio"}.mp4`;
 
   return <div className="assembly-workspace space-y-3">
+    {avisoSeguimiento && <p role="alert">{avisoSeguimiento}</p>}
     <header className="assembly-heading"><p className="studio-eyebrow">ACABADO / MONTAJE</p><h3>Prepara la versión final.</h3><p>Sube los clips en orden y revisa la presentación, el sonido y el ritmo antes de montar.</p></header>
     <div className="space-y-1.5">
       <p className="text-xs text-slate-300">Dónde montar</p>
@@ -451,7 +464,7 @@ export default function MontajePanel({ guion, title, filesOverride, recursos = [
       <div>
         <div className="flex justify-between text-xs text-slate-300"><span>{live ? live.paso : uploadPct < 100 ? `Subiendo clips al servidor… ${uploadPct}%` : "Clips subidos, arrancando el servidor…"}</span><b>{pct}%</b></div>
         <div className="mt-1 h-2 overflow-hidden rounded bg-white/10"><div className="h-full bg-amber-400 transition-all" style={{ width: `${pct}%` }} /></div>
-        <p className="mt-1 text-xs text-slate-500">{Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")} · progreso real del servidor. No cierres esta pestaña.</p>
+        <p className="mt-1 text-xs text-slate-500">{Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")} · progreso real del servidor. Puedes retomarlo en «Montajes y progreso» después de subir los clips.</p>
       </div>
       {/* Montaje en vivo: el clip que está procesando el servidor, con su subtítulo, y el registro de pasos. */}
       <div className="flex flex-wrap gap-3">

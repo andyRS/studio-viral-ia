@@ -1,0 +1,42 @@
+import assert from "node:assert/strict";
+import { guardarMontaje, leerMontajes, montajeValido, PC_MONTAJE, seguirMontaje } from "../src/lib/montajesGuardados";
+
+async function main(){
+  const datos=new Map<string,string>();
+  const storage={getItem:(k:string)=>datos.get(k) || null,setItem:(k:string,v:string)=>{datos.set(k,v);}};
+  const trabajo={id:"a".repeat(32),base:PC_MONTAJE,titulo:"Película · Parte 2",inicio:123};
+  guardarMontaje("usuario-a",trabajo,storage);
+  assert.deepEqual(leerMontajes("usuario-a",storage),[trabajo]);
+  assert.deepEqual(leerMontajes("usuario-b",storage),[]);
+  assert.deepEqual(leerMontajes("local",storage),[]);
+  guardarMontaje("usuario-a",{...trabajo,estado:"listo"},storage);
+  assert.equal(leerMontajes("usuario-a",storage).length,1);
+  assert.equal(leerMontajes("usuario-a",storage)[0].estado,"listo");
+  assert.deepEqual(leerMontajes("a",{getItem:()=>"{roto"}),[]);
+  assert.deepEqual(leerMontajes("a",{getItem:()=>{throw new Error("bloqueado");}}),[]);
+  assert.throws(()=>guardarMontaje("a",trabajo,{getItem:()=>null,setItem:()=>{throw new Error("cuota llena");}}),/cuota llena/);
+  for(const base of ["javascript:alert(1)","http://evil.test","https://user:pass@example.com","https://example.com/ruta"]){assert.equal(montajeValido({...trabajo,base}),false);}
+  assert.equal(montajeValido({...trabajo,id:"../otro"}),false);
+  console.log("ok · recuperación conserva ID, separa cuentas, no duplica y avisa de almacenamiento lleno");
+  const llamadas:string[]=[];const vistos:number[]=[];
+  const respuesta=(estado:string,pct:number,seq:number)=>new Response(JSON.stringify({estado,pct,seq,paso:estado,log:[]}));
+  let n=0;
+  const consultar=(async(url:any,op:any)=>{assert.ok(!op.method || op.method==="GET");llamadas.push(String(url));return ++n===1 ? respuesta("montando",42,10):respuesta("listo",100,11);}) as typeof fetch;
+  const final=await seguirMontaje(trabajo,new AbortController().signal,d=>vistos.push(d.pct),consultar);
+  assert.deepEqual(vistos,[42,100]);assert.equal(final?.estado,"listo");
+  assert.ok(llamadas[0].endsWith("?desde=-1"));assert.ok(llamadas[1].endsWith("?desde=10"));
+  llamadas.length=0;
+  await seguirMontaje(trabajo,new AbortController().signal,()=>{},consultar);
+  assert.ok(llamadas[0].includes(trabajo.id));assert.ok(llamadas[0].endsWith("?desde=-1"));
+  console.log("ok · volver al panel consulta el mismo trabajo con GET y recupera el resultado, sin subir ni generar");
+  await assert.rejects(seguirMontaje(trabajo,new AbortController().signal,()=>{},(async()=>new Response("",{status:404})) as typeof fetch),/caducar/);
+  await assert.rejects(seguirMontaje(trabajo,new AbortController().signal,()=>{},(async()=>{throw new Error("sin conexión");}) as typeof fetch),/sin conexión/);
+  await assert.rejects(seguirMontaje(trabajo,new AbortController().signal,()=>{},(async()=>respuesta("montando",NaN,1)) as typeof fetch),/inválido/);
+  const aborto=new AbortController();let llamadasAbortadas=0;
+  await seguirMontaje(trabajo,aborto.signal,()=>aborto.abort(),(async()=>{llamadasAbortadas++;return respuesta("montando",30,2);}) as typeof fetch);
+  assert.equal(llamadasAbortadas,1);
+  const fallido=await seguirMontaje(trabajo,new AbortController().signal,()=>{},(async()=>respuesta("error",42,3)) as typeof fetch);
+  assert.equal(fallido?.estado,"error");
+  console.log("ok · caducidad, desconexión, progreso inválido y desmontaje no reinician ni cancelan el trabajo");
+}
+main().catch(e=>{console.error(e);process.exitCode=1;});

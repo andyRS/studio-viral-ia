@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test": "npx -y tsx tests/outline.test.ts && npx -y tsx tests/persistencia.test.ts && npx -y tsx tests/studio.test.ts && npx -y tsx tests/directores.test.ts && npx -y tsx tests/generador.test.ts && npx -y tsx tests/importacion.test.ts && npx -y tsx tests/direccion.test.ts && npx -y tsx tests/validacion-final.test.ts && npx -y tsx tests/tiempos.test.ts && npx -y tsx tests/accion.test.ts && npx -y tsx tests/formato-epico.test.ts && npx -y tsx tests/pelicula-larga.test.ts && npx -y tsx tests/correcciones.test.ts && python3 -m unittest montaje/test_tiempos.py montaje/test_comando_ffmpeg.py montaje/test_salida_utf8.py",
+    "test": "npx -y tsx tests/outline.test.ts && npx -y tsx tests/persistencia.test.ts && npx -y tsx tests/studio.test.ts && npx -y tsx tests/directores.test.ts && npx -y tsx tests/generador.test.ts && npx -y tsx tests/importacion.test.ts && npx -y tsx tests/direccion.test.ts && npx -y tsx tests/validacion-final.test.ts && npx -y tsx tests/tiempos.test.ts && npx -y tsx tests/accion.test.ts && npx -y tsx tests/formato-epico.test.ts && npx -y tsx tests/pelicula-larga.test.ts && npx -y tsx tests/correcciones.test.ts && npx -y tsx tests/montajes-recuperacion.test.ts && python3 -m unittest montaje/test_tiempos.py montaje/test_comando_ffmpeg.py montaje/test_salida_utf8.py",
     "check": "npm run typecheck && npm run lint && npm test && npm run build",
     "test:e2e": "node tests/e2e/flujos.cjs",
     "validar-guion": "npx -y tsx scripts/validar-guion.ts"
