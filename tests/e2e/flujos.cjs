@@ -360,7 +360,7 @@ const ir = async (page, espacio, modulo) => {
       await page.getByLabel("Canal de la serie").selectOption({ label: "＋ Conectar una cuenta nueva…" }); await page.waitForTimeout(300);
       await page.locator("#nueva-cuenta-nombre").fill("Canal Importar");
       await page.getByRole("button", { name: "Conectar y usar esta cuenta" }).click(); await page.waitForTimeout(600);
-      await page.getByRole("button", { name: /Subir capítulo de otra IA/ }).click();
+      await page.getByRole("button", { name: /Subir guion o historia/ }).click();
       const escenas = ["¿Por qué callas, Señor?", "Fui enviado desde el primer día.", "El príncipe de Persia me resistió.", "Miguel vino a ayudarme."].map((line, i) => ({ n: i + 1, speaker: i % 2 ? "Gabriel" : "Daniel", line, setting: "orilla del río Tigris", emotion: "fe" }));
       escenas.push({ n: 5, speaker: "Narrador", line: "Desde el primer día, Dios escuchó.", setting: "río al amanecer", emotion: "esperanza" });
       await page.getByLabel("Subir archivo: Capítulo (JSON o texto)").setInputFiles({ name: "capitulo.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify({ formato: "estudio-viral/capitulo", series: { title: "Daniel importado", style: "epica" }, episode: { title: "Los 21 días", seriesBible: { style: "epica" }, scenes: escenas } })) });
@@ -381,7 +381,7 @@ const ir = async (page, espacio, modulo) => {
       await page.getByRole("button", { name: /Crear$/ }).first().click(); await page.waitForTimeout(900);
       await page.getByLabel("Canal de la serie").selectOption({ label: "＋ Conectar una cuenta nueva…" }); await page.waitForTimeout(300);
       await page.locator("#nueva-cuenta-nombre").fill("Canal corto"); await page.getByRole("button", { name: "Conectar y usar esta cuenta" }).click(); await page.waitForTimeout(500);
-      await page.getByRole("button", { name: /Subir capítulo de otra IA/ }).click();
+      await page.getByRole("button", { name: /Subir guion o historia/ }).click();
       await page.getByLabel("Subir archivo: Capítulo (JSON o texto)").setInputFiles({ name: "c.json", mimeType: "application/json", buffer: fs.readFileSync(path.join(__dirname, "../fixtures/daniel_ep01_capitulo.json")) });
       await page.getByLabel("Subir archivo: Personajes canónicos (JSON o texto, opcional)").setInputFiles({ name: "p.json", mimeType: "application/json", buffer: fs.readFileSync(path.join(__dirname, "../fixtures/daniel_ep01_personajes.json")) });
       await page.waitForTimeout(300);
@@ -404,7 +404,7 @@ const ir = async (page, espacio, modulo) => {
       await page.locator("#nueva-cuenta-nombre").fill("Canal Daniel");
       await page.getByRole("button", { name: "Conectar y usar esta cuenta" }).click(); await page.waitForTimeout(600);
       await page.getByRole("button", { name: /Largo · 16:9/ }).click();
-      await page.getByRole("button", { name: /Subir capítulo de otra IA/ }).click();
+      await page.getByRole("button", { name: /Subir guion o historia/ }).click();
       await page.getByLabel("Subir archivo: Capítulo (JSON o texto)").setInputFiles({ name: "Daniel_EP01_capitulo_para_importar.json", mimeType: "application/json", buffer: capTxt });
       await page.getByLabel("Subir archivo: Personajes canónicos (JSON o texto, opcional)").setInputFiles({ name: "Daniel_EP01_personajes_canonicos.json", mimeType: "application/json", buffer: pjTxt });
       await page.waitForTimeout(400);

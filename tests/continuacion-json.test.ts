@@ -1,0 +1,31 @@
+import assert from "node:assert/strict";
+import {importarFiel} from "../src/lib/importacion";
+import {elencoContinuacionJson,prepararContinuacionJson,siguienteParteJson} from "../src/lib/continuacionJson";
+import {completarCreacion,type CreacionPendiente} from "../src/lib/creacion";
+async function main(){
+  const anterior={id:"ep-1",output:{partNumber:1,cast:[{name:"Clara",visualES:"ficha antigua"}],scenes:[{line:"Acto I intacto"}]}};
+  const copia=JSON.stringify(anterior);
+  const maestro={id:"personaje-1",seriesId:"serie-1",name:"Clara",visualES:"Rostro canónico",visualEN:"Canonical face",clothing:"Abrigo azul",voice:"Serena",imageUrl:"referencia-aprobada",referenceApprovedAt:"hoy"};
+  const elenco=elencoContinuacionJson([anterior],[maestro]);
+  assert.equal(elenco.length,1);assert.equal(elenco[0].visualES,maestro.visualES);
+  assert.equal(siguienteParteJson([]),1);assert.equal(siguienteParteJson([anterior]),2);
+  assert.equal(siguienteParteJson([anterior,{output:{partNumber:4}}]),5);
+  const texto=JSON.stringify({series:{title:"Acto II"},episode:{title:"Acto II · La carta",cast:[{name:"Clara",visualES:"Cambio no autorizado"},{name:"Luis",visualES:"Hombre con abrigo"}],scenes:[{n:1,speaker:"Clara",line:"He vuelto por la carta.",setting:"Casa"},{n:2,speaker:"Luis",line:"Te estaba esperando.",setting:"Casa"}]}});
+  const importado=importarFiel({capitulo:texto,style:"cine90",formato:"largo"});
+  const listo=prepararContinuacionJson(importado,elenco,"cine90","16:9");
+  assert.deepEqual(listo.episodio.scenes.map((x:any)=>x.line),["He vuelto por la carta.","Te estaba esperando."]);
+  assert.equal(listo.episodio.cast.find((x:any)=>x.name==="Clara").visualES,maestro.visualES);
+  assert.equal(listo.episodio.cast.find((x:any)=>x.name==="Clara").imageUrl,undefined);
+  assert.deepEqual(listo.nuevos.map((x:any)=>x.name),["Luis"]);
+  assert.equal(JSON.stringify(anterior),copia);assert.equal(listo.episodio.aspecto,"16:9");
+  console.log("ok · Acto II conserva diálogos, serie, fichas maestras y episodio anterior; solo Luis es nuevo");
+  let p:CreacionPendiente={id:"import-2",at:"hoy",titulo:"Acto II",serie:{},personajes:listo.nuevos,episodio:{ep:listo.episodio,bible:{}},hecho:{seriesId:"serie-1",personajes:[]},continuacion:true,parte:2};
+  let series=0,personajes=0,intentos=0;
+  const pasos={insertarSerie:async()=>{series++;return{id:"serie-nueva"};},insertarPersonaje:async()=>{personajes++;},guardarEpisodio:async(sid:string)=>{assert.equal(sid,"serie-1");if(++intentos===1)throw new Error("sin conexión");return {episodeId:"ep-2",output:{...listo.episodio,partNumber:p.parte}};}};
+  await assert.rejects(completarCreacion(p,pasos,q=>{p=JSON.parse(JSON.stringify(q));}),/sin conexión/);
+  const r=await completarCreacion(p,pasos,q=>{p=q;});
+  assert.equal(series,0);assert.equal(personajes,1);assert.equal(r.output.partNumber,2);assert.equal(r.seriesId,"serie-1");
+  await assert.rejects(completarCreacion({...p,hecho:{personajes:[]}},pasos,()=>{}),/serie de destino/);
+  console.log("ok · reintentar continúa el guardado sin crear serie, sin duplicar personajes y conservando el número del episodio");
+}
+main().catch(e=>{console.error(e);process.exitCode=1;});

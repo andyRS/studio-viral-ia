@@ -12,6 +12,8 @@ export type CreacionPendiente = {
   episodio: { ep: any; bible: any };
   hecho: { seriesId?: string; personajes: string[]; episodeId?: string; output?: any };
   error?: string;
+  continuacion?: boolean;
+  parte?: number;
 };
 
 const clave = (userId?: string | null) => claveLocal("creacion-pendiente", userId);
@@ -30,6 +32,7 @@ export type Pasos = {
 
 // Ejecuta solo los pasos que faltan y anota cada uno al terminarlo.
 export async function completarCreacion(p: CreacionPendiente, pasos: Pasos, anotar: (p: CreacionPendiente) => void) {
+  if(p.continuacion && !p.hecho.seriesId)throw new Error("La continuación necesita una serie de destino.");
   const nombre = (c: any) => String(c?.name || "").toLowerCase();
   if (!p.hecho.seriesId) {
     const s = await pasos.insertarSerie(p.serie);
