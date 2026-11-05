@@ -114,3 +114,10 @@ ok(r.episode.validacion.filter((p: any) => p.nivel === "error").length === 0, "v
 }
 
 console.log(`${checks} comprobaciones de importación correctas.`);
+
+// El nombre de una historia propia no se sustituye por «Episodio 1».
+{
+  const historia: any = importarFiel({ capitulo: JSON.stringify({ titulo: "Mi historia · Acto II", clips: [[["Daniel", "Mi historia sigue aquí."]]] }), style: "epica", formato: "largo" });
+  ok(historia.episode.title === "Mi historia · Acto II", "historia JSON: conserva el título del acto sin imponer Episodio 1");
+  ok(historia.episode.scenes.length === 1 && historia.episode.scenes[0].line === "Mi historia sigue aquí.", "historia JSON: conserva las escenas y el diálogo original");
+}

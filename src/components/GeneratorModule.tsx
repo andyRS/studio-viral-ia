@@ -11,7 +11,6 @@ import CreativeDesk from "./CreativeDesk";
 import ReferencePreview from "./ReferencePreview";
 import GenerationStatus from "./GenerationStatus";
 import { apartar, borrarPendiente, completarCreacion, leerPendiente, type CreacionPendiente } from "@/lib/creacion";
-import { elencoContinuacionJson, prepararContinuacionJson, siguienteParteJson } from "@/lib/continuacionJson";
 import CopyButton, { DownloadJson, DolaButton } from "./CopyButton";
 import PlatformAdaptations from "./PlatformAdaptations";
 import AiAuthNotice from "./AiAuthNotice";
@@ -175,8 +174,6 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
   const capitulo = useMemo(() => kind === "adaptar" ? normalizarCapitulo(guionOtro) : null, [kind, guionOtro]);
   const biblioteca = useMemo(() => kind === "adaptar" && personajesOtro.trim() ? normalizarPersonajes(personajesOtro) : null, [kind, personajesOtro]);
   const [modoImport, setModoImport] = useState<"fidelidad" | "creativa">("fidelidad");
-  const [destinoJson,setDestinoJson]=useState<"nueva"|"continuar">("nueva");
-  const [serieJson,setSerieJson]=useState("");
   const [replica, setReplica] = useBorrador("generador:replica", "");
   // Continuar
   const [seriesId, setSeriesId] = useState("");
@@ -191,8 +188,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
     return { ...s, eps, last, style: (eps[0]?.output?.seriesBible?.style || s.style || (data.accountProfiles || []).find((p: any) => p.accountId === s.accountId)?.style || "frutinovela") as StyleKey };
   }).sort((a: any, b: any) => String(b.last?.createdAt || "").localeCompare(String(a.last?.createdAt || ""))), [data.series, data.episodes, data.accountProfiles]);
   const current = seriesList.find((s: any) => s.id === seriesId);
-  const serieDestinoJson=seriesList.find(s=>s.id===serieJson);
-  const continuaJson=kind==="adaptar" && !!capitulo && destinoJson==="continuar";
+  const importaJson = kind === "adaptar" && !!capitulo;
   const currentChars = data.characters.filter((c: any) => c.seriesId === seriesId);
   const currentSignals = current ? seriesSignals(current.eps, data.metrics) : [];
   // La biblia en Personajes prevalece sobre copias antiguas dentro de episodios.
@@ -264,7 +260,6 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
   async function createStory(override?: { idea: string; notes: string }) {
     if(pendiente){setNotice("Termina primero el guardado pendiente con «Reintentar guardado».");return;}
     const idea_ = override?.idea ?? idea, notes_ = override?.notes ?? notes, kind_ = override ? "nueva" : kind;
-    if(!override && continuaJson){await continuarDesdeJson();return;}
     if (!canal) { setNotice("Elige primero el canal de la serie (red y cuenta): cada serie nace anclada a un canal."); return; }
     const estiloCapitulo = kind_ === "adaptar" ? (estiloDeTexto(capitulo?.estilo) || biblioteca?.estilo || "") : "";
     if (!styleChosen && !override && !estiloCapitulo) { setNotice("Elige primero el estilo de la historia."); return; }
@@ -288,6 +283,7 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
         : await call("/api/series", body, () => templateSeries(body)); if (!res) return;
       if (fiel) res.note = res.data.notice || res.note;
       const d = res.data;
+      if (kind_ === "adaptar" && capitulo) d.episode = { ...d.episode, historiaImportada: true };
       // Lo generado se aparta antes de guardar: si un guardado falla a mitad, se reanuda sin volver a generar.
       const p: CreacionPendiente = {
         id: `${Date.now()}`, at: new Date().toISOString(), titulo: d.series?.title || idea_.slice(0, 60),
@@ -322,27 +318,6 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
       setPendiente(leerPendiente(userId));
       setNotice(`La historia «${p.titulo}» se generó, pero no se terminó de guardar (${error?.message || String(error)}). Está apartada en este navegador: pulsa «Reintentar guardado» (no se vuelve a generar).`);
     }
-  }
-
-  async function continuarDesdeJson(){
-    if(!capitulo || !serieDestinoJson){setNotice("Elige la serie a la que pertenece este JSON.");return;}
-    if(pendiente){setNotice("Termina primero el guardado pendiente con «Reintentar guardado».");return;}
-    const serie=serieDestinoJson;
-    const elenco=elencoContinuacionJson(serie.eps,data.characters.filter(c=>c.seriesId===serie.id));
-    const parte=siguienteParteJson(serie.eps);
-    const aspecto=(biblioteca?.formato || capitulo.episodio?.aspecto || serie.last?.output?.aspecto || aspectoDe(serie.format))==="16:9" ? "16:9" : "9:16";
-    const castJson=new Map<string,any>();
-    for(const c of [...(capitulo.episodio?.cast || []),...elenco])castJson.set(String(c.name).trim().toLowerCase(),c);
-    const personajes=personajesOtro.trim() || (castJson.size ? JSON.stringify({personajes:Array.from(castJson.values())}) : "");
-    setLoading(true);setNotice("");setAuthError(false);
-    try{
-      const body={capitulo:guionOtro,personajes,style:serie.style,formato:aspecto==="16:9" ? "largo" : "corto",duration,scenes:escenas ? nEscenas : capitulo.clips.length};
-      const res=await call("/api/importar",body,()=>importarFiel(body));if(!res)return;
-      const listo=prepararContinuacionJson(res.data,elenco,serie.style,aspecto);
-      const bible=serie.eps[0]?.output?.seriesBible || {style:serie.style,logline:serie.description};
-      const p:CreacionPendiente={id:`${Date.now()}`,at:new Date().toISOString(),titulo:listo.episodio.title || `Episodio ${parte}`,serie:{accountId:serie.accountId},personajes:listo.nuevos,episodio:{ep:listo.episodio,bible},hecho:{seriesId:serie.id,personajes:[]},continuacion:true,parte};
-      apartar(p,userId);await terminarCreacion(p,`Episodio ${parte} añadido a «${serie.title}» desde tu JSON. Se conservaron los episodios anteriores y las fichas existentes. ${res.note}`);
-    }catch(e:any){setNotice(`No se pudo importar la continuación: ${e?.message || e}`);}finally{setLoading(false);}
   }
 
   // Archivos → «Adaptar un guion de otra IA»: rehace el episodio abierto con ese guion y el elenco fijo.
@@ -480,30 +455,26 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
 
       {view === "nueva" && <>
         <Back />
-        <div className="creation-workspace mt-3"><p className="studio-eyebrow cinematic-gold">PREPRODUCCIÓN / NUEVA HISTORIA</p><h2 className="mt-2 text-3xl font-semibold tracking-tight">Dale forma a tu próxima historia.</h2><p className="mt-2 text-sm text-slate-400">Elige su identidad, escribe la premisa y prepara el primer episodio.</p>
+        <div className="creation-workspace mt-3"><p className="studio-eyebrow cinematic-gold">PREPRODUCCIÓN / NUEVA HISTORIA</p><h2 className="mt-2 text-3xl font-semibold tracking-tight">Dale forma a tu próxima historia.</h2><p className="mt-2 text-sm text-slate-400">{importaJson ? "Importa tu historia y prepara sus personajes, escenas y montaje." : "Elige su identidad, escribe la premisa y prepara el primer episodio."}</p>
         <div className="creation-brief-layout">
         <div className="creation-fields space-y-5">
-          {!continuaJson && <CanalPicker accounts={data.accounts} accountId={accountId} onAccount={setAccountId} estilo={styleChosen ? style : undefined} formato={formato} onFormato={setFormato} largoPosible={largoPosible} clipIds={clipIds} onClipIds={setClipIds} />}
-          {!continuaJson && <fieldset>
+          <CanalPicker accounts={data.accounts} accountId={accountId} onAccount={setAccountId} estilo={styleChosen ? style : undefined} formato={formato} onFormato={setFormato} largoPosible={largoPosible} clipIds={clipIds} onClipIds={setClipIds} />
+          <fieldset>
             <legend className="field-label">Estilo <span className="normal-case tracking-normal text-amber-300">· obligatorio{styleChosen ? "" : ": elige uno"}</span></legend>
             <div className="grid gap-2 sm:grid-cols-3">
               {(Object.keys(STYLES) as StyleKey[]).map(k => (
                 <button key={k} type="button" aria-pressed={styleChosen && style === k} onClick={() => { setStyle(k); if (k === "biblica") setDuration(64); if (k === "epica") setDuration(48); }} className={`rounded-xl border px-3 py-3 text-left text-sm ${styleChosen && style === k ? "border-amber-400/60 bg-amber-400/10 text-amber-100" : "border-white/10 bg-white/[.03] text-slate-300"}`}>{STYLES[k].label}</button>
               ))}
             </div>
-          </fieldset>}
+          </fieldset>
           <div>
             {kind === "replica" && <div className="mb-3"><label htmlFor="generator-replica" className="field-label block">Describe el viral</label>
               <textarea id="generator-replica" className="aurora-field" value={replica} onChange={e => setReplica(e.target.value)} placeholder="Qué pasa en el vídeo, su gancho, quién humilla a quién, qué objeto revela el giro… Se copia la estructura y la emoción, nunca los personajes ni el texto." /></div>}
             <CapituloDeOtraIA activo={kind === "adaptar"} onActivar={() => setKind("adaptar")} onQuitar={() => { setKind("nueva"); setGuionOtro(""); setPersonajesOtro(""); }}
               capitulo={guionOtro} onCapitulo={setGuionOtro} personajes={personajesOtro} onPersonajes={setPersonajesOtro}
-              modo={modoImport} onModo={setModoImport} reconocido={!!capitulo} continuacion={continuaJson}
+              modo={modoImport} onModo={setModoImport} reconocido={!!capitulo}
               resumen={capitulo ? `Capítulo reconocido: ${capitulo.clips.length} ${capitulo.fuente === "clips" ? "clips" : "escenas"}${capitulo.gancho.length ? ", gancho" : ""}${capitulo.tarjetas.length ? `, ${capitulo.tarjetas.length} tarjetas` : ""}${capitulo.cierre ? ", cierre" : ""} (los metadatos no crean escenas).${biblioteca ? ` Personajes: ${biblioteca.personajes.length} visuales${biblioteca.narradores.length ? ` + ${biblioteca.narradores.join(", ")} como voz en off` : ""}.` : ""} ${modoImport === "fidelidad" ? `Modo fidelidad: diálogos y orden intactos${escenas && nEscenas !== capitulo.clips.length ? `; la configuración pide ${nEscenas} escenas (se explicará la diferencia)` : ""}.` : "Adaptación creativa: la IA puede reescribir; verás la lista de cambios."}${!estiloDeTexto(capitulo.estilo) && !biblioteca?.estilo && !styleChosen ? " Elige el estilo." : ""}${biblioteca?.formato === "16:9" && formato !== "largo" && modoImport === "fidelidad" ? " Las fichas piden 16:9: el episodio se importará en horizontal 16:9 (la serie sigue como está; puedes cambiarlo luego en «Imagen»)." : ""}` : guionOtro.trim() ? `Formato de otra IA: se adaptará con IA a ${!escenas && escenasDelGuion(guionOtro) ? `las ${sceneCountFor(duration, escenasDelGuion(guionOtro) || 0)} escenas del guion` : `${nEscenas} escenas`}${formato === "largo" ? " en 16:9" : ""}.` : ""} />
-            {kind === "adaptar" && capitulo && <fieldset className="json-destination" disabled={loading}><legend>¿Dónde quieres guardar tu JSON?</legend><div className="import-modes">
-              <label data-selected={destinoJson === "nueva"}><input type="radio" name="destino-json" checked={destinoJson === "nueva"} onChange={()=>{setDestinoJson("nueva");setNotice("");}} /><b>Crear episodio 1</b><span>Abre una serie nueva con esta historia.</span></label>
-              <label data-selected={destinoJson === "continuar"}><input type="radio" name="destino-json" checked={destinoJson === "continuar"} onChange={()=>{setDestinoJson("continuar");setModoImport("fidelidad");setEscenas(0);setNotice("");}} /><b>Continuar una serie</b><span>Añade el siguiente episodio o acto a una serie existente.</span></label>
-            </div>{continuaJson && <div className="json-series-picker"><label htmlFor="json-target-series">Serie de destino</label><select id="json-target-series" value={serieJson} onChange={e=>{setSerieJson(e.target.value);setEscenas(0);setNotice("");}}><option value="">Elige la serie…</option>{seriesList.map(s=><option key={s.id} value={s.id}>{s.title} · siguiente episodio {siguienteParteJson(s.eps)}</option>)}</select>{serieDestinoJson ? <p>Se añadirá como episodio {siguienteParteJson(serieDestinoJson.eps)}. Se usarán el canal, el estilo y las fichas de «{serieDestinoJson.title}». Los episodios anteriores se conservan.</p> : <p>{seriesList.length ? "Elige la serie a la que pertenece este acto o capítulo." : "Todavía no hay series guardadas. Elige «Crear episodio 1» para comenzar."}</p>}</div>}</fieldset>}
-            {!continuaJson && <>{/* Compositor Aurora: la idea, el tipo de pedido (real) y el estado de la generación (real). */}
+            {!importaJson && <>{/* Compositor Aurora: la idea, el tipo de pedido (real) y el estado de la generación (real). */}
             <div className={`aurora-border p-3 ${loading ? "creation-energy" : ""}`} data-estado={loading ? "generando" : /^(No se pudo|La historia «)/.test(notice) || authError ? "error" : undefined} data-spotlight="creacion">
               <label htmlFor="generator-idea" className="field-label block">{kind === "replica" ? "Idea para adaptarlo a RD" : kind === "adaptar" ? "Ajustes para la adaptación (opcional)" : "Idea de la historia"}</label>
               <textarea id="generator-idea" className="aurora-field !border-transparent !bg-transparent !shadow-none" rows={3} value={idea} onChange={e => setIdea(e.target.value)} placeholder="Ej.: Una madre humilde descubre que su hijo rico la niega delante de sus amigos…" />
@@ -518,19 +489,19 @@ export default function GeneratorModule({ focusEpisodeId, focusTab, startNew = f
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
 
-            {!continuaJson && <div><label htmlFor="generator-duration" className="field-label block">Duración del vídeo montado</label>
+            {!importaJson && <div><label htmlFor="generator-duration" className="field-label block">Duración del vídeo montado</label>
               <select id="generator-duration" value={duration} onChange={e => setDuration(Number(e.target.value))}>{DURATIONS.map(d => <option key={d} value={d}>{d} s · {sceneCountFor(d)} escenas</option>)}</select></div>}
             <div><label htmlFor="generator-scenes" className="field-label block">Escenas</label>
               <select id="generator-scenes" aria-label="Cantidad de escenas" value={escenas} onChange={e => setEscenas(Number(e.target.value))}><option value={0}>{kind === "adaptar" && capitulo && modoImport === "fidelidad" ? `Las del JSON · ${capitulo.clips.length} escenas` : `Automático · ${sceneCountFor(duration)} escenas`}</option>{Array.from({ length: MAX_SCENES - MIN_SCENES + 1 }, (_, k) => MIN_SCENES + k).map(n => <option key={n} value={n}>{n} escenas · ~{Math.round(n * 4.5)} s</option>)}</select></div>
             <AvisoEscenas texto={`${idea} ${notes} ${kind === "adaptar" ? guionOtro : ""}`} escenas={nEscenas} onUsar={setEscenas} />
           </div>
-          {!continuaJson && <><div><label htmlFor="generator-notes" className="field-label block">Notas opcionales</label>
+          {!importaJson && <><div><label htmlFor="generator-notes" className="field-label block">Notas opcionales</label>
             <input id="generator-notes" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Ej.: que la abuela se llame Doña Guanábana, que pase en Navidad…" /></div>
           <HookPicker online={mode === "supabase"} chosen={chosenHook} onChoose={setChosenHook} body={() => ({ idea, style, learnings, bank: bankTop, accountProfile: profileFor(account?.id) })} /></>}
-          <button disabled={loading} onClick={() => { void createStory(); }} className={`aurora-send !h-auto !w-full rounded-full px-6 py-3 text-base font-bold sm:!w-auto ${loading ? "creation-energy" : ""}`} aria-busy={loading}>{loading ? (continuaJson ? "Importando continuación…" : "Creando la serie…") : continuaJson ? (serieDestinoJson ? `✦ Añadir episodio ${siguienteParteJson(serieDestinoJson.eps)} desde JSON` : "✦ Añadir continuación desde JSON") : "✦ Crear serie y episodio 1"}</button>
+          <button disabled={loading} onClick={() => { void createStory(); }} className={`aurora-send !h-auto !w-full rounded-full px-6 py-3 text-base font-bold sm:!w-auto ${loading ? "creation-energy" : ""}`} aria-busy={loading}>{loading ? (importaJson ? "Importando tu historia…" : "Creando la serie…") : importaJson ? "✦ Recrear mi historia desde JSON" : "✦ Crear serie y episodio 1"}</button>
         </div>
         <aside className="production-brief" aria-label="Resumen de producción">
-          {continuaJson ? <><div className="brief-cover"><span className="studio-eyebrow cinematic-gold">CONTINUIDAD / TU JSON</span><h3>{serieDestinoJson?.title || "Elige la serie de destino"}</h3><p>El capítulo se añade como un episodio nuevo de esa serie.</p></div><dl><div><dt>Episodio nuevo</dt><dd>{serieDestinoJson ? siguienteParteJson(serieDestinoJson.eps) : "Por elegir"}</dd></div><div><dt>Canal</dt><dd>{data.accounts.find(a=>a.id===serieDestinoJson?.accountId)?.name || "El de la serie"}</dd></div><div><dt>Escenas</dt><dd>{escenas || capitulo?.clips.length}</dd></div><div><dt>Guion</dt><dd>JSON · modo fidelidad</dd></div></dl><p className="brief-mode">Se reutilizan las fichas existentes. Los personajes nuevos se añaden para revisarlos. El guardado puede reintentarse sin volver a importar.</p></> : <>
+          {importaJson ? <><div className="brief-cover"><span className="studio-eyebrow cinematic-gold">TU HISTORIA / JSON</span><h3>{biblioteca?.titulo || capitulo?.titulo || "Tu historia en el estudio"}</h3><p>Trae tu guion al espacio de producción con sus escenas y personajes.</p></div><dl><div><dt>Canal</dt><dd>{canal?.name || "Por elegir"}</dd></div><div><dt>Escenas del archivo</dt><dd>{capitulo?.clips.length}</dd></div><div><dt>Tratamiento</dt><dd>{modoImport === "fidelidad" ? "Guion original" : "Adaptación creativa"}</dd></div></dl><p className="brief-mode">{modoImport === "fidelidad" ? "Se conservan los diálogos, los personajes y el orden. Prepara sus fichas, imágenes, clips y montaje en el estudio." : "La IA puede adaptar el guion. Revisa los cambios antes de producir."}</p></> : <>
           <div className="brief-cover"><span className="studio-eyebrow cinematic-gold">CUADERNO / NUEVA PRODUCCIÓN</span><span className="brief-cover-symbol" aria-hidden="true">✦</span><h3>{styleChosen ? STYLES[style].label : "Una historia por descubrir."}</h3><p>{idea.trim() || "Tu premisa aparecerá aquí mientras le das forma."}</p></div>
           <dl><div><dt>Canal</dt><dd>{data.accounts.find(a => a.id === accountId)?.name || "Por elegir"}</dd></div><div><dt>Proyecto</dt><dd>{formato === "largo" ? "Serie de formato largo" : "Serie de clips cortos"}</dd></div><div><dt>Duración por clip</dt><dd>{duration} segundos</dd></div><div><dt>Escenas por clip</dt><dd>{nEscenas}</dd></div><div><dt>Imagen</dt><dd>{formato === "largo" ? "Horizontal 16:9" : "Vertical 9:16"}</dd></div></dl>
           <div className="brief-readiness"><p className="studio-eyebrow">ANTES DEL PRIMER PLANO</p><p data-ready={!!accountId}><span aria-hidden="true">{accountId ? "✓" : "○"}</span> Canal seleccionado</p><p data-ready={styleChosen}><span aria-hidden="true">{styleChosen ? "✓" : "○"}</span> Identidad visual definida</p><p data-ready={!!idea.trim() || kind === "replica" && !!replica.trim()}><span aria-hidden="true">{idea.trim() || kind === "replica" && replica.trim() ? "✓" : "○"}</span> Premisa escrita</p></div>
@@ -830,16 +801,16 @@ function Result({ episode: out, episodeId, seriesId, part, seriesTitle, initialT
     void prepararFicha(file).then(({ url }) => { const history = [...(c.referenceHistory || [])]; if (c.referenceApprovedAt && c.imageUrl) history.push({ version: c.referenceVersion || 1, imageUrl: c.imageUrl, approvedAt: c.referenceApprovedAt }); void update("characters", c.id, { imageUrl: url, referenceApprovedAt: undefined, referenceVersion: Number(c.referenceVersion || 0) + 1, referenceHistory: history }); }).catch((e: any) => window.alert(`No se pudo usar esa imagen: ${e?.message || e}`));
   }
   const sceneId = (n: number) => `[${String(n).padStart(3, "0")}]`;
-  return <section className="episode-workspace" aria-label="Mesa de producción del episodio">
+  return <section className="episode-workspace" aria-label={out.historiaImportada ? "Mesa de producción de la historia" : "Mesa de producción del episodio"}>
     <button onClick={onBack} className="mb-4 text-sm text-slate-400 hover:text-white">← {backLabel ? `Serie: ${backLabel}` : "Inicio"}</button>
     <div className="episode-heading flex flex-wrap items-start gap-3">
       <div className="flex-1 min-w-[220px]">
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-amber-300/80">{seriesTitle} · Episodio {part}</p>
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-amber-300/80">{seriesTitle} · {out.historiaImportada ? "Historia importada" : `Episodio ${part}`}</p>
         <h2 className="text-xl font-bold">{out.title || `Episodio ${part}`}</h2>
         {out.summary && <p className="mt-1 text-sm text-slate-400">{out.summary}</p>}
       </div>
-      <span className="episode-actions">{finished && <span className="rounded-full border border-emerald-400/40 bg-emerald-400/10 px-3 py-1 text-xs font-semibold text-emerald-200">🔒 Terminado</span>}{!finished && scenes.length > 0 && onCambiar && <label className="episode-aspect" data-aspect={aspecto || "9:16"}><span aria-hidden="true" className="episode-aspect-icon" /><span>Formato de imagen<small>Solo este episodio</small></span><select aria-label="Formato de imagen del episodio" className="w-auto py-1 text-xs" value={aspecto || "9:16"} onChange={e => { const v = e.target.value; if (v !== aspecto && window.confirm(`Se rehacen todos los prompts en ${v === "16:9" ? "horizontal 16:9" : "vertical 9:16"} (sin IA; la versión actual queda en el historial). ¿Continuar?`)) void onCambiar(v === "16:9" ? { ...out, aspecto: "16:9" } : conAspecto(out, "9:16"), { anterior: out }); }}><option value="16:9">Horizontal 16:9</option><option value="9:16">Vertical 9:16</option></select></label>}{!finished && scenes.length > 0 && <button type="button" onClick={refresh} disabled={refreshing} title="Rehace los prompts de imagen, animación y Dola con las reglas actuales, sin IA y sin tocar el guion" className="text-xs text-slate-400 hover:text-amber-300 disabled:opacity-50">{refreshing ? "Actualizando…" : "Actualizar prompts"}</button>}{episodeId && !finished && <button type="button" onClick={onDelete} className="text-xs text-slate-400 hover:text-red-300">Eliminar episodio</button>}
-      <button onClick={onNext} className="rounded bg-amber-500 px-4 py-2 text-sm font-bold">Crear episodio {part + 1} →</button></span>
+      <span className="episode-actions">{finished && <span className="rounded-full border border-emerald-400/40 bg-emerald-400/10 px-3 py-1 text-xs font-semibold text-emerald-200">🔒 Terminado</span>}{!finished && scenes.length > 0 && onCambiar && <label className="episode-aspect" data-aspect={aspecto || "9:16"}><span aria-hidden="true" className="episode-aspect-icon" /><span>Formato de imagen<small>Solo este episodio</small></span><select aria-label="Formato de imagen del episodio" className="w-auto py-1 text-xs" value={aspecto || "9:16"} onChange={e => { const v = e.target.value; if (v !== aspecto && window.confirm(`Se rehacen todos los prompts en ${v === "16:9" ? "horizontal 16:9" : "vertical 9:16"} (sin IA; la versión actual queda en el historial). ¿Continuar?`)) void onCambiar(v === "16:9" ? { ...out, aspecto: "16:9" } : conAspecto(out, "9:16"), { anterior: out }); }}><option value="16:9">Horizontal 16:9</option><option value="9:16">Vertical 9:16</option></select></label>}{!finished && scenes.length > 0 && <button type="button" onClick={refresh} disabled={refreshing} title="Rehace los prompts de imagen, animación y Dola con las reglas actuales, sin IA y sin tocar el guion" className="text-xs text-slate-400 hover:text-amber-300 disabled:opacity-50">{refreshing ? "Actualizando…" : "Actualizar prompts"}</button>}{episodeId && !finished && <button type="button" onClick={onDelete} className="text-xs text-slate-400 hover:text-red-300">{out.historiaImportada ? "Eliminar historia" : "Eliminar episodio"}</button>}
+      {!out.historiaImportada && <button onClick={onNext} className="rounded bg-amber-500 px-4 py-2 text-sm font-bold">Crear episodio {part + 1} →</button>}</span>
     </div>
     <div className={`mt-4 rounded-xl border p-4 text-sm ${fromAI ? "border-emerald-400/25 bg-emerald-400/[.07] text-emerald-100" : "border-amber-400/30 bg-amber-400/[.08] text-amber-100"}`}>
       <p className="font-bold">{out.mode === "importado" ? (finished ? "Capítulo importado · terminado" : "Capítulo importado · disponible para revisión") : out.mode === "guion-manual" ? `Guion escrito · ${cast.length} personajes · ${(out.scriptBlocks || []).length} bloques · pendiente de producción` : fromAI ? `Guion escrito por la IA · ${cast.length} personajes · ${scenes.length || (out.scriptBlocks || []).length} escenas · ${fullDuration} s` : isTemplate ? "Borrador de la plantilla local (sin IA)" : isAIDraft ? "Borrador de Gemini · pendiente de corregir" : "Borrador anterior sin elenco de producción"}</p>
@@ -1114,14 +1085,14 @@ function EpisodeCard({ ep, part, onOpen }: { ep: any; part: number; onOpen: (tab
   const sections = EPISODE_SECTIONS.filter(([k]) => k === "guion" || (k === "redes" ? !!out.social : scenes > 0 && (k !== "elenco" || (out.cast || []).length > 0)));
   return <article className="rounded-2xl border border-white/10 bg-[#121826] p-4 transition hover:border-amber-400/40">
     <div className="flex flex-wrap items-start gap-3">
-      <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-amber-400/15 text-lg font-bold text-amber-300">{part}</span>
+      <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-amber-400/15 text-lg font-bold text-amber-300">{ep.output?.historiaImportada ? "✦" : part}</span>
       <div className="min-w-[200px] flex-1">
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Episodio {part}{scenes ? ` · ${scenes} escenas · ${seconds} s` : ""}{isDraft(ep) && <span className="ml-2 rounded-full bg-amber-400/15 px-2 py-0.5 normal-case tracking-normal text-amber-200">Borrador</span>}{isFinished(ep) && <span className="ml-2 rounded-full bg-emerald-400/15 px-2 py-0.5 normal-case tracking-normal text-emerald-200">🔒 Terminado</span>}</p>
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">{ep.output?.historiaImportada ? "Historia importada" : `Episodio ${part}`}{scenes ? ` · ${scenes} escenas · ${seconds} s` : ""}{isDraft(ep) && <span className="ml-2 rounded-full bg-amber-400/15 px-2 py-0.5 normal-case tracking-normal text-amber-200">Borrador</span>}{isFinished(ep) && <span className="ml-2 rounded-full bg-emerald-400/15 px-2 py-0.5 normal-case tracking-normal text-emerald-200">🔒 Terminado</span>}</p>
         <h4 className="mt-0.5 font-bold">{ep.title}</h4>
         <p className="mt-1 line-clamp-2 text-sm text-slate-400">{out.summary || ep.theme}</p>
         {hook && <p className="mt-2 text-xs text-slate-300"><span className="text-slate-500">Gancho:</span> «{hook}»</p>}
       </div>
-      <button type="button" onClick={() => onOpen()} className="w-full rounded-lg bg-amber-500 px-4 py-2 text-sm font-bold text-slate-950 hover:bg-amber-400 sm:w-auto">Abrir episodio →</button>
+      <button type="button" onClick={() => onOpen()} className="w-full rounded-lg bg-amber-500 px-4 py-2 text-sm font-bold text-slate-950 hover:bg-amber-400 sm:w-auto">{ep.output?.historiaImportada ? "Abrir historia →" : "Abrir episodio →"}</button>
     </div>
     <div className="mt-3 border-t border-white/5 pt-3">
       <p className="mb-2 text-[11px] text-slate-500">Dentro encontrarás · entra directo:</p>
@@ -1200,7 +1171,7 @@ function EpisodeArchive({ episodes, series, onOpen, onDelete }: any) {
         return <div key={ep.id} className="flex flex-wrap items-center gap-2 rounded-xl bg-[#121826] p-3 text-sm">
           <span className="flex-1 min-w-[200px]"><b>{ep.title}</b> <span className="text-xs text-slate-500">· {s?.title || "Sin serie"}</span>{ep.status === "Borrador" || ep.output?.mode === "plantilla-local" ? <span className="ml-2 rounded-full bg-amber-400/15 px-2 py-0.5 text-[11px] text-amber-200">Borrador</span> : null}</span>
           <button className="rounded bg-slate-700 px-3 py-1 text-xs" onClick={() => onOpen(ep.seriesId, ep, ep.output?.partNumber || 1)}>Ver</button>
-          <button className="text-xs text-slate-400 hover:text-red-300" onClick={() => { if (window.confirm("¿Eliminar el episodio «" + ep.title + "»? Esta acción no se puede deshacer.")) onDelete(ep.id); }}>Eliminar episodio</button>
+          <button className="text-xs text-slate-400 hover:text-red-300" onClick={() => { if (window.confirm("¿Eliminar el episodio «" + ep.title + "»? Esta acción no se puede deshacer.")) onDelete(ep.id); }}>{ep.output?.historiaImportada ? "Eliminar historia" : "Eliminar episodio"}</button>
         </div>;
       })}
     </div>}
@@ -1343,25 +1314,25 @@ function ImportarPersonajes({ onImportar, ocupado }: { onImportar: (t: string) =
 }
 
 // «Nueva historia» → capítulo (y personajes canónicos) hechos en otra IA, en JSON o texto.
-function CapituloDeOtraIA({ activo, onActivar, onQuitar, capitulo, onCapitulo, personajes, onPersonajes, resumen, modo, onModo, reconocido, continuacion = false }: { continuacion?: boolean; activo: boolean; onActivar: () => void; onQuitar: () => void; capitulo: string; onCapitulo: (v: string) => void; personajes: string; onPersonajes: (v: string) => void; resumen: string; modo: "fidelidad" | "creativa"; onModo: (m: "fidelidad" | "creativa") => void; reconocido: boolean }) {
+function CapituloDeOtraIA({ activo, onActivar, onQuitar, capitulo, onCapitulo, personajes, onPersonajes, resumen, modo, onModo , reconocido }: { activo: boolean; onActivar: () => void; onQuitar: () => void; capitulo: string; onCapitulo: (v: string) => void; personajes: string; onPersonajes: (v: string) => void; resumen: string; modo: "fidelidad" | "creativa"; onModo: (m: "fidelidad" | "creativa") => void; reconocido: boolean }) {
   if (!activo) return <div className="import-invitation">
-    <span className="flex-1 min-w-[220px] text-sm text-slate-200"><b className="text-cyan-100">¿Ya tienes tu historia escrita?</b> Sube tu guion en JSON o texto con sus personajes y decide si abre una historia o continúa una serie.</span>
+    <span className="flex-1 min-w-[220px] text-sm text-slate-200"><b className="text-cyan-100">¿Ya tienes tu historia escrita?</b> Sube tu historia en JSON o texto con sus personajes y prepárala para producir en el estudio.</span>
     <button type="button" onClick={onActivar} className="rounded-lg border border-cyan-300/50 px-3 py-2 text-sm font-semibold text-cyan-100 hover:bg-cyan-300/10">📄 Subir guion o historia</button>
   </div>;
   return <section className="import-panel import-composer" aria-label="Importar tu guion">
     <header className="import-heading"><div><p className="studio-eyebrow">DEL GUION AL ESTUDIO</p><h3>Importar tu guion</h3><p>Trae tu historia y decide cómo convertirla en producción.</p></div><button type="button" onClick={onQuitar} className="text-xs text-slate-400 hover:text-white">Quitar y volver a Historia nueva</button></header>
     <div className="import-sources">
-    <div className="import-source"><span className="import-step">01 · CAPÍTULO</span>
-    <SubirGuion id="generator-guion-externo" etiqueta="Capítulo (JSON o texto)" valor={capitulo} onValor={onCapitulo} ayuda="Sube el capitulo.json (estructura del estudio) o el guion de otra IA en JSON o texto." />
+    <div className="import-source"><span className="import-step">01 · TU HISTORIA</span>
+    <SubirGuion id="generator-guion-externo" etiqueta="Tu historia (JSON o texto)" valor={capitulo} onValor={onCapitulo} ayuda="Sube el capitulo.json (estructura del estudio) o el guion de otra IA en JSON o texto." />
     </div><div className="import-source"><span className="import-step">02 · ELENCO OPCIONAL</span>
     <SubirGuion id="generator-personajes-externos" etiqueta="Personajes canónicos (JSON o texto, opcional)" valor={personajes} onValor={onPersonajes} ayuda="Sube personajes.json o pega las fichas (nombre, apariencia, ropa, voz…). Si no, se toman del capítulo." />
     </div></div>
-    {reconocido && <fieldset className="import-modes"><legend className="field-label mb-1">Cómo usar el capítulo</legend>
+    {reconocido && <fieldset className="import-modes"><legend className="field-label mb-1">Cómo trabajar tu historia</legend>
       {([["fidelidad", "Fidelidad (recomendado)", "Conserva diálogos, hablantes, orden y personajes. La app añade dirección de cámara, acción visual y prompts."], ["creativa", "Adaptación creativa", "La IA puede reescribir, reorganizar o ampliar escenas. Verás qué cambió."]] as const).map(([k, t, d]) =>
-        <label key={k} data-selected={modo === k}><input type="radio" name="modo-importacion" disabled={continuacion && k === "creativa"} checked={modo === k} onChange={() => onModo(k)} /><b>{t}</b><span>{d}</span></label>)}
+        <label key={k} data-selected={modo === k}><input type="radio" name="modo-importacion" checked={modo === k} onChange={() => onModo(k)} /><b>{t}</b><span>{d}</span></label>)}
     </fieldset>}
     {resumen && <p role="status" className="import-recognition">{resumen}</p>}
-    <p className="text-xs text-slate-400">{continuacion ? "El JSON se añadirá a la serie elegida en modo fidelidad. Revisa su destino antes de importar." : "Elige abajo si este JSON abre una serie o continúa una existente. La idea es opcional."}</p>
+    <p className="text-xs text-slate-400">Tu JSON se convierte en una historia lista para trabajar en el estudio. No necesitas elegir episodios ni escribir una premisa nueva.</p>
   </section>;
 }
 

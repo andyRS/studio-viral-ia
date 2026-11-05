@@ -555,7 +555,7 @@ export function importarFiel(input: { capitulo: string; personajes?: string; sty
     return { speaker: c.speaker, line: c.line, emotion: esNarrador(c.speaker) ? dir.vocalTone : dir.expression || dir.vocalTone, visibleCharacters: visibles, ...dir };
   });
   const titulo = bib?.titulo || cap.titulo || "Serie importada";
-  const episodioTitulo = bib?.episodio || cap.episodio?.title || "Episodio 1";
+  const episodioTitulo = bib?.episodio || cap.episodio?.title || cap.titulo || "Historia importada";
   const bible = { verse: cap.versiculo, story: "", message: "" };
   const episode: any = buildProduction({ ...(cap.episodio || {}), title: episodioTitulo, summary: cap.episodio?.summary || cap.gancho.join(" "), hook: cap.gancho.length === 2 ? cap.gancho : cap.episodio?.hook, bible, scenes: raw },
     { style, duration: Number(input.duration) || clips.length * 4.5, scenes: clips.length, characters: cast, idea: cap.gancho.join(" ") || titulo, seriesTitle: titulo, partNumber: Number(cap.episodio?.partNumber || 1), fidelidad: true });
